@@ -22,7 +22,11 @@ This package includes the following cards:
 | `f1-live-session-card` | Session status, track conditions, weather, and lap counter |
 | `f1-race-control-card` | Race control messages and flags |
 
+---
 
+<img width="1408" height="1097" alt="F1-card 1" src="https://github.com/user-attachments/assets/94346421-347e-4807-8a9f-185982c5697c" />
+
+--- 
 
 ## Installation
 
@@ -67,87 +71,6 @@ All cards can be configured using the dashboard UI editor:
 
 Each card has a visual editor with tabs for data sources and display options.
 
-
-
-
-### Card Examples in YAML
-
-#### Tyre Statistics
-
-```yaml
-type: custom:f1-sensor-live-data-card
-entity: sensor.f1_tyre_statistics
-drivers_entity: sensor.f1_driver_list
-title: Tyres Statistics
-show_header: true
-show_tyre_image: true
-show_compound_name: true
-show_best_times: true
-show_stats: true
-show_delta: true
-show_team_logo: true
-team_logo_style: color
-```
-
-#### Pit Stops & Tyres
-
-```yaml
-type: custom:f1-pitstop-overview-card
-drivers_entity: sensor.f1_driver_list
-positions_entity: sensor.f1_driver_positions
-tyres_entity: sensor.f1_current_tyres
-pitstops_entity: sensor.f1_pitstops
-title: Pit Stops & Tyres
-```
-
-#### Driver Lap Times
-
-```yaml
-type: custom:f1-driver-lap-times-card
-drivers_entity: sensor.f1_driver_list
-positions_entity: sensor.f1_driver_positions
-title: Driver Lap Times
-```
-
-#### Investigations & Penalties
-
-```yaml
-type: custom:f1-investigations-card
-investigations_entity: sensor.f1_investigations
-drivers_entity: sensor.f1_driver_list
-positions_entity: sensor.f1_driver_positions
-title: Investigations & Penalties
-```
-
-#### Track Limits
-
-```yaml
-type: custom:f1-track-limits-card
-track_limits_entity: sensor.f1_track_limits
-drivers_entity: sensor.f1_driver_list
-positions_entity: sensor.f1_driver_positions
-title: Track Limits
-```
-
-#### Live Session
-
-```yaml
-type: custom:f1-live-session-card
-session_entity: sensor.f1_current_session
-session_status_entity: sensor.f1_session_status
-formation_start_entity: binary_sensor.f1_formation_start
-lap_count_entity: sensor.f1_race_lap_count
-track_status_entity: sensor.f1_track_status
-weather_entity: sensor.f1_track_weather
-next_race_entity: sensor.f1_next_race
-```
-
-#### Race Control
-
-```yaml
-type: custom:f1-race-control-card
-entity: sensor.f1_race_control
-```
 
 
 ## Disclaimer
