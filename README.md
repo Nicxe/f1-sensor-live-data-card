@@ -72,7 +72,6 @@ All cards can be configured using the dashboard UI editor:
 Each card has a visual editor with tabs for data sources and display options.
 
 
-
 ## Disclaimer
 
 This project is not affiliated with or supported by Home Assistant, Formula 1, or the FIA. It is community maintained.
