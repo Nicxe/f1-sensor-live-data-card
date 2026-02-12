@@ -4,7 +4,7 @@
     "@nicxe/semantic-release-config": "^1.0.5",
     "@semantic-release/commit-analyzer": "^13.0.0",
     "@semantic-release/exec": "^7.0.0",
-    "@semantic-release/github": "^12.0.0",
+    "@semantic-release/github": "^12.0.6",
     "@semantic-release/release-notes-generator": "^14.0.0",
     "conventional-changelog-conventionalcommits": "^9.0.0",
     "semantic-release": "^25.0.3"
