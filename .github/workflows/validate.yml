@@ -1,0 +1,21 @@
+name: Validate
+
+on:
+  push:
+    branches: [dev, beta, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    uses: nicxe/.github/.github/workflows/reusable-validate-plugin.yml@main
+    with:
+      hacs_category: "plugin"
+    secrets: inherit

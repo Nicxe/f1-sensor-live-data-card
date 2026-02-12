@@ -1,0 +1,24 @@
+name: Release
+
+on:
+  push:
+    branches: [beta, main]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    uses: nicxe/.github/.github/workflows/reusable-release.yml@main
+    with:
+      node_version: "22"
+      npm_registry_url: "https://npm.pkg.github.com"
+      npm_scope: "@nicxe"
+    secrets: inherit

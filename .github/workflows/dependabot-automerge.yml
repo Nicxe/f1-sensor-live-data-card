@@ -1,0 +1,18 @@
+name: Dependabot auto-merge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  automerge:
+    uses: nicxe/.github/.github/workflows/reusable-dependabot-automerge.yml@main
+    secrets: inherit
