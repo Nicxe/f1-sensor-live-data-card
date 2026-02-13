@@ -57,11 +57,11 @@ const COMPOUND_FALLBACK = {
   WET: '#0a84ff',
 };
 const COMPOUND_IMAGES = {
-  HARD: new URL('./images/hard_tyre.png', import.meta.url).href,
-  SOFT: new URL('./images/soft_tyre.png', import.meta.url).href,
-  MEDIUM: new URL('./images/medium_tyre.png', import.meta.url).href,
-  INTERMEDIATE: new URL('./images/intermediate_tyre.png', import.meta.url).href,
-  WET: new URL('./images/wet_tyre.png', import.meta.url).href,
+  HARD: new URL('./hard_tyre.png', import.meta.url).href,
+  SOFT: new URL('./soft_tyre.png', import.meta.url).href,
+  MEDIUM: new URL('./medium_tyre.png', import.meta.url).href,
+  INTERMEDIATE: new URL('./intermediate_tyre.png', import.meta.url).href,
+  WET: new URL('./wet_tyre.png', import.meta.url).href,
 };
 
 const TEAM_LOGO_URLS = {
