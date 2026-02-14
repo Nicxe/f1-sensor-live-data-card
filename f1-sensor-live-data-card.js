@@ -3001,6 +3001,1547 @@ class F1DriverLapTimesCardEditor extends LitElement {
 }
 
 // ============================================================================
+// F1 Championship Prediction Drivers Card
+// ============================================================================
+
+class F1ChampionshipPredictionDriversCard extends LitElement {
+  static properties = {
+    hass: {},
+    config: {},
+  };
+
+  static styles = css`
+    /* Animation keyframes */
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    :host {
+      --ts-bg: #0b0b0d;
+      --ts-bg-soft: #131315;
+      --ts-border: rgba(255, 255, 255, 0.08);
+      --ts-text: #f5f5f5;
+      --ts-muted: rgba(255, 255, 255, 0.65);
+      --ts-chip: rgba(255, 255, 255, 0.06);
+      --ts-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      display: block;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+    }
+
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+    }
+
+    .cpd-card {
+      position: relative;
+      padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
+        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
+      border: 1px solid var(--ts-border);
+      box-shadow: var(--ts-shadow);
+      overflow: hidden;
+      color: var(--ts-text);
+    }
+
+    .cpd-header {
+      text-align: center;
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(16px, 2.4vw, 20px);
+      font-weight: 700;
+      letter-spacing: clamp(0.03em, 0.06em, 0.08em);
+      text-transform: uppercase;
+      margin-bottom: clamp(8px, 1.4vw, 12px);
+      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      white-space: normal;
+      text-wrap: balance;
+      line-height: 1.1;
+      padding: 0 4px;
+    }
+
+    .cpd-table {
+      display: grid;
+      gap: 6px;
+    }
+
+    .cpd-row {
+      display: grid;
+      grid-template-columns: var(--cpd-columns);
+      align-items: center;
+      column-gap: 4px;
+      padding: 6px 8px;
+      border-radius: 10px;
+      background: var(--ts-chip);
+      font-size: clamp(10px, 1.6vw, 11px);
+      color: var(--ts-text);
+      animation: fadeSlideIn 0.25s ease-out backwards;
+      transition: background 0.2s ease;
+    }
+
+    .cpd-row.header {
+      background: transparent;
+      padding: 4px 6px 2px;
+      font-size: clamp(9px, 1.4vw, 10px);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--ts-muted);
+    }
+
+    .cpd-cell {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+    }
+
+    .cpd-cell.numeric {
+      justify-content: center;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .cpd-cell.group-start {
+      padding-left: 6px;
+      border-left: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .cpd-team-logo {
+      width: 14px;
+      height: 14px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
+    }
+
+    .cpd-tla {
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--driver-color, var(--ts-text));
+    }
+
+    .cpd-delta.positive {
+      color: #34d399;
+    }
+
+    .cpd-delta.negative {
+      color: #f87171;
+    }
+
+    .cpd-delta.neutral {
+      color: var(--ts-muted);
+    }
+
+    .cpd-empty {
+      padding: 16px;
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: var(--ts-chip);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      color: var(--ts-muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 720px) {
+      .cpd-card {
+        padding: 12px 10px 12px;
+      }
+
+      .cpd-header {
+        font-size: 16px;
+        letter-spacing: 0.03em;
+      }
+
+      .cpd-row {
+        font-size: 9px;
+        padding: 5px 6px;
+      }
+    }
+  `;
+
+  setConfig(config) {
+    this.config = {
+      title: 'Championship Prediction Drivers',
+      entity: 'sensor.f1_championship_prediction_drivers',
+      drivers_entity: 'sensor.f1_driver_list',
+      show_header: true,
+      show_table_header: true,
+      show_position: true,
+      show_tla: true,
+      show_team_logo: true,
+      team_logo_style: 'color',
+      show_predicted_points: true,
+      show_current_points: true,
+      show_delta: true,
+      top_limit: 0,
+      ...config,
+    };
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    ensureF1Fonts();
+  }
+
+  getCardSize() {
+    return 6;
+  }
+
+  getGridOptions() {
+    return {
+      columns: 12,
+      min_columns: 4,
+      max_columns: 12,
+      min_rows: 5,
+    };
+  }
+
+  static getStubConfig() {
+    return {
+      type: 'custom:f1-championship-prediction-drivers-card',
+      entity: 'sensor.f1_championship_prediction_drivers',
+      drivers_entity: 'sensor.f1_driver_list',
+      title: 'Championship Prediction Drivers',
+    };
+  }
+
+  static getConfigElement() {
+    return document.createElement('f1-championship-prediction-drivers-card-editor');
+  }
+
+  render() {
+    if (!this.hass || !this.config) return html``;
+
+    if (!this.config.entity) {
+      return html`
+        <ha-card>
+          <div class="cpd-card">
+            <div class="cpd-empty">Select entities in the editor</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const predictionState = this.hass.states?.[this.config.entity];
+    if (!predictionState) {
+      return html`
+        <ha-card>
+          <div class="cpd-card">
+            <div class="cpd-empty">Entity not found</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const predictions = predictionState?.attributes?.drivers;
+    if (!predictions || typeof predictions !== 'object') {
+      return html`
+        <ha-card>
+          <div class="cpd-card">
+            <div class="cpd-empty">No prediction data</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const driverListState = this.config.drivers_entity
+      ? this.hass.states?.[this.config.drivers_entity]
+      : null;
+    const driverList = Array.isArray(driverListState?.attributes?.drivers)
+      ? driverListState.attributes.drivers
+      : [];
+    const driverMap = this._buildDriverMap(driverList);
+    const rows = this._applyTopLimit(this._buildRows(predictions, driverMap));
+    const columns = this._columns();
+    const gridColumns = columns.map((col) => col.width).join(' ');
+
+    if (rows.length === 0) {
+      return html`
+        <ha-card>
+          <div class="cpd-card">
+            <div class="cpd-empty">No prediction data</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    return html`
+      <ha-card @click=${this._handleCardAction}>
+        <div class="cpd-card">
+          ${this.config.show_header
+            ? html`<div class="cpd-header">${this.config.title || 'Championship Prediction Drivers'}</div>`
+            : null}
+          <div class="cpd-table" style="--cpd-columns: ${gridColumns};">
+            ${this.config.show_table_header ? this._renderHeader(columns) : null}
+            ${rows.map((row) => this._renderRow(row, columns))}
+          </div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _columns() {
+    const cols = [];
+    if (this.config.show_position !== false) {
+      cols.push({ key: 'position', label: 'POS', width: '0.16fr', numeric: true, hideHeader: true });
+    }
+    if (this.config.show_team_logo !== false) {
+      cols.push({ key: 'logo', label: 'LOGO', width: '0.16fr', hideHeader: true });
+    }
+    if (this.config.show_tla !== false) {
+      cols.push({ key: 'tla', label: 'DRIVER', width: '0.62fr' });
+    }
+    if (this.config.show_predicted_points !== false) {
+      cols.push({ key: 'predicted_points', label: 'PRED', width: '0.44fr', numeric: true, groupStart: true });
+    }
+    if (this.config.show_current_points !== false) {
+      cols.push({ key: 'current_points', label: 'CUR', width: '0.44fr', numeric: true });
+    }
+    if (this.config.show_delta !== false) {
+      cols.push({ key: 'delta', label: 'Δ', width: '0.34fr', numeric: true });
+    }
+    return cols;
+  }
+
+  _renderHeader(columns) {
+    return html`
+      <div class="cpd-row header">
+        ${columns.map((col) => html`
+          <div class="cpd-cell ${col.numeric ? 'numeric' : ''} ${col.groupStart ? 'group-start' : ''}">
+            ${col.hideHeader ? '' : col.label}
+          </div>
+        `)}
+      </div>
+    `;
+  }
+
+  _renderRow(row, columns) {
+    return html`
+      <div class="cpd-row">
+        ${columns.map((col) => this._renderCell(row, col))}
+      </div>
+    `;
+  }
+
+  _renderCell(row, col) {
+    const classes = ['cpd-cell'];
+    if (col.numeric) classes.push('numeric');
+    if (col.groupStart) classes.push('group-start');
+
+    if (col.key === 'logo') {
+      return html`
+        <div class="${classes.join(' ')}">
+          ${row.team_logo ? html`
+            <img
+              class="cpd-team-logo"
+              src="${row.team_logo.src}"
+              data-fallback="${row.team_logo.fallback || ''}"
+              loading="lazy"
+              @error=${handleTeamLogoError}
+              alt=""
+            />
+          ` : html`<span>--</span>`}
+        </div>
+      `;
+    }
+
+    if (col.key === 'tla') {
+      const style = row.team_color ? `--driver-color: ${row.team_color};` : '';
+      return html`
+        <div class="${classes.join(' ')} cpd-tla" style="${style}">
+          ${row.display_tla || '--'}
+        </div>
+      `;
+    }
+
+    if (col.key === 'delta') {
+      const deltaClass = row.delta > 0 ? 'positive' : row.delta < 0 ? 'negative' : 'neutral';
+      return html`
+        <div class="${classes.join(' ')} cpd-delta ${deltaClass}">
+          ${row.delta_display}
+        </div>
+      `;
+    }
+
+    let value = '--';
+    if (col.key === 'position') value = row.predicted_position ?? '--';
+    if (col.key === 'predicted_points') value = row.predicted_points_display;
+    if (col.key === 'current_points') value = row.current_points_display;
+    return html`<div class="${classes.join(' ')}">${value}</div>`;
+  }
+
+  _buildRows(predictions, driverMap) {
+    const rows = [];
+    Object.entries(predictions || {}).forEach(([key, entry]) => {
+      if (!entry || typeof entry !== 'object') return;
+      const rn = String(entry?.RacingNumber ?? key).trim();
+      const identity = driverMap.get(rn) || {};
+      const predictedPosition = this._parsePosition(entry?.PredictedPosition);
+      const currentPosition = this._parsePosition(entry?.CurrentPosition);
+      const predictedPoints = this._toNumber(entry?.PredictedPoints);
+      const currentPoints = this._toNumber(entry?.CurrentPoints);
+      const delta = Number.isFinite(predictedPoints) && Number.isFinite(currentPoints)
+        ? predictedPoints - currentPoints
+        : null;
+
+      const tla = this._normalizeTla(entry?.Tla || identity?.tla);
+      const teamName = entry?.TeamName || identity?.team || null;
+      const teamColor = this._normalizeColor(entry?.TeamColor || identity?.team_color);
+
+      rows.push({
+        rn,
+        predicted_position: predictedPosition,
+        current_position: currentPosition,
+        display_tla: tla || (rn ? `#${rn}` : '--'),
+        team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style),
+        team_color: teamColor,
+        predicted_points: predictedPoints,
+        current_points: currentPoints,
+        delta,
+        predicted_points_display: this._formatPoints(predictedPoints),
+        current_points_display: this._formatPoints(currentPoints),
+        delta_display: this._formatDelta(delta),
+      });
+    });
+
+    rows.sort((a, b) => {
+      if (a.predicted_position !== null && b.predicted_position !== null) {
+        const diff = a.predicted_position - b.predicted_position;
+        if (diff !== 0) return diff;
+      } else if (a.predicted_position !== null) {
+        return -1;
+      } else if (b.predicted_position !== null) {
+        return 1;
+      }
+
+      if (a.current_position !== null && b.current_position !== null) {
+        const diff = a.current_position - b.current_position;
+        if (diff !== 0) return diff;
+      } else if (a.current_position !== null) {
+        return -1;
+      } else if (b.current_position !== null) {
+        return 1;
+      }
+
+      return this._compareRacingNumber(a.rn, b.rn);
+    });
+
+    return rows;
+  }
+
+  _applyTopLimit(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const limit = this._parseTopLimit(this.config?.top_limit);
+    if (limit <= 0) return list;
+    return list.slice(0, limit);
+  }
+
+  _buildDriverMap(drivers) {
+    const map = new Map();
+    (Array.isArray(drivers) ? drivers : []).forEach((driver) => {
+      const rn = String(driver?.racing_number ?? '').trim();
+      if (!rn) return;
+      map.set(rn, {
+        tla: driver?.tla,
+        team: driver?.team || driver?.team_name,
+        team_color: driver?.team_color,
+      });
+    });
+    return map;
+  }
+
+  _parseTopLimit(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) return 0;
+    return parsed;
+  }
+
+  _parsePosition(value) {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const match = text.match(/\d+/);
+    if (!match) return null;
+    const num = Number(match[0]);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  _toNumber(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  _formatPoints(value) {
+    if (!Number.isFinite(value)) return '--';
+    if (Math.abs(value - Math.round(value)) < 0.0001) {
+      return String(Math.round(value));
+    }
+    return Number(value).toFixed(1);
+  }
+
+  _formatDelta(value) {
+    if (!Number.isFinite(value)) return '--';
+    const sign = value < 0 ? '-' : '+';
+    const abs = Math.abs(value);
+    return `${sign}${this._formatPoints(abs)}`;
+  }
+
+  _normalizeTla(value) {
+    if (!value) return null;
+    const tla = String(value).trim().toUpperCase();
+    return tla || null;
+  }
+
+  _normalizeColor(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (text.startsWith('#') || text.startsWith('rgb')) return text;
+    if (/^[0-9a-fA-F]{6}$/.test(text)) return `#${text}`;
+    return text;
+  }
+
+  _compareRacingNumber(a, b) {
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (Number.isFinite(aNum) && Number.isFinite(bNum)) return aNum - bNum;
+    return String(a).localeCompare(String(b));
+  }
+
+  _handleCardAction() {
+    const action = this.config?.tap_action || { action: 'more-info' };
+    if (action.action === 'none') return;
+    if (action.action === 'more-info') {
+      this.dispatchEvent(new CustomEvent('hass-more-info', {
+        bubbles: true,
+        composed: true,
+        detail: { entityId: this.config.entity },
+      }));
+    }
+  }
+}
+
+// ============================================================================
+// F1 Championship Prediction Teams Card
+// ============================================================================
+
+class F1ChampionshipPredictionTeamsCard extends LitElement {
+  static properties = {
+    hass: {},
+    config: {},
+  };
+
+  static styles = css`
+    /* Animation keyframes */
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    :host {
+      --ts-bg: #0b0b0d;
+      --ts-bg-soft: #131315;
+      --ts-border: rgba(255, 255, 255, 0.08);
+      --ts-text: #f5f5f5;
+      --ts-muted: rgba(255, 255, 255, 0.65);
+      --ts-chip: rgba(255, 255, 255, 0.06);
+      --ts-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      display: block;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+    }
+
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+    }
+
+    .cpt-card {
+      position: relative;
+      padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
+        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
+      border: 1px solid var(--ts-border);
+      box-shadow: var(--ts-shadow);
+      overflow: hidden;
+      color: var(--ts-text);
+    }
+
+    .cpt-header {
+      text-align: center;
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(16px, 2.4vw, 20px);
+      font-weight: 700;
+      letter-spacing: clamp(0.03em, 0.06em, 0.08em);
+      text-transform: uppercase;
+      margin-bottom: clamp(8px, 1.4vw, 12px);
+      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      white-space: normal;
+      text-wrap: balance;
+      line-height: 1.1;
+      padding: 0 4px;
+    }
+
+    .cpt-table {
+      display: grid;
+      gap: 6px;
+    }
+
+    .cpt-row {
+      display: grid;
+      grid-template-columns: var(--cpt-columns);
+      align-items: center;
+      column-gap: 4px;
+      padding: 6px 8px;
+      border-radius: 10px;
+      background: var(--ts-chip);
+      font-size: clamp(10px, 1.6vw, 11px);
+      color: var(--ts-text);
+      animation: fadeSlideIn 0.25s ease-out backwards;
+      transition: background 0.2s ease;
+    }
+
+    .cpt-row.header {
+      background: transparent;
+      padding: 4px 6px 2px;
+      font-size: clamp(9px, 1.4vw, 10px);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--ts-muted);
+    }
+
+    .cpt-cell {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+    }
+
+    .cpt-cell.numeric {
+      justify-content: center;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .cpt-cell.group-start {
+      padding-left: 6px;
+      border-left: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .cpt-team-logo {
+      width: 16px;
+      height: 16px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
+    }
+
+    .cpt-team-name {
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+
+    .cpt-delta.positive {
+      color: #34d399;
+    }
+
+    .cpt-delta.negative {
+      color: #f87171;
+    }
+
+    .cpt-delta.neutral {
+      color: var(--ts-muted);
+    }
+
+    .cpt-empty {
+      padding: 16px;
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: var(--ts-chip);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      color: var(--ts-muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 720px) {
+      .cpt-card {
+        padding: 12px 10px 12px;
+      }
+
+      .cpt-header {
+        font-size: 16px;
+        letter-spacing: 0.03em;
+      }
+
+      .cpt-row {
+        font-size: 9px;
+        padding: 5px 6px;
+      }
+    }
+  `;
+
+  setConfig(config) {
+    this.config = {
+      title: 'Championship Prediction Teams',
+      entity: 'sensor.f1_championship_prediction_teams',
+      show_header: true,
+      show_table_header: true,
+      show_position: true,
+      show_team_name: true,
+      show_team_logo: true,
+      team_logo_style: 'color',
+      show_predicted_points: true,
+      show_current_points: true,
+      show_delta: true,
+      top_limit: 0,
+      ...config,
+    };
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    ensureF1Fonts();
+  }
+
+  getCardSize() {
+    return 6;
+  }
+
+  getGridOptions() {
+    return {
+      columns: 12,
+      min_columns: 4,
+      max_columns: 12,
+      min_rows: 5,
+    };
+  }
+
+  static getStubConfig() {
+    return {
+      type: 'custom:f1-championship-prediction-teams-card',
+      entity: 'sensor.f1_championship_prediction_teams',
+      title: 'Championship Prediction Teams',
+    };
+  }
+
+  static getConfigElement() {
+    return document.createElement('f1-championship-prediction-teams-card-editor');
+  }
+
+  render() {
+    if (!this.hass || !this.config) return html``;
+
+    if (!this.config.entity) {
+      return html`
+        <ha-card>
+          <div class="cpt-card">
+            <div class="cpt-empty">Select entities in the editor</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const predictionState = this.hass.states?.[this.config.entity];
+    if (!predictionState) {
+      return html`
+        <ha-card>
+          <div class="cpt-card">
+            <div class="cpt-empty">Entity not found</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const predictions = predictionState?.attributes?.teams;
+    if (!predictions || typeof predictions !== 'object') {
+      return html`
+        <ha-card>
+          <div class="cpt-card">
+            <div class="cpt-empty">No prediction data</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const rows = this._applyTopLimit(this._buildRows(predictions));
+    const columns = this._columns();
+    const gridColumns = columns.map((col) => col.width).join(' ');
+
+    if (rows.length === 0) {
+      return html`
+        <ha-card>
+          <div class="cpt-card">
+            <div class="cpt-empty">No prediction data</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    return html`
+      <ha-card @click=${this._handleCardAction}>
+        <div class="cpt-card">
+          ${this.config.show_header
+            ? html`<div class="cpt-header">${this.config.title || 'Championship Prediction Teams'}</div>`
+            : null}
+          <div class="cpt-table" style="--cpt-columns: ${gridColumns};">
+            ${this.config.show_table_header ? this._renderHeader(columns) : null}
+            ${rows.map((row) => this._renderRow(row, columns))}
+          </div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _columns() {
+    const cols = [];
+    if (this.config.show_position !== false) {
+      cols.push({ key: 'position', label: 'POS', width: '0.16fr', numeric: true, hideHeader: true });
+    }
+    if (this.config.show_team_logo !== false) {
+      cols.push({ key: 'logo', label: 'LOGO', width: '0.18fr', hideHeader: true });
+    }
+    if (this.config.show_team_name !== false) {
+      cols.push({ key: 'team_name', label: 'TEAM', width: '0.72fr' });
+    }
+    if (this.config.show_predicted_points !== false) {
+      cols.push({ key: 'predicted_points', label: 'PRED', width: '0.44fr', numeric: true, groupStart: true });
+    }
+    if (this.config.show_current_points !== false) {
+      cols.push({ key: 'current_points', label: 'CUR', width: '0.44fr', numeric: true });
+    }
+    if (this.config.show_delta !== false) {
+      cols.push({ key: 'delta', label: 'Δ', width: '0.34fr', numeric: true });
+    }
+    return cols;
+  }
+
+  _renderHeader(columns) {
+    return html`
+      <div class="cpt-row header">
+        ${columns.map((col) => html`
+          <div class="cpt-cell ${col.numeric ? 'numeric' : ''} ${col.groupStart ? 'group-start' : ''}">
+            ${col.hideHeader ? '' : col.label}
+          </div>
+        `)}
+      </div>
+    `;
+  }
+
+  _renderRow(row, columns) {
+    return html`
+      <div class="cpt-row">
+        ${columns.map((col) => this._renderCell(row, col))}
+      </div>
+    `;
+  }
+
+  _renderCell(row, col) {
+    const classes = ['cpt-cell'];
+    if (col.numeric) classes.push('numeric');
+    if (col.groupStart) classes.push('group-start');
+
+    if (col.key === 'logo') {
+      return html`
+        <div class="${classes.join(' ')}">
+          ${row.team_logo ? html`
+            <img
+              class="cpt-team-logo"
+              src="${row.team_logo.src}"
+              data-fallback="${row.team_logo.fallback || ''}"
+              loading="lazy"
+              @error=${handleTeamLogoError}
+              alt=""
+            />
+          ` : html`<span>--</span>`}
+        </div>
+      `;
+    }
+
+    if (col.key === 'team_name') {
+      return html`<div class="${classes.join(' ')} cpt-team-name">${row.display_team_name || '--'}</div>`;
+    }
+
+    if (col.key === 'delta') {
+      const deltaClass = row.delta > 0 ? 'positive' : row.delta < 0 ? 'negative' : 'neutral';
+      return html`
+        <div class="${classes.join(' ')} cpt-delta ${deltaClass}">
+          ${row.delta_display}
+        </div>
+      `;
+    }
+
+    let value = '--';
+    if (col.key === 'position') value = row.predicted_position ?? '--';
+    if (col.key === 'predicted_points') value = row.predicted_points_display;
+    if (col.key === 'current_points') value = row.current_points_display;
+    return html`<div class="${classes.join(' ')}">${value}</div>`;
+  }
+
+  _buildRows(predictions) {
+    const rows = [];
+    Object.entries(predictions || {}).forEach(([key, entry]) => {
+      if (!entry || typeof entry !== 'object') return;
+      const teamKey = String(entry?.TeamKey ?? key).trim();
+      const teamName = String(entry?.TeamName ?? '').trim();
+      const displayTeamName = teamName || teamKey || '--';
+      const predictedPosition = this._parsePosition(entry?.PredictedPosition);
+      const currentPosition = this._parsePosition(entry?.CurrentPosition);
+      const predictedPoints = this._toNumber(entry?.PredictedPoints);
+      const currentPoints = this._toNumber(entry?.CurrentPoints);
+      const delta = Number.isFinite(predictedPoints) && Number.isFinite(currentPoints)
+        ? predictedPoints - currentPoints
+        : null;
+
+      rows.push({
+        team_key: teamKey,
+        display_team_name: displayTeamName,
+        predicted_position: predictedPosition,
+        current_position: currentPosition,
+        team_logo: getTeamLogoMeta(displayTeamName, 28, this.config.team_logo_style),
+        predicted_points: predictedPoints,
+        current_points: currentPoints,
+        delta,
+        predicted_points_display: this._formatPoints(predictedPoints),
+        current_points_display: this._formatPoints(currentPoints),
+        delta_display: this._formatDelta(delta),
+      });
+    });
+
+    rows.sort((a, b) => {
+      if (a.predicted_position !== null && b.predicted_position !== null) {
+        const diff = a.predicted_position - b.predicted_position;
+        if (diff !== 0) return diff;
+      } else if (a.predicted_position !== null) {
+        return -1;
+      } else if (b.predicted_position !== null) {
+        return 1;
+      }
+
+      if (a.current_position !== null && b.current_position !== null) {
+        const diff = a.current_position - b.current_position;
+        if (diff !== 0) return diff;
+      } else if (a.current_position !== null) {
+        return -1;
+      } else if (b.current_position !== null) {
+        return 1;
+      }
+
+      return a.display_team_name.localeCompare(b.display_team_name);
+    });
+
+    return rows;
+  }
+
+  _applyTopLimit(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const limit = this._parseTopLimit(this.config?.top_limit);
+    if (limit <= 0) return list;
+    return list.slice(0, limit);
+  }
+
+  _parseTopLimit(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) return 0;
+    return parsed;
+  }
+
+  _parsePosition(value) {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const match = text.match(/\d+/);
+    if (!match) return null;
+    const num = Number(match[0]);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  _toNumber(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  _formatPoints(value) {
+    if (!Number.isFinite(value)) return '--';
+    if (Math.abs(value - Math.round(value)) < 0.0001) {
+      return String(Math.round(value));
+    }
+    return Number(value).toFixed(1);
+  }
+
+  _formatDelta(value) {
+    if (!Number.isFinite(value)) return '--';
+    const sign = value < 0 ? '-' : '+';
+    const abs = Math.abs(value);
+    return `${sign}${this._formatPoints(abs)}`;
+  }
+
+  _handleCardAction() {
+    const action = this.config?.tap_action || { action: 'more-info' };
+    if (action.action === 'none') return;
+    if (action.action === 'more-info') {
+      this.dispatchEvent(new CustomEvent('hass-more-info', {
+        bubbles: true,
+        composed: true,
+        detail: { entityId: this.config.entity },
+      }));
+    }
+  }
+}
+
+// ============================================================================
+// F1 Championship Prediction Drivers Card Editor
+// ============================================================================
+
+class F1ChampionshipPredictionDriversCardEditor extends LitElement {
+  static properties = {
+    hass: {},
+    _config: {},
+    _activeTab: { state: true },
+  };
+
+  static styles = css`
+    .card-config {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--divider-color);
+      margin-bottom: 16px;
+    }
+
+    .tabs button {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary-text-color);
+      font-size: 14px;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+
+    .tabs button:hover {
+      color: var(--primary-color);
+    }
+
+    .tabs button.active {
+      color: var(--primary-color);
+      border-bottom: 2px solid var(--primary-color);
+      margin-bottom: -1px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--secondary-text-color);
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .helper {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      padding-left: 16px;
+      line-height: 1.4;
+    }
+
+    .warning {
+      font-size: 12px;
+      color: var(--error-color);
+      padding-left: 16px;
+    }
+
+    .display-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    ha-textfield {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    ha-formfield {
+      display: flex;
+      align-items: center;
+      padding: 4px 0;
+    }
+
+    ha-select {
+      width: 100%;
+    }
+  `;
+
+  constructor() {
+    super();
+    this._activeTab = 'sources';
+  }
+
+  setConfig(config) {
+    this._config = {
+      entity: 'sensor.f1_championship_prediction_drivers',
+      drivers_entity: 'sensor.f1_driver_list',
+      title: 'Championship Prediction Drivers',
+      show_header: true,
+      show_table_header: true,
+      show_position: true,
+      show_tla: true,
+      show_team_logo: true,
+      team_logo_style: 'color',
+      show_predicted_points: true,
+      show_current_points: true,
+      show_delta: true,
+      top_limit: 0,
+      ...config,
+    };
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    return html`
+      <div class="card-config">
+        <div class="tabs">
+          <button
+            class=${this._activeTab === 'sources' ? 'active' : ''}
+            @click=${() => this._activeTab = 'sources'}
+          >
+            Data Sources
+          </button>
+          <button
+            class=${this._activeTab === 'display' ? 'active' : ''}
+            @click=${() => this._activeTab = 'display'}
+          >
+            Display
+          </button>
+        </div>
+
+        ${this._activeTab === 'sources'
+          ? this._renderDataSourcesTab()
+          : this._renderDisplayTab()}
+      </div>
+    `;
+  }
+
+  _renderDataSourcesTab() {
+    return html`
+      <div class="section">
+        <div class="section-header">REQUIRED SENSORS</div>
+        ${this._renderEntityPicker(
+          'entity',
+          'Drivers Prediction Sensor',
+          'Provides live championship prediction for drivers',
+          true,
+          'sensor'
+        )}
+      </div>
+      <div class="section">
+        <div class="section-header">OPTIONAL SENSORS</div>
+        ${this._renderEntityPicker(
+          'drivers_entity',
+          'Driver List Sensor',
+          'Provides TLA, team names, and team colors when prediction feed is missing identity details',
+          false,
+          'sensor'
+        )}
+      </div>
+    `;
+  }
+
+  _renderDisplayTab() {
+    return html`
+      <div class="display-section">
+        <ha-textfield
+          .label=${'Title'}
+          .value=${this._config.title || ''}
+          @input=${(e) => this._valueChanged('title', e.target.value)}
+        ></ha-textfield>
+
+        ${this._renderSwitch('show_header', 'Show header')}
+        ${this._renderSwitch('show_table_header', 'Show table header')}
+        ${this._renderSwitch('show_position', 'Show position')}
+        ${this._renderSwitch('show_tla', 'Show driver code')}
+        ${this._renderSwitch('show_team_logo', 'Show team logo')}
+
+        <ha-select
+          .label=${'Team logo style'}
+          .value=${this._config.team_logo_style || 'color'}
+          @selected=${(e) => this._valueChanged('team_logo_style', e.target.value)}
+          @closed=${(e) => e.stopPropagation()}
+        >
+          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
+          <mwc-list-item value="white">White</mwc-list-item>
+        </ha-select>
+
+        ${this._renderSwitch('show_predicted_points', 'Show predicted points')}
+        ${this._renderSwitch('show_current_points', 'Show current points')}
+        ${this._renderSwitch('show_delta', 'Show points delta')}
+
+        <ha-textfield
+          .label=${'Top entries to show'}
+          .value=${String(this._config.top_limit ?? 0)}
+          type="number"
+          min="0"
+          @input=${(e) => this._valueChanged('top_limit', Number.parseInt(e.target.value, 10) || 0)}
+        ></ha-textfield>
+        <div class="helper">0 = show all entries</div>
+      </div>
+    `;
+  }
+
+  _renderEntityPicker(name, label, helper, required, domain) {
+    const value = this._config[name];
+    const showWarning = required && !value;
+    const schema = [{ name, label, required, selector: { entity: { domain } } }];
+
+    return html`
+      <div class="field">
+        <ha-form
+          .hass=${this.hass}
+          .data=${this._config}
+          .schema=${schema}
+          .computeLabel=${() => label}
+          @value-changed=${this._formValueChanged}
+        ></ha-form>
+        <div class="helper">${helper}</div>
+        ${showWarning ? html`
+          <div class="warning">This sensor is required for the card to function</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  _renderSwitch(name, label, helper = null) {
+    const schema = [{ name, label, selector: { boolean: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _formValueChanged(ev) {
+    if (!this._config) return;
+    const value = ev.detail?.value || {};
+    const newConfig = { ...this._config, ...value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+
+  _valueChanged(name, value) {
+    if (!this._config) return;
+    const newConfig = { ...this._config, [name]: value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+}
+
+// ============================================================================
+// F1 Championship Prediction Teams Card Editor
+// ============================================================================
+
+class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
+  static properties = {
+    hass: {},
+    _config: {},
+    _activeTab: { state: true },
+  };
+
+  static styles = css`
+    .card-config {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--divider-color);
+      margin-bottom: 16px;
+    }
+
+    .tabs button {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary-text-color);
+      font-size: 14px;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+
+    .tabs button:hover {
+      color: var(--primary-color);
+    }
+
+    .tabs button.active {
+      color: var(--primary-color);
+      border-bottom: 2px solid var(--primary-color);
+      margin-bottom: -1px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--secondary-text-color);
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .helper {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      padding-left: 16px;
+      line-height: 1.4;
+    }
+
+    .warning {
+      font-size: 12px;
+      color: var(--error-color);
+      padding-left: 16px;
+    }
+
+    .display-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    ha-textfield {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    ha-formfield {
+      display: flex;
+      align-items: center;
+      padding: 4px 0;
+    }
+
+    ha-select {
+      width: 100%;
+    }
+  `;
+
+  constructor() {
+    super();
+    this._activeTab = 'sources';
+  }
+
+  setConfig(config) {
+    this._config = {
+      entity: 'sensor.f1_championship_prediction_teams',
+      title: 'Championship Prediction Teams',
+      show_header: true,
+      show_table_header: true,
+      show_position: true,
+      show_team_name: true,
+      show_team_logo: true,
+      team_logo_style: 'color',
+      show_predicted_points: true,
+      show_current_points: true,
+      show_delta: true,
+      top_limit: 0,
+      ...config,
+    };
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    return html`
+      <div class="card-config">
+        <div class="tabs">
+          <button
+            class=${this._activeTab === 'sources' ? 'active' : ''}
+            @click=${() => this._activeTab = 'sources'}
+          >
+            Data Sources
+          </button>
+          <button
+            class=${this._activeTab === 'display' ? 'active' : ''}
+            @click=${() => this._activeTab = 'display'}
+          >
+            Display
+          </button>
+        </div>
+
+        ${this._activeTab === 'sources'
+          ? this._renderDataSourcesTab()
+          : this._renderDisplayTab()}
+      </div>
+    `;
+  }
+
+  _renderDataSourcesTab() {
+    return html`
+      <div class="section">
+        <div class="section-header">REQUIRED SENSORS</div>
+        ${this._renderEntityPicker(
+          'entity',
+          'Teams Prediction Sensor',
+          'Provides live championship prediction for constructors',
+          true,
+          'sensor'
+        )}
+      </div>
+    `;
+  }
+
+  _renderDisplayTab() {
+    return html`
+      <div class="display-section">
+        <ha-textfield
+          .label=${'Title'}
+          .value=${this._config.title || ''}
+          @input=${(e) => this._valueChanged('title', e.target.value)}
+        ></ha-textfield>
+
+        ${this._renderSwitch('show_header', 'Show header')}
+        ${this._renderSwitch('show_table_header', 'Show table header')}
+        ${this._renderSwitch('show_position', 'Show position')}
+        ${this._renderSwitch('show_team_name', 'Show team name')}
+        ${this._renderSwitch('show_team_logo', 'Show team logo')}
+
+        <ha-select
+          .label=${'Team logo style'}
+          .value=${this._config.team_logo_style || 'color'}
+          @selected=${(e) => this._valueChanged('team_logo_style', e.target.value)}
+          @closed=${(e) => e.stopPropagation()}
+        >
+          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
+          <mwc-list-item value="white">White</mwc-list-item>
+        </ha-select>
+
+        ${this._renderSwitch('show_predicted_points', 'Show predicted points')}
+        ${this._renderSwitch('show_current_points', 'Show current points')}
+        ${this._renderSwitch('show_delta', 'Show points delta')}
+
+        <ha-textfield
+          .label=${'Top entries to show'}
+          .value=${String(this._config.top_limit ?? 0)}
+          type="number"
+          min="0"
+          @input=${(e) => this._valueChanged('top_limit', Number.parseInt(e.target.value, 10) || 0)}
+        ></ha-textfield>
+        <div class="helper">0 = show all entries</div>
+      </div>
+    `;
+  }
+
+  _renderEntityPicker(name, label, helper, required, domain) {
+    const value = this._config[name];
+    const showWarning = required && !value;
+    const schema = [{ name, label, required, selector: { entity: { domain } } }];
+
+    return html`
+      <div class="field">
+        <ha-form
+          .hass=${this.hass}
+          .data=${this._config}
+          .schema=${schema}
+          .computeLabel=${() => label}
+          @value-changed=${this._formValueChanged}
+        ></ha-form>
+        <div class="helper">${helper}</div>
+        ${showWarning ? html`
+          <div class="warning">This sensor is required for the card to function</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  _renderSwitch(name, label, helper = null) {
+    const schema = [{ name, label, selector: { boolean: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _formValueChanged(ev) {
+    if (!this._config) return;
+    const value = ev.detail?.value || {};
+    const newConfig = { ...this._config, ...value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+
+  _valueChanged(name, value) {
+    if (!this._config) return;
+    const newConfig = { ...this._config, [name]: value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+}
+
+// ============================================================================
 // F1 Investigations Card
 // ============================================================================
 
@@ -6420,6 +7961,22 @@ if (!customElements.get('f1-driver-lap-times-card-editor')) {
   customElements.define('f1-driver-lap-times-card-editor', F1DriverLapTimesCardEditor);
 }
 
+if (!customElements.get('f1-championship-prediction-drivers-card')) {
+  customElements.define('f1-championship-prediction-drivers-card', F1ChampionshipPredictionDriversCard);
+}
+
+if (!customElements.get('f1-championship-prediction-drivers-card-editor')) {
+  customElements.define('f1-championship-prediction-drivers-card-editor', F1ChampionshipPredictionDriversCardEditor);
+}
+
+if (!customElements.get('f1-championship-prediction-teams-card')) {
+  customElements.define('f1-championship-prediction-teams-card', F1ChampionshipPredictionTeamsCard);
+}
+
+if (!customElements.get('f1-championship-prediction-teams-card-editor')) {
+  customElements.define('f1-championship-prediction-teams-card-editor', F1ChampionshipPredictionTeamsCardEditor);
+}
+
 if (!customElements.get('f1-investigations-card')) {
   customElements.define('f1-investigations-card', F1InvestigationsCard);
 }
@@ -6473,6 +8030,22 @@ window.customCards.push({
   type: 'f1-driver-lap-times-card',
   name: 'F1 Driver Lap Times',
   description: 'Driver table focused on latest lap times',
+  configurable: true,
+  preview: true,
+});
+
+window.customCards.push({
+  type: 'f1-championship-prediction-drivers-card',
+  name: 'F1 Championship Prediction Drivers',
+  description: 'Live predicted championship standings for drivers',
+  configurable: true,
+  preview: true,
+});
+
+window.customCards.push({
+  type: 'f1-championship-prediction-teams-card',
+  name: 'F1 Championship Prediction Teams',
+  description: 'Live predicted championship standings for constructors',
   configurable: true,
   preview: true,
 });
