@@ -57,11 +57,11 @@ const COMPOUND_FALLBACK = {
   WET: '#0a84ff',
 };
 const COMPOUND_IMAGES = {
-  HARD: new URL('./images/hard_tyre.png', import.meta.url).href,
-  SOFT: new URL('./images/soft_tyre.png', import.meta.url).href,
-  MEDIUM: new URL('./images/medium_tyre.png', import.meta.url).href,
-  INTERMEDIATE: new URL('./images/intermediate_tyre.png', import.meta.url).href,
-  WET: new URL('./images/wet_tyre.png', import.meta.url).href,
+  HARD: new URL('./hard_tyre.png', import.meta.url).href,
+  SOFT: new URL('./soft_tyre.png', import.meta.url).href,
+  MEDIUM: new URL('./medium_tyre.png', import.meta.url).href,
+  INTERMEDIATE: new URL('./intermediate_tyre.png', import.meta.url).href,
+  WET: new URL('./wet_tyre.png', import.meta.url).href,
 };
 
 const TEAM_LOGO_URLS = {
@@ -283,7 +283,7 @@ class F1TyreStatisticsCard extends LitElement {
     .ts-card {
       position: relative;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
-      border-radius: clamp(20px, 3vw, 28px);
+      border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
         linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
       border: 1px solid var(--ts-border);
@@ -450,7 +450,7 @@ class F1TyreStatisticsCard extends LitElement {
 
     .ts-empty {
       padding: 16px;
-      border-radius: 16px;
+      border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
       border: 1px dashed rgba(255, 255, 255, 0.12);
       color: var(--ts-muted);
@@ -461,7 +461,6 @@ class F1TyreStatisticsCard extends LitElement {
     @media (max-width: 720px) {
       .ts-card {
         padding: 12px 10px 12px;
-        border-radius: 18px;
       }
 
       .ts-header {
@@ -938,7 +937,7 @@ class F1PitStopOverviewCard extends LitElement {
     .ps-card {
       position: relative;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
-      border-radius: clamp(20px, 3vw, 28px);
+      border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
         linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
       border: 1px solid var(--ts-border);
@@ -1139,7 +1138,7 @@ class F1PitStopOverviewCard extends LitElement {
 
     .ps-empty {
       padding: 16px;
-      border-radius: 16px;
+      border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
       border: 1px dashed rgba(255, 255, 255, 0.12);
       color: var(--ts-muted);
@@ -1150,7 +1149,6 @@ class F1PitStopOverviewCard extends LitElement {
     @media (max-width: 720px) {
       .ps-card {
         padding: 12px 10px 12px;
-        border-radius: 18px;
       }
 
       .ps-header {
@@ -2206,7 +2204,7 @@ class F1DriverLapTimesCard extends LitElement {
     .dl-card {
       position: relative;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
-      border-radius: clamp(20px, 3vw, 28px);
+      border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
         linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
       border: 1px solid var(--ts-border);
@@ -2362,7 +2360,7 @@ class F1DriverLapTimesCard extends LitElement {
 
     .dl-empty {
       padding: 16px;
-      border-radius: 16px;
+      border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
       border: 1px dashed rgba(255, 255, 255, 0.12);
       color: var(--ts-muted);
@@ -2373,7 +2371,6 @@ class F1DriverLapTimesCard extends LitElement {
     @media (max-width: 720px) {
       .dl-card {
         padding: 12px 10px 12px;
-        border-radius: 18px;
       }
 
       .dl-header {
@@ -3055,7 +3052,7 @@ class F1InvestigationsCard extends LitElement {
     .inv-card {
       position: relative;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
-      border-radius: clamp(20px, 3vw, 28px);
+      border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
         linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
       border: 1px solid var(--ts-border);
@@ -3212,7 +3209,7 @@ class F1InvestigationsCard extends LitElement {
 
     .inv-empty {
       padding: 16px;
-      border-radius: 16px;
+      border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
       border: 1px dashed rgba(255, 255, 255, 0.12);
       color: var(--ts-muted);
@@ -3894,7 +3891,7 @@ class F1TrackLimitsCard extends LitElement {
     .tl-card {
       position: relative;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
-      border-radius: clamp(20px, 3vw, 28px);
+      border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
         linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
       border: 1px solid var(--ts-border);
@@ -4072,7 +4069,7 @@ class F1TrackLimitsCard extends LitElement {
 
     .tl-empty {
       padding: 16px;
-      border-radius: 16px;
+      border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
       border: 1px dashed rgba(255, 255, 255, 0.12);
       color: var(--ts-muted);
@@ -4647,13 +4644,20 @@ class F1LiveSessionCard extends LitElement {
       --ls-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
     }
 
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+    }
+
     .ls-card {
       font-family: 'Formula1 Display', 'Titillium Web', Arial, sans-serif;
       display: flex;
       flex-direction: column;
       gap: clamp(8px, 1.5vw, 12px);
       padding: clamp(10px, 1.5vw, 14px) clamp(14px, 2vw, 20px);
-      border-radius: clamp(14px, 2vw, 20px);
+      border-radius: var(--ha-card-border-radius, 12px);
       background:
         radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.06), transparent 45%),
         linear-gradient(160deg, var(--ls-bg) 0%, var(--ls-bg-soft) 60%, #0a0a0a 100%);
@@ -5738,13 +5742,20 @@ class F1RaceControlCard extends LitElement {
       --rc-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
     }
 
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+    }
+
     .rc-card {
       font-family: 'Formula1 Display', 'Titillium Web', Arial, sans-serif;
       display: flex;
       align-items: center;
       gap: clamp(10px, 2vw, 16px);
       padding: clamp(8px, 1.2vw, 12px) clamp(12px, 2vw, 18px);
-      border-radius: clamp(10px, 1.5vw, 14px);
+      border-radius: var(--ha-card-border-radius, 12px);
       background:
         radial-gradient(circle at 10% 20%, rgba(255, 255, 255, 0.04), transparent 40%),
         linear-gradient(160deg, var(--rc-bg) 0%, var(--rc-bg-soft) 100%);
