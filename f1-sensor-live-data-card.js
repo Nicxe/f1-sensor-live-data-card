@@ -3144,6 +3144,26 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       color: var(--ts-muted);
     }
 
+    .cpd-delta-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .cpd-pos-arrow {
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 700;
+    }
+
+    .cpd-pos-arrow.up {
+      color: #34d399;
+    }
+
+    .cpd-pos-arrow.down {
+      color: #f87171;
+    }
+
     .cpd-empty {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
@@ -3228,6 +3248,9 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       return html`
         <ha-card>
           <div class="cpd-card">
+            ${this.config.show_header
+              ? html`<div class="cpd-header">${this.config.title || 'Championship Prediction Drivers'}</div>`
+              : null}
             <div class="cpd-empty">Select entities in the editor</div>
           </div>
         </ha-card>
@@ -3239,6 +3262,9 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       return html`
         <ha-card>
           <div class="cpd-card">
+            ${this.config.show_header
+              ? html`<div class="cpd-header">${this.config.title || 'Championship Prediction Drivers'}</div>`
+              : null}
             <div class="cpd-empty">Entity not found</div>
           </div>
         </ha-card>
@@ -3250,6 +3276,9 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       return html`
         <ha-card>
           <div class="cpd-card">
+            ${this.config.show_header
+              ? html`<div class="cpd-header">${this.config.title || 'Championship Prediction Drivers'}</div>`
+              : null}
             <div class="cpd-empty">No prediction data</div>
           </div>
         </ha-card>
@@ -3271,6 +3300,9 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       return html`
         <ha-card>
           <div class="cpd-card">
+            ${this.config.show_header
+              ? html`<div class="cpd-header">${this.config.title || 'Championship Prediction Drivers'}</div>`
+              : null}
             <div class="cpd-empty">No prediction data</div>
           </div>
         </ha-card>
@@ -3368,9 +3400,17 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
 
     if (col.key === 'delta') {
       const deltaClass = row.delta > 0 ? 'positive' : row.delta < 0 ? 'negative' : 'neutral';
+      const positionMove = this._getPositionMovement(row.current_position, row.predicted_position);
       return html`
         <div class="${classes.join(' ')} cpd-delta ${deltaClass}">
-          ${row.delta_display}
+          <span class="cpd-delta-wrap">
+            <span>${row.delta_display}</span>
+            ${positionMove ? html`
+              <span class="cpd-pos-arrow ${positionMove.className}" title="${positionMove.title}">
+                ${positionMove.symbol}
+              </span>
+            ` : null}
+          </span>
         </div>
       `;
     }
@@ -3496,6 +3536,21 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     const sign = value < 0 ? '-' : '+';
     const abs = Math.abs(value);
     return `${sign}${this._formatPoints(abs)}`;
+  }
+
+  _getPositionMovement(currentPosition, predictedPosition) {
+    if (!Number.isFinite(currentPosition) || !Number.isFinite(predictedPosition)) {
+      return null;
+    }
+    const change = currentPosition - predictedPosition;
+    if (change > 0) {
+      return { symbol: '▲', className: 'up', title: `Improves by ${change} position${change > 1 ? 's' : ''}` };
+    }
+    if (change < 0) {
+      const loss = Math.abs(change);
+      return { symbol: '▼', className: 'down', title: `Drops by ${loss} position${loss > 1 ? 's' : ''}` };
+    }
+    return null;
   }
 
   _normalizeTla(value) {
@@ -3675,6 +3730,26 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       color: var(--ts-muted);
     }
 
+    .cpt-delta-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .cpt-pos-arrow {
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 700;
+    }
+
+    .cpt-pos-arrow.up {
+      color: #34d399;
+    }
+
+    .cpt-pos-arrow.down {
+      color: #f87171;
+    }
+
     .cpt-empty {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
@@ -3757,6 +3832,9 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       return html`
         <ha-card>
           <div class="cpt-card">
+            ${this.config.show_header
+              ? html`<div class="cpt-header">${this.config.title || 'Championship Prediction Teams'}</div>`
+              : null}
             <div class="cpt-empty">Select entities in the editor</div>
           </div>
         </ha-card>
@@ -3768,6 +3846,9 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       return html`
         <ha-card>
           <div class="cpt-card">
+            ${this.config.show_header
+              ? html`<div class="cpt-header">${this.config.title || 'Championship Prediction Teams'}</div>`
+              : null}
             <div class="cpt-empty">Entity not found</div>
           </div>
         </ha-card>
@@ -3779,6 +3860,9 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       return html`
         <ha-card>
           <div class="cpt-card">
+            ${this.config.show_header
+              ? html`<div class="cpt-header">${this.config.title || 'Championship Prediction Teams'}</div>`
+              : null}
             <div class="cpt-empty">No prediction data</div>
           </div>
         </ha-card>
@@ -3793,6 +3877,9 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       return html`
         <ha-card>
           <div class="cpt-card">
+            ${this.config.show_header
+              ? html`<div class="cpt-header">${this.config.title || 'Championship Prediction Teams'}</div>`
+              : null}
             <div class="cpt-empty">No prediction data</div>
           </div>
         </ha-card>
@@ -3885,9 +3972,17 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
 
     if (col.key === 'delta') {
       const deltaClass = row.delta > 0 ? 'positive' : row.delta < 0 ? 'negative' : 'neutral';
+      const positionMove = this._getPositionMovement(row.current_position, row.predicted_position);
       return html`
         <div class="${classes.join(' ')} cpt-delta ${deltaClass}">
-          ${row.delta_display}
+          <span class="cpt-delta-wrap">
+            <span>${row.delta_display}</span>
+            ${positionMove ? html`
+              <span class="cpt-pos-arrow ${positionMove.className}" title="${positionMove.title}">
+                ${positionMove.symbol}
+              </span>
+            ` : null}
+          </span>
         </div>
       `;
     }
@@ -3995,6 +4090,21 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     const sign = value < 0 ? '-' : '+';
     const abs = Math.abs(value);
     return `${sign}${this._formatPoints(abs)}`;
+  }
+
+  _getPositionMovement(currentPosition, predictedPosition) {
+    if (!Number.isFinite(currentPosition) || !Number.isFinite(predictedPosition)) {
+      return null;
+    }
+    const change = currentPosition - predictedPosition;
+    if (change > 0) {
+      return { symbol: '▲', className: 'up', title: `Improves by ${change} position${change > 1 ? 's' : ''}` };
+    }
+    if (change < 0) {
+      const loss = Math.abs(change);
+      return { symbol: '▼', className: 'down', title: `Drops by ${loss} position${loss > 1 ? 's' : ''}` };
+    }
+    return null;
   }
 
   _handleCardAction() {
