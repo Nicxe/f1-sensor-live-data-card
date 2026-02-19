@@ -6264,6 +6264,9 @@ class F1LiveSessionCard extends LitElement {
   constructor() {
     super();
     this._countdownTimer = null;
+    this._sessionClockTimer = null;
+    this._clockSnapshot = null;
+    this._clockSnapshotKey = null;
   }
 
   static styles = css`
@@ -6498,6 +6501,37 @@ class F1LiveSessionCard extends LitElement {
       text-align: center;
     }
 
+    .ls-time-group {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      margin-left: clamp(8px, 1.5vw, 12px);
+      padding-left: clamp(8px, 1.5vw, 12px);
+      border-left: 1px solid var(--ls-border);
+      gap: 3px;
+      white-space: nowrap;
+    }
+
+    .ls-time-row {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+    }
+
+    .ls-time-label {
+      font-size: clamp(8px, 1.1vw, 10px);
+      color: var(--ls-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .ls-time-value {
+      font-family: 'Formula1 Display', Arial, sans-serif;
+      font-weight: 700;
+      font-size: clamp(11px, 1.5vw, 13px);
+      color: var(--ls-text);
+    }
+
     @container (max-width: 400px) {
       .ls-weather {
         gap: clamp(6px, 1vw, 10px);
@@ -6516,6 +6550,7 @@ class F1LiveSessionCard extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this._clearCountdownTimer();
+    this._clearSessionClockTimer();
   }
 
   setConfig(config) {
@@ -6527,10 +6562,14 @@ class F1LiveSessionCard extends LitElement {
       track_status_entity: 'sensor.f1_track_status',
       weather_entity: 'sensor.f1_track_weather',
       next_race_entity: 'sensor.f1_next_race',
+      session_time_remaining_entity: 'sensor.f1_session_time_remaining',
+      session_time_elapsed_entity: 'sensor.f1_session_time_elapsed',
       show_flag: true,
       show_lap_progress: true,
       show_track_status: true,
       show_weather: true,
+      show_time_remaining: false,
+      show_time_elapsed: false,
       ...config,
     };
   }
@@ -6591,6 +6630,78 @@ class F1LiveSessionCard extends LitElement {
       return null;
     }
     return { state: entity.state, ...entity.attributes };
+  }
+
+  _getSessionClockData() {
+    const remainingId = this.config.session_time_remaining_entity || 'sensor.f1_session_time_remaining';
+    const elapsedId = this.config.session_time_elapsed_entity || 'sensor.f1_session_time_elapsed';
+    const remainingEntity = this.hass?.states?.[remainingId];
+    const elapsedEntity = this.hass?.states?.[elapsedId];
+    const isValid = (e) => e && e.state !== 'unavailable' && e.state !== 'unknown' && e.state;
+
+    const parseHMS = (s) => {
+      if (!s) return null;
+      const parts = String(s).split(/[:.]/).map(Number);
+      if (parts.length !== 3 || parts.some(isNaN)) return null;
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    };
+
+    const formatHMS = (totalS) => {
+      if (totalS == null || totalS < 0) return null;
+      const h = Math.floor(totalS / 3600);
+      const m = Math.floor((totalS % 3600) / 60);
+      const s = totalS % 60;
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    const remainingRaw = isValid(remainingEntity) ? remainingEntity.state : null;
+    const elapsedRaw = isValid(elapsedEntity) ? elapsedEntity.state : null;
+
+    // Update snapshot whenever HA pushes new state values
+    const snapshotKey = `${remainingRaw}|${elapsedRaw}`;
+    if (snapshotKey !== this._clockSnapshotKey && (remainingRaw || elapsedRaw)) {
+      this._clockSnapshotKey = snapshotKey;
+      this._clockSnapshot = {
+        remainingS: parseHMS(remainingRaw),
+        elapsedS: parseHMS(elapsedRaw),
+        ts: Date.now(),
+      };
+    }
+
+    if (!this._clockSnapshot) {
+      return {
+        remaining: formatHMS(parseHMS(remainingRaw)) ?? remainingRaw,
+        elapsed: formatHMS(parseHMS(elapsedRaw)) ?? elapsedRaw,
+      };
+    }
+
+    const deltaS = Math.round((Date.now() - this._clockSnapshot.ts) / 1000);
+    return {
+      remaining: this._clockSnapshot.remainingS != null
+        ? formatHMS(this._clockSnapshot.remainingS - deltaS)
+        : null,
+      elapsed: this._clockSnapshot.elapsedS != null
+        ? formatHMS(this._clockSnapshot.elapsedS + deltaS)
+        : null,
+    };
+  }
+
+  _clearSessionClockTimer() {
+    if (this._sessionClockTimer) {
+      clearInterval(this._sessionClockTimer);
+      this._sessionClockTimer = null;
+    }
+  }
+
+  _ensureSessionClockTimer() {
+    const wantsTimer = this.config.show_time_remaining || this.config.show_time_elapsed;
+    if (!wantsTimer) {
+      this._clearSessionClockTimer();
+      return;
+    }
+    if (!this._sessionClockTimer) {
+      this._sessionClockTimer = setInterval(() => this.requestUpdate(), 1000);
+    }
   }
 
   _clearCountdownTimer() {
@@ -6913,6 +7024,7 @@ class F1LiveSessionCard extends LitElement {
       return html`<ha-card><div class="ls-card ls-unavailable">No session data</div></ha-card>`;
     }
     this._ensureCountdownTimer(sessionStatus, nextRace);
+    this._ensureSessionClockTimer();
 
     if (nextRace) {
       const gpName = nextRace.race_name?.replace(' Grand Prix', ' GP') || nextRace.race_name || 'Next race';
@@ -6954,6 +7066,7 @@ class F1LiveSessionCard extends LitElement {
     const lapData = this._getLapData();
     const trackStatus = this._getTrackStatus();
     const weather = this._getWeatherData();
+    const clockData = this._getSessionClockData();
     const trackGripRaw = sessionStatus?.track_grip;
     const trackGrip = String(trackGripRaw || '').toLowerCase();
     const showGrip = trackGrip && trackGrip !== 'normal';
@@ -7014,6 +7127,27 @@ class F1LiveSessionCard extends LitElement {
                 ` : null}
               </div>
             ` : null}
+
+            ${(() => {
+              const showRemaining = this.config.show_time_remaining && clockData.remaining;
+              const showElapsed = this.config.show_time_elapsed && clockData.elapsed;
+              return (showRemaining || showElapsed) ? html`
+                <div class="ls-time-group">
+                  ${showRemaining ? html`
+                    <div class="ls-time-row">
+                      <span class="ls-time-label">Remaining</span>
+                      <span class="ls-time-value">${clockData.remaining}</span>
+                    </div>
+                  ` : null}
+                  ${showElapsed ? html`
+                    <div class="ls-time-row">
+                      <span class="ls-time-label">Elapsed</span>
+                      <span class="ls-time-value">${clockData.elapsed}</span>
+                    </div>
+                  ` : null}
+                </div>
+              ` : null;
+            })()}
 
             ${this.config.show_track_status !== false && (trackStatus || showGrip) ? html`
               <div class="ls-status-group">
@@ -7189,10 +7323,14 @@ class F1LiveSessionCardEditor extends LitElement {
       track_status_entity: 'sensor.f1_track_status',
       weather_entity: 'sensor.f1_track_weather',
       next_race_entity: 'sensor.f1_next_race',
+      session_time_remaining_entity: 'sensor.f1_session_time_remaining',
+      session_time_elapsed_entity: 'sensor.f1_session_time_elapsed',
       show_flag: true,
       show_lap_progress: true,
       show_track_status: true,
       show_weather: true,
+      show_time_remaining: false,
+      show_time_elapsed: false,
       ...config,
     };
   }
@@ -7280,6 +7418,20 @@ class F1LiveSessionCardEditor extends LitElement {
           false,
           'sensor'
         )}
+        ${this._renderEntityPicker(
+          'session_time_remaining_entity',
+          'Session Time Remaining Sensor',
+          'Provides official countdown for timed sessions. Enable display under Display tab.',
+          false,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'session_time_elapsed_entity',
+          'Session Time Elapsed Sensor',
+          'Provides elapsed session time. Enable display under Display tab.',
+          false,
+          'sensor'
+        )}
       </div>
     `;
   }
@@ -7291,6 +7443,8 @@ class F1LiveSessionCardEditor extends LitElement {
         ${this._renderSwitch('show_lap_progress', 'Show lap progress')}
         ${this._renderSwitch('show_track_status', 'Show track status pill')}
         ${this._renderSwitch('show_weather', 'Show weather data')}
+        ${this._renderSwitch('show_time_remaining', 'Show time remaining')}
+        ${this._renderSwitch('show_time_elapsed', 'Show time elapsed')}
       </div>
     `;
   }
