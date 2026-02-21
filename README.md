@@ -10,8 +10,11 @@
 
 A collection of custom Lovelace cards designed for the [F1 Sensor integration](https://github.com/Nicxe/f1_sensor), providing live Formula 1 session data on your Home Assistant dashboards.
 
+> [!TIP]
 > **Full documentation**, including detailed card reference, configuration options, and setup guides, is available at **[nicxe.github.io/f1_sensor](https://nicxe.github.io/f1_sensor/)**.
 > Card-specific documentation is on the [Cards Overview](https://nicxe.github.io/f1_sensor/cards/overview) page.
+
+
 
 ---
 
