@@ -10,27 +10,35 @@
 
 A collection of custom Lovelace cards designed for the [F1 Sensor integration](https://github.com/Nicxe/f1_sensor), providing live Formula 1 session data on your Home Assistant dashboards.
 
-This package includes the following cards:
+> [!TIP]
+> **Full documentation**, including detailed card reference, configuration options, and setup guides, is available at **[nicxe.github.io/f1_sensor](https://nicxe.github.io/f1_sensor/)**.
+> Card-specific documentation is on the [Cards Overview](https://nicxe.github.io/f1_sensor/cards/overview) page.
 
-| Card | Description |
-|---|---|
-| `f1-sensor-live-data-card` | Tyre statistics with compound data, stint history, and lap counts |
-| `f1-pitstop-overview-card` | Pit stop timeline with tyre changes and driver positions |
-| `f1-driver-lap-times-card` | Live lap times with sector data and driver comparisons |
-| `f1-investigations-card` | Steward investigations and penalties |
-| `f1-track-limits-card` | Track limit violations per driver |
-| `f1-live-session-card` | Session status, track conditions, weather, and lap counter |
-| `f1-race-control-card` | Race control messages and flags |
+
 
 ---
 
 <img width="1408" height="1097" alt="F1-card 1" src="https://github.com/user-attachments/assets/94346421-347e-4807-8a9f-185982c5697c" />
 
---- 
+---
+
+## Available Cards
+
+| Card | Description |
+|---|---|
+| `f1-live-session-card` | Session status, track conditions, weather, and lap counter |
+| `f1-race-control-card` | Race control messages and flags |
+| `f1-sensor-live-data-card` | Tyre statistics with compound data, stint history, and lap counts |
+| `f1-pitstop-overview-card` | Pit stop timeline with tyre changes and driver positions |
+| `f1-driver-lap-times-card` | Live lap times with sector data and driver comparisons |
+| `f1-investigations-card` | Steward investigations and penalties |
+| `f1-track-limits-card` | Track limit violations per driver |
+| `f1-championship-prediction-drivers-card` | Driver championship standings with predicted final points |
+| `f1-championship-prediction-teams-card` | Constructor championship standings with predicted final points |
+
+---
 
 ## Installation
-
-You can install this card by following one of the guides below:
 
 ### With HACS (Recommended)
 
@@ -67,10 +75,9 @@ All cards can be configured using the dashboard UI editor:
 1. In the dashboard UI, click on the three dots in the top right corner.
 2. Click **Edit Dashboard**.
 3. Click the **Plus** button to add a new card.
-4. Search for the card you want, e.g. **Custom: F1 Sensor Live Data Card**.
+4. Search for the card you want, e.g. **Custom: F1 Live Session Card**.
 
-Each card has a visual editor with tabs for data sources and display options.
-
+Each card has a visual editor with tabs for data sources and display options. For a full list of configuration options per card, see the [Cards Overview](https://nicxe.github.io/f1_sensor/cards/overview) in the documentation.
 
 ## Disclaimer
 
