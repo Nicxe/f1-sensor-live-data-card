@@ -12,13 +12,13 @@ A collection of custom Lovelace cards designed for the [F1 Sensor integration](h
 
 > [!TIP]
 > **Full documentation**, including detailed card reference, configuration options, and setup guides, is available at **[nicxe.github.io/f1_sensor](https://nicxe.github.io/f1_sensor/)**.
-> Card-specific documentation is on the [Cards Overview](https://nicxe.github.io/f1_sensor/cards/overview) page.
+> Card-specific documentation is on the [Cards Overview](https://nicxe.github.io/f1_sensor/cards/cards-overview) page.
 
 
 
 ---
 
-<img width="1408" height="1097" alt="F1-card 1" src="https://github.com/user-attachments/assets/94346421-347e-4807-8a9f-185982c5697c" />
+<img width="1720" height="1396" alt="F1-card-overview" src="https://github.com/user-attachments/assets/14d4bd6e-45ef-4f34-b77f-174dd7aa9d23" />
 
 ---
 
