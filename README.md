@@ -18,7 +18,7 @@ A collection of custom Lovelace cards designed for the [F1 Sensor integration](h
 
 ---
 
-<img width="1720" height="1396" alt="image" src="https://github.com/user-attachments/assets/14d4bd6e-45ef-4f34-b77f-174dd7aa9d23" />
+<img width="1720" height="1396" alt="F1-card-overview" src="https://github.com/user-attachments/assets/14d4bd6e-45ef-4f34-b77f-174dd7aa9d23" />
 
 ---
 
