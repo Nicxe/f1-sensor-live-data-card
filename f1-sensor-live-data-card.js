@@ -499,7 +499,7 @@ class F1TyreStatisticsCard extends LitElement {
       show_compound_name: true,
       show_team_logo: false,
       team_logo_style: 'color',
-      drivers_entity: 'sensor.f1_driver_list',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
       max_best_times: 3,
       ...config,
     };
@@ -526,8 +526,8 @@ class F1TyreStatisticsCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-sensor-live-data-card',
-      entity: 'sensor.f1_tyre_statistics',
-      drivers_entity: 'sensor.f1_driver_list',
+      entity: 'sensor.f1_drivers_tyre_statistics',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
       title: 'Tyres Statistics',
     };
   }
@@ -763,7 +763,7 @@ class F1TyreStatisticsCard extends LitElement {
 
   _buildTeamLogoLookup() {
     if (!this.config.show_team_logo) return null;
-    const entityId = this.config.drivers_entity || 'sensor.f1_driver_list';
+    const entityId = this.config.drivers_entity || 'sensor.f1_drivers_driver_list';
     const driversState = this.hass?.states?.[entityId];
     const drivers = Array.isArray(driversState?.attributes?.drivers)
       ? driversState.attributes.drivers
@@ -1178,10 +1178,10 @@ class F1PitStopOverviewCard extends LitElement {
       show_pit_time: true,
       show_pit_lane_time: true,
       show_pit_delta: true,
-      drivers_entity: 'sensor.f1_driver_list',
-      tyres_entity: 'sensor.f1_current_tyres',
-      pitstops_entity: 'sensor.f1_pitstops',
-      positions_entity: 'sensor.f1_driver_positions',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
+      tyres_entity: 'sensor.f1_drivers_current_tyres',
+      pitstops_entity: 'sensor.f1_drivers_pit_stops',
+      positions_entity: 'sensor.f1_drivers_driver_positions',
       ...config,
     };
   }
@@ -1207,10 +1207,10 @@ class F1PitStopOverviewCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-pitstop-overview-card',
-      drivers_entity: 'sensor.f1_driver_list',
-      positions_entity: 'sensor.f1_driver_positions',
-      tyres_entity: 'sensor.f1_current_tyres',
-      pitstops_entity: 'sensor.f1_pitstops',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
+      positions_entity: 'sensor.f1_drivers_driver_positions',
+      tyres_entity: 'sensor.f1_drivers_current_tyres',
+      pitstops_entity: 'sensor.f1_drivers_pit_stops',
       title: 'Pit Stops & Tyres',
     };
   }
@@ -2396,8 +2396,8 @@ class F1DriverLapTimesCard extends LitElement {
       show_status: true,
       show_last_lap: true,
       team_logo_style: 'color',
-      drivers_entity: 'sensor.f1_driver_list',
-      positions_entity: 'sensor.f1_driver_positions',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
+      positions_entity: 'sensor.f1_drivers_driver_positions',
       ...config,
     };
   }
@@ -2423,8 +2423,8 @@ class F1DriverLapTimesCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-driver-lap-times-card',
-      drivers_entity: 'sensor.f1_driver_list',
-      positions_entity: 'sensor.f1_driver_positions',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
+      positions_entity: 'sensor.f1_drivers_driver_positions',
       title: 'Driver Lap Times',
     };
   }
@@ -3194,8 +3194,8 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
   setConfig(config) {
     this.config = {
       title: 'Championship Prediction Drivers',
-      entity: 'sensor.f1_championship_prediction_drivers',
-      drivers_entity: 'sensor.f1_driver_list',
+      entity: 'sensor.f1_championship_championship_prediction_drivers',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
       show_header: true,
       show_table_header: true,
       show_position: true,
@@ -3231,8 +3231,8 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-championship-prediction-drivers-card',
-      entity: 'sensor.f1_championship_prediction_drivers',
-      drivers_entity: 'sensor.f1_driver_list',
+      entity: 'sensor.f1_championship_championship_prediction_drivers',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
       title: 'Championship Prediction Drivers',
     };
   }
@@ -3780,7 +3780,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
   setConfig(config) {
     this.config = {
       title: 'Championship Prediction Teams',
-      entity: 'sensor.f1_championship_prediction_teams',
+      entity: 'sensor.f1_championship_championship_prediction_teams',
       show_header: true,
       show_table_header: true,
       show_position: true,
@@ -3816,7 +3816,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-championship-prediction-teams-card',
-      entity: 'sensor.f1_championship_prediction_teams',
+      entity: 'sensor.f1_championship_championship_prediction_teams',
       title: 'Championship Prediction Teams',
     };
   }
@@ -4229,8 +4229,8 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      entity: 'sensor.f1_championship_prediction_drivers',
-      drivers_entity: 'sensor.f1_driver_list',
+      entity: 'sensor.f1_championship_championship_prediction_drivers',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
       title: 'Championship Prediction Drivers',
       show_header: true,
       show_table_header: true,
@@ -4500,7 +4500,7 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      entity: 'sensor.f1_championship_prediction_teams',
+      entity: 'sensor.f1_championship_championship_prediction_teams',
       title: 'Championship Prediction Teams',
       show_header: true,
       show_table_header: true,
@@ -4877,9 +4877,9 @@ class F1InvestigationsCard extends LitElement {
       show_team_logo: false,
       team_logo_style: 'color',
       show_all_drivers: false,
-      investigations_entity: 'sensor.f1_investigations',
-      drivers_entity: 'sensor.f1_driver_list',
-      positions_entity: 'sensor.f1_driver_positions',
+      investigations_entity: 'sensor.f1_officials_investigations_penalties',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
+      positions_entity: 'sensor.f1_drivers_driver_positions',
       ...config,
     };
   }
@@ -4892,9 +4892,9 @@ class F1InvestigationsCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-investigations-card',
-      investigations_entity: 'sensor.f1_investigations',
-      drivers_entity: 'sensor.f1_driver_list',
-      positions_entity: 'sensor.f1_driver_positions',
+      investigations_entity: 'sensor.f1_officials_investigations_penalties',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
+      positions_entity: 'sensor.f1_drivers_driver_positions',
       title: 'Investigations & Penalties',
     };
   }
@@ -5737,9 +5737,9 @@ class F1TrackLimitsCard extends LitElement {
       show_team_logo: false,
       team_logo_style: 'color',
       show_all_drivers: false,
-      track_limits_entity: 'sensor.f1_track_limits',
-      drivers_entity: 'sensor.f1_driver_list',
-      positions_entity: 'sensor.f1_driver_positions',
+      track_limits_entity: 'sensor.f1_officials_track_limits',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
+      positions_entity: 'sensor.f1_drivers_driver_positions',
       ...config,
     };
   }
@@ -5752,9 +5752,9 @@ class F1TrackLimitsCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-track-limits-card',
-      track_limits_entity: 'sensor.f1_track_limits',
-      drivers_entity: 'sensor.f1_driver_list',
-      positions_entity: 'sensor.f1_driver_positions',
+      track_limits_entity: 'sensor.f1_officials_track_limits',
+      drivers_entity: 'sensor.f1_drivers_driver_list',
+      positions_entity: 'sensor.f1_drivers_driver_positions',
       title: 'Track Limits',
     };
   }
@@ -6555,15 +6555,15 @@ class F1LiveSessionCard extends LitElement {
 
   setConfig(config) {
     this.config = {
-      session_entity: 'sensor.f1_current_session',
-      session_status_entity: 'sensor.f1_session_status',
-      formation_start_entity: 'binary_sensor.f1_formation_start',
-      lap_count_entity: 'sensor.f1_race_lap_count',
-      track_status_entity: 'sensor.f1_track_status',
-      weather_entity: 'sensor.f1_track_weather',
-      next_race_entity: 'sensor.f1_next_race',
-      session_time_remaining_entity: 'sensor.f1_session_time_remaining',
-      session_time_elapsed_entity: 'sensor.f1_session_time_elapsed',
+      session_entity: 'sensor.f1_session_current_session',
+      session_status_entity: 'sensor.f1_session_session_status',
+      formation_start_entity: 'binary_sensor.f1_session_formation_start',
+      lap_count_entity: 'sensor.f1_session_race_lap_count',
+      track_status_entity: 'sensor.f1_session_track_status',
+      weather_entity: 'sensor.f1_session_track_weather',
+      next_race_entity: 'sensor.f1_race_next_race',
+      session_time_remaining_entity: 'sensor.f1_session_session_time_remaining',
+      session_time_elapsed_entity: 'sensor.f1_session_session_time_elapsed',
       show_flag: true,
       show_lap_progress: true,
       show_track_status: true,
@@ -6581,13 +6581,13 @@ class F1LiveSessionCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-live-session-card',
-      session_entity: 'sensor.f1_current_session',
-      session_status_entity: 'sensor.f1_session_status',
-      formation_start_entity: 'binary_sensor.f1_formation_start',
-      lap_count_entity: 'sensor.f1_race_lap_count',
-      track_status_entity: 'sensor.f1_track_status',
-      weather_entity: 'sensor.f1_track_weather',
-      next_race_entity: 'sensor.f1_next_race',
+      session_entity: 'sensor.f1_session_current_session',
+      session_status_entity: 'sensor.f1_session_session_status',
+      formation_start_entity: 'binary_sensor.f1_session_formation_start',
+      lap_count_entity: 'sensor.f1_session_race_lap_count',
+      track_status_entity: 'sensor.f1_session_track_status',
+      weather_entity: 'sensor.f1_session_track_weather',
+      next_race_entity: 'sensor.f1_race_next_race',
     };
   }
 
@@ -6613,9 +6613,9 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getSessionStatusData() {
-    const primaryId = this.config.session_status_entity || 'sensor.f1_session_status';
+    const primaryId = this.config.session_status_entity || 'sensor.f1_session_session_status';
     const entity = this.hass?.states?.[primaryId]
-      || this.hass?.states?.['sensor.f1_session_status'];
+      || this.hass?.states?.['sensor.f1_session_session_status'];
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6623,9 +6623,9 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getNextRaceData() {
-    const primaryId = this.config.next_race_entity || 'sensor.f1_next_race';
+    const primaryId = this.config.next_race_entity || 'sensor.f1_race_next_race';
     const entity = this.hass?.states?.[primaryId]
-      || this.hass?.states?.['sensor.f1_next_race'];
+      || this.hass?.states?.['sensor.f1_race_next_race'];
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6633,8 +6633,8 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getSessionClockData() {
-    const remainingId = this.config.session_time_remaining_entity || 'sensor.f1_session_time_remaining';
-    const elapsedId = this.config.session_time_elapsed_entity || 'sensor.f1_session_time_elapsed';
+    const remainingId = this.config.session_time_remaining_entity || 'sensor.f1_session_session_time_remaining';
+    const elapsedId = this.config.session_time_elapsed_entity || 'sensor.f1_session_session_time_elapsed';
     const remainingEntity = this.hass?.states?.[remainingId];
     const elapsedEntity = this.hass?.states?.[elapsedId];
     const isValid = (e) => e && e.state !== 'unavailable' && e.state !== 'unknown' && e.state;
@@ -6741,7 +6741,7 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getFormationStart() {
-    const entityId = this.config.formation_start_entity || 'binary_sensor.f1_formation_start';
+    const entityId = this.config.formation_start_entity || 'binary_sensor.f1_session_formation_start';
     const entity = this.hass?.states?.[entityId];
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return false;
@@ -7317,14 +7317,14 @@ class F1LiveSessionCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      session_entity: 'sensor.f1_current_session',
-      session_status_entity: 'sensor.f1_session_status',
-      lap_count_entity: 'sensor.f1_race_lap_count',
-      track_status_entity: 'sensor.f1_track_status',
-      weather_entity: 'sensor.f1_track_weather',
-      next_race_entity: 'sensor.f1_next_race',
-      session_time_remaining_entity: 'sensor.f1_session_time_remaining',
-      session_time_elapsed_entity: 'sensor.f1_session_time_elapsed',
+      session_entity: 'sensor.f1_session_current_session',
+      session_status_entity: 'sensor.f1_session_session_status',
+      lap_count_entity: 'sensor.f1_session_race_lap_count',
+      track_status_entity: 'sensor.f1_session_track_status',
+      weather_entity: 'sensor.f1_session_track_weather',
+      next_race_entity: 'sensor.f1_race_next_race',
+      session_time_remaining_entity: 'sensor.f1_session_session_time_remaining',
+      session_time_elapsed_entity: 'sensor.f1_session_session_time_elapsed',
       show_flag: true,
       show_lap_progress: true,
       show_track_status: true,
@@ -7781,7 +7781,7 @@ class F1RaceControlCard extends LitElement {
 
   setConfig(config) {
     this.config = {
-      entity: 'sensor.f1_race_control',
+      entity: 'sensor.f1_officials_race_control',
       show_fia_logo: true,
       min_display_time: 0,
       ...config,
@@ -7795,7 +7795,7 @@ class F1RaceControlCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-race-control-card',
-      entity: 'sensor.f1_race_control',
+      entity: 'sensor.f1_officials_race_control',
     };
   }
 
@@ -8082,7 +8082,7 @@ class F1RaceControlCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      entity: 'sensor.f1_race_control',
+      entity: 'sensor.f1_officials_race_control',
       show_fia_logo: true,
       min_display_time: 0,
       ...config,
