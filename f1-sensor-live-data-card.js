@@ -211,6 +211,43 @@ const TRACK_STATUS_LABELS = {
   RED: 'Red Flag',
 };
 
+const LEGACY_ENTITY_ID_FALLBACKS = {
+  'sensor.f1_drivers_driver_list': 'sensor.f1_driver_list',
+  'sensor.f1_drivers_tyre_statistics': 'sensor.f1_tyre_statistics',
+  'sensor.f1_drivers_current_tyres': 'sensor.f1_current_tyres',
+  'sensor.f1_drivers_pitstops': 'sensor.f1_pitstops',
+  'sensor.f1_drivers_driver_positions': 'sensor.f1_driver_positions',
+  'sensor.f1_championship_championship_prediction_drivers': 'sensor.f1_championship_prediction_drivers',
+  'sensor.f1_championship_championship_prediction_teams': 'sensor.f1_championship_prediction_teams',
+  'sensor.f1_officials_investigations': 'sensor.f1_investigations',
+  'sensor.f1_officials_track_limits': 'sensor.f1_track_limits',
+  'sensor.f1_officials_race_control': 'sensor.f1_race_control',
+  'sensor.f1_session_current_session': 'sensor.f1_current_session',
+  'sensor.f1_session_session_status': 'sensor.f1_session_status',
+  'sensor.f1_session_race_lap_count': 'sensor.f1_race_lap_count',
+  'sensor.f1_session_track_status': 'sensor.f1_track_status',
+  'sensor.f1_session_track_weather': 'sensor.f1_track_weather',
+  'sensor.f1_session_session_time_remaining': 'sensor.f1_session_time_remaining',
+  'sensor.f1_session_session_time_elapsed': 'sensor.f1_session_time_elapsed',
+  'sensor.f1_race_next_race': 'sensor.f1_next_race',
+  'binary_sensor.f1_session_formation_start': 'binary_sensor.f1_formation_start',
+};
+
+const resolveEntityIdWithFallback = (hass, entityId) => {
+  if (!hass || !entityId) return entityId;
+  const states = hass.states || {};
+  if (states[entityId]) return entityId;
+  const fallback = LEGACY_ENTITY_ID_FALLBACKS[entityId];
+  if (fallback && states[fallback]) return fallback;
+  return entityId;
+};
+
+const getEntityStateWithFallback = (hass, entityId) => {
+  if (!hass || !entityId) return null;
+  const resolvedId = resolveEntityIdWithFallback(hass, entityId);
+  return hass.states?.[resolvedId] || null;
+};
+
 const F1_COUNTRY_CODES = {
   'Bahrain': 'bh', 'Saudi Arabia': 'sa', 'Australia': 'au',
   'Japan': 'jp', 'China': 'cn', 'USA': 'us', 'Monaco': 'mc',
@@ -548,7 +585,7 @@ class F1TyreStatisticsCard extends LitElement {
       `;
     }
 
-    const stateObj = this.hass.states?.[this.config.entity];
+    const stateObj = getEntityStateWithFallback(this.hass, this.config.entity);
     if (!stateObj) {
       return html`
         <ha-card>
@@ -764,7 +801,7 @@ class F1TyreStatisticsCard extends LitElement {
   _buildTeamLogoLookup() {
     if (!this.config.show_team_logo) return null;
     const entityId = this.config.drivers_entity || 'sensor.f1_drivers_driver_list';
-    const driversState = this.hass?.states?.[entityId];
+    const driversState = getEntityStateWithFallback(this.hass, entityId);
     const drivers = Array.isArray(driversState?.attributes?.drivers)
       ? driversState.attributes.drivers
       : [];
@@ -1180,7 +1217,7 @@ class F1PitStopOverviewCard extends LitElement {
       show_pit_delta: true,
       drivers_entity: 'sensor.f1_drivers_driver_list',
       tyres_entity: 'sensor.f1_drivers_current_tyres',
-      pitstops_entity: 'sensor.f1_drivers_pit_stops',
+      pitstops_entity: 'sensor.f1_drivers_pitstops',
       positions_entity: 'sensor.f1_drivers_driver_positions',
       ...config,
     };
@@ -1210,7 +1247,7 @@ class F1PitStopOverviewCard extends LitElement {
       drivers_entity: 'sensor.f1_drivers_driver_list',
       positions_entity: 'sensor.f1_drivers_driver_positions',
       tyres_entity: 'sensor.f1_drivers_current_tyres',
-      pitstops_entity: 'sensor.f1_drivers_pit_stops',
+      pitstops_entity: 'sensor.f1_drivers_pitstops',
       title: 'Pit Stops & Tyres',
     };
   }
@@ -1232,7 +1269,7 @@ class F1PitStopOverviewCard extends LitElement {
       `;
     }
 
-    const driversState = this.hass.states?.[this.config.drivers_entity];
+    const driversState = getEntityStateWithFallback(this.hass, this.config.drivers_entity);
     if (!driversState) {
       return html`
         <ha-card>
@@ -1244,14 +1281,14 @@ class F1PitStopOverviewCard extends LitElement {
     }
 
     const drivers = this._asList(driversState?.attributes?.drivers);
-    const tyresState = this.hass.states?.[this.config.tyres_entity];
+    const tyresState = getEntityStateWithFallback(this.hass, this.config.tyres_entity);
     const tyres = this._asList(tyresState?.attributes?.drivers);
-    const pitState = this.hass.states?.[this.config.pitstops_entity];
+    const pitState = getEntityStateWithFallback(this.hass, this.config.pitstops_entity);
     const pitCars = pitState?.attributes?.cars && typeof pitState.attributes.cars === 'object'
       ? pitState.attributes.cars
       : {};
     const positionsState = this.config.positions_entity
-      ? this.hass.states?.[this.config.positions_entity]
+      ? getEntityStateWithFallback(this.hass, this.config.positions_entity)
       : null;
     const positions = positionsState?.attributes?.drivers;
 
@@ -1891,6 +1928,7 @@ class F1TyreStatisticsCardEditor extends LitElement {
     this._config = newConfig;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
   }
+
 }
 
 class F1PitStopOverviewCardEditor extends LitElement {
@@ -2150,6 +2188,7 @@ class F1PitStopOverviewCardEditor extends LitElement {
     this._config = newConfig;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
   }
+
 }
 
 // ============================================================================
@@ -2199,10 +2238,13 @@ class F1DriverLapTimesCard extends LitElement {
       background: transparent;
       box-shadow: none;
       border: none;
+      overflow: hidden;
     }
 
     .dl-card {
       position: relative;
+      display: flex;
+      flex-direction: column;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
@@ -2231,6 +2273,12 @@ class F1DriverLapTimesCard extends LitElement {
     .dl-table {
       display: grid;
       gap: 6px;
+      min-width: max-content;
+    }
+
+    .dl-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     .dl-row {
@@ -2302,6 +2350,52 @@ class F1DriverLapTimesCard extends LitElement {
     .dl-cell.group-start {
       padding-left: 6px;
       border-left: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .dl-cell.lap-column {
+      justify-content: center;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      min-width: 84px;
+    }
+
+    .dl-lap-value-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+    }
+
+    .dl-lap-time {
+      display: inline-block;
+      min-width: 58px;
+      text-align: right;
+    }
+
+    .dl-lap-trend {
+      font-size: 9px;
+      line-height: 1;
+      font-weight: 700;
+      opacity: 0.95;
+      min-width: 10px;
+      text-align: center;
+    }
+
+    .dl-lap-trend.faster {
+      color: #22c55e;
+    }
+
+    .dl-lap-trend.slower {
+      color: #f87171;
+    }
+
+    .dl-cell.lap-column.best-lap-cell {
+      background: rgba(34, 197, 94, 0.22);
+      border-radius: 8px;
+      color: #dcfce7;
+      font-weight: 700;
+      margin: 1px 4px 1px 2px;
     }
 
     .dl-tla {
@@ -2395,6 +2489,10 @@ class F1DriverLapTimesCard extends LitElement {
       show_tla: true,
       show_status: true,
       show_last_lap: true,
+      show_best_lap: true,
+      show_lap_history: false,
+      lap_history_limit: 0,
+      show_lap_trend: true,
       team_logo_style: 'color',
       drivers_entity: 'sensor.f1_drivers_driver_list',
       positions_entity: 'sensor.f1_drivers_driver_positions',
@@ -2416,7 +2514,7 @@ class F1DriverLapTimesCard extends LitElement {
       columns: 12,
       min_columns: 4,
       max_columns: 12,
-      min_rows: 4,
+      min_rows: 13,
     };
   }
 
@@ -2446,8 +2544,8 @@ class F1DriverLapTimesCard extends LitElement {
       `;
     }
 
-    const driversState = this.hass.states?.[this.config.drivers_entity];
-    const positionsState = this.hass.states?.[this.config.positions_entity];
+    const driversState = getEntityStateWithFallback(this.hass, this.config.drivers_entity);
+    const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
     if (!driversState || !positionsState) {
       return html`
         <ha-card>
@@ -2462,8 +2560,12 @@ class F1DriverLapTimesCard extends LitElement {
     const positions = positionsState?.attributes?.drivers;
     const fastestLap = positionsState?.attributes?.fastest_lap;
 
+    const lapHistoryLimit = this._normalizeLapHistoryLimit(this.config?.lap_history_limit);
     const rows = this._buildRows(drivers, positions, fastestLap);
-    const columns = this._columns();
+    const lapNumbers = this.config.show_lap_history === true
+      ? this._resolveLapNumbers(positionsState, rows, lapHistoryLimit)
+      : [];
+    const columns = this._columns(lapNumbers);
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
@@ -2482,28 +2584,51 @@ class F1DriverLapTimesCard extends LitElement {
           ${this.config.show_header
             ? html`<div class="dl-header">${this.config.title || 'Driver Lap Times'}</div>`
             : null}
-          <div class="dl-table" style="--dl-columns: ${gridColumns};">
-            ${this.config.show_table_header ? this._renderHeader(columns) : null}
-            ${rows.map((row) => this._renderRow(row, columns))}
+          <div class="dl-scroll">
+            <div class="dl-table" style="--dl-columns: ${gridColumns};">
+              ${this.config.show_table_header ? this._renderHeader(columns) : null}
+              ${rows.map((row) => this._renderRow(row, columns))}
+            </div>
           </div>
         </div>
       </ha-card>
     `;
   }
 
-  _columns() {
+  _columns(lapNumbers = []) {
     const cols = [];
     if (this.config.show_position !== false) {
-      cols.push({ key: 'position', label: 'POS', width: '0.14fr', tabular: true, compact: true, hideHeader: true });
+      cols.push({ key: 'position', label: 'POS', width: '44px', tabular: true, compact: true, hideHeader: true });
     }
     if (this.config.show_team_logo !== false) {
-      cols.push({ key: 'logo', label: 'LOGO', width: '0.16fr', compact: true, hideHeader: true });
+      cols.push({ key: 'logo', label: 'LOGO', width: '30px', compact: true, hideHeader: true });
     }
     if (this.config.show_tla !== false) {
-      cols.push({ key: 'tla', label: 'TLA', width: '0.36fr', compact: true, hideHeader: true });
+      cols.push({ key: 'tla', label: 'TLA', width: '74px', compact: true, hideHeader: true });
     }
+    const lapColumns = [];
     if (this.config.show_last_lap !== false) {
-      cols.push({ key: 'last_lap', label: 'LAST', width: '1fr', numeric: true, groupStart: true });
+      lapColumns.push({ key: 'last_lap', label: 'LAST', width: '86px', numeric: true });
+    }
+    if (this.config.show_best_lap !== false) {
+      lapColumns.push({ key: 'best_lap', label: 'BEST', width: '86px', numeric: true });
+    }
+    if (this.config.show_lap_history === true && Array.isArray(lapNumbers)) {
+      lapNumbers.forEach((lap, index) => {
+        lapColumns.push({
+          key: `lap_${lap}`,
+          label: `L${lap}`,
+          width: '92px',
+          numeric: true,
+          type: 'lap',
+          lap,
+          groupStart: index === 0,
+        });
+      });
+    }
+    if (lapColumns.length > 0) {
+      lapColumns[0].groupStart = true;
+      cols.push(...lapColumns);
     }
     return cols;
   }
@@ -2511,11 +2636,20 @@ class F1DriverLapTimesCard extends LitElement {
   _renderHeader(columns) {
     return html`
       <div class="dl-row header">
-        ${columns.map((col) => html`
-          <div class="dl-cell ${col.numeric ? 'numeric' : ''} ${col.center ? 'center' : ''} ${col.tabular ? 'tabular' : ''} ${col.groupStart ? 'group-start' : ''} ${col.compact ? 'compact' : ''}">
-            ${col.hideHeader ? '' : col.label}
-          </div>
-        `)}
+        ${columns.map((col) => {
+          const classes = ['dl-cell'];
+          if (col.numeric) classes.push('numeric');
+          if (col.center) classes.push('center');
+          if (col.tabular) classes.push('tabular');
+          if (col.groupStart) classes.push('group-start');
+          if (col.compact) classes.push('compact');
+          if (col.type === 'lap') classes.push('lap-column');
+          return html`
+            <div class="${classes.join(' ')}">
+              ${col.hideHeader ? '' : col.label}
+            </div>
+          `;
+        })}
       </div>
     `;
   }
@@ -2539,6 +2673,7 @@ class F1DriverLapTimesCard extends LitElement {
     if (col.groupStart) classes.push('group-start');
     if (col.compact) classes.push('compact');
     if (col.key === 'tla') classes.push('dl-tla');
+    if (col.type === 'lap') classes.push('lap-column');
 
     let style = '';
     if (col.key === 'tla' && row.team_color) {
@@ -2566,7 +2701,27 @@ class F1DriverLapTimesCard extends LitElement {
     let value = row[col.key];
     if (col.key === 'position') value = row.position ?? '--';
     if (col.key === 'last_lap') value = row.last_lap || '--:--.---';
+    if (col.key === 'best_lap') value = row.best_lap || '--:--.---';
     if (col.key === 'tla') value = row.tla || '--';
+    if (col.type === 'lap') {
+      const lapTime = row.laps_by_number?.[col.lap] || '--';
+      value = lapTime;
+      if (Number.isFinite(row.best_lap_number) && row.best_lap_number === col.lap && lapTime !== '--') {
+        classes.push('best-lap-cell');
+      }
+      const trend = this.config.show_lap_trend !== false
+        ? this._resolveLapTrend(row.laps_by_number, col.lap)
+        : '';
+      const trendArrow = trend === 'faster' ? '▲' : trend === 'slower' ? '▼' : '';
+      return html`
+        <div class="${classes.join(' ')}" style="${style}">
+          <span class="dl-lap-value-wrap">
+            <span class="dl-lap-time">${value ?? '--'}</span>
+            ${trendArrow ? html`<span class="dl-lap-trend ${trend}" aria-hidden="true">${trendArrow}</span>` : null}
+          </span>
+        </div>
+      `;
+    }
 
     if (col.key === 'tla' && this.config.show_status !== false && row.status) {
       const statusClasses = ['dl-status', 'dl-status-inline'];
@@ -2602,7 +2757,7 @@ class F1DriverLapTimesCard extends LitElement {
         pos?.current_position ?? pos?.grid_position ?? driver?.position,
       );
 
-      const latestLap = this._latestLapTime(pos);
+      const lapSnapshot = this._buildLapSnapshot(pos);
       const isFastest = Boolean(pos?.fastest_lap) || this._matchesFastest(rn, tlaKey, fastestInfo);
       const statusInfo = this._statusLabel(pos);
 
@@ -2615,7 +2770,12 @@ class F1DriverLapTimesCard extends LitElement {
         retired: statusInfo?.retired === true,
         team_color: teamColor,
         team_logo: teamLogo,
-        last_lap: latestLap,
+        last_lap: lapSnapshot.last_lap,
+        best_lap: lapSnapshot.best_lap,
+        best_lap_number: lapSnapshot.best_lap_number,
+        laps_by_number: lapSnapshot.laps_by_number,
+        max_lap: lapSnapshot.max_lap,
+        completed_laps: lapSnapshot.completed_laps,
         is_fastest: isFastest,
       };
     });
@@ -2657,30 +2817,152 @@ class F1DriverLapTimesCard extends LitElement {
     return map;
   }
 
-  _latestLapTime(positionInfo) {
-    if (!positionInfo || typeof positionInfo !== 'object') return '--:--.---';
-    const laps = positionInfo?.laps;
-    if (!laps || typeof laps !== 'object') return '--:--.---';
-    let lapKey = null;
-    const completed = Number(positionInfo?.completed_laps);
-    if (Number.isFinite(completed) && completed > 0) {
-      lapKey = String(Math.floor(completed));
-      if (!Object.prototype.hasOwnProperty.call(laps, lapKey)) {
-        lapKey = null;
+  _buildLapSnapshot(positionInfo) {
+    const lapEntries = this._normalizeLapEntries(positionInfo?.laps);
+    const completedLaps = Number(positionInfo?.completed_laps);
+    const lastLapEntry = this._resolveLastLapEntry(lapEntries, completedLaps);
+    const bestLapEntry = this._resolveBestLapEntry(lapEntries);
+    const lapsByNumber = {};
+    lapEntries.forEach((entry) => {
+      lapsByNumber[entry.lap] = entry.time;
+    });
+    const maxLap = lapEntries.length > 0 ? lapEntries[lapEntries.length - 1].lap : 0;
+    const completed = Number.isFinite(completedLaps) && completedLaps > 0
+      ? Math.floor(completedLaps)
+      : 0;
+
+    return {
+      last_lap: lastLapEntry?.time || '--:--.---',
+      best_lap: bestLapEntry?.time || '--:--.---',
+      best_lap_number: bestLapEntry?.lap ?? null,
+      laps_by_number: lapsByNumber,
+      max_lap: maxLap,
+      completed_laps: completed,
+    };
+  }
+
+  _resolveLapNumbers(positionsState, rows, lapHistoryLimit) {
+    const totalLaps = this._parsePositiveInt(positionsState?.attributes?.total_laps);
+    const currentLap = this._parsePositiveInt(positionsState?.state);
+    let maxSeenLap = 0;
+    rows.forEach((row) => {
+      const completed = this._parsePositiveInt(row?.completed_laps);
+      const maxLap = this._parsePositiveInt(row?.max_lap);
+      if (completed > maxSeenLap) maxSeenLap = completed;
+      if (maxLap > maxSeenLap) maxSeenLap = maxLap;
+    });
+
+    const knownLapExtent = totalLaps || Math.max(currentLap, maxSeenLap);
+    if (knownLapExtent <= 0) return [];
+
+    if (lapHistoryLimit > 0) {
+      const limit = lapHistoryLimit;
+      const anchorLap = currentLap || maxSeenLap || 1;
+      if (anchorLap > limit) {
+        const end = totalLaps ? Math.min(anchorLap, totalLaps) : anchorLap;
+        const start = Math.max(1, end - limit + 1);
+        return this._buildLapRange(start, end);
       }
+      const end = totalLaps ? Math.min(limit, totalLaps) : limit;
+      return this._buildLapRange(1, end);
     }
-    if (!lapKey) {
-      let maxKey = null;
-      Object.keys(laps).forEach((key) => {
-        const num = Number(key);
-        if (!Number.isFinite(num)) return;
-        if (maxKey === null || num > maxKey) maxKey = num;
-      });
-      if (maxKey !== null) lapKey = String(maxKey);
+
+    return this._buildLapRange(1, knownLapExtent);
+  }
+
+  _buildLapRange(startLap, endLap) {
+    const start = this._parsePositiveInt(startLap);
+    const end = this._parsePositiveInt(endLap);
+    if (start <= 0 || end <= 0 || end < start) return [];
+    const range = [];
+    for (let lap = start; lap <= end; lap += 1) {
+      range.push(lap);
     }
-    const time = lapKey ? laps[lapKey] : null;
-    if (typeof time === 'string' && time.trim()) return time;
-    return '--:--.---';
+    return range;
+  }
+
+  _parsePositiveInt(value) {
+    const num = Number.parseInt(value, 10);
+    return Number.isFinite(num) && num > 0 ? num : 0;
+  }
+
+  _resolveLapTrend(lapsByNumber, lap) {
+    if (!lapsByNumber || typeof lapsByNumber !== 'object') return '';
+    const currentLap = this._parsePositiveInt(lap);
+    if (currentLap <= 1) return '';
+    const currentTime = lapsByNumber[currentLap];
+    const previousTime = lapsByNumber[currentLap - 1];
+    const currentSecs = this._parseLapTimeSeconds(currentTime);
+    const previousSecs = this._parseLapTimeSeconds(previousTime);
+    if (currentSecs === null || previousSecs === null) return '';
+    if (currentSecs < previousSecs) return 'faster';
+    if (currentSecs > previousSecs) return 'slower';
+    return '';
+  }
+
+  _normalizeLapEntries(laps) {
+    if (!laps || typeof laps !== 'object') return [];
+    const map = new Map();
+    Object.entries(laps).forEach(([key, value]) => {
+      const lap = Number(key);
+      if (!Number.isFinite(lap) || lap <= 0) return;
+      if (typeof value !== 'string' || !value.trim()) return;
+      map.set(Math.floor(lap), value.trim());
+    });
+    return [...map.entries()]
+      .map(([lap, time]) => ({ lap, time }))
+      .sort((a, b) => a.lap - b.lap);
+  }
+
+  _resolveLastLapEntry(entries, completedLaps) {
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    if (Number.isFinite(completedLaps) && completedLaps > 0) {
+      const completedLap = Math.floor(completedLaps);
+      const fromCompleted = entries.find((entry) => entry.lap === completedLap);
+      if (fromCompleted) return fromCompleted;
+    }
+    return entries[entries.length - 1];
+  }
+
+  _resolveBestLapEntry(entries) {
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    let bestEntry = null;
+    let bestSeconds = null;
+    entries.forEach((entry) => {
+      const seconds = this._parseLapTimeSeconds(entry.time);
+      if (seconds === null) return;
+      if (bestSeconds === null || seconds < bestSeconds || (seconds === bestSeconds && entry.lap < bestEntry.lap)) {
+        bestSeconds = seconds;
+        bestEntry = entry;
+      }
+    });
+    return bestEntry;
+  }
+
+  _parseLapTimeSeconds(value) {
+    if (typeof value !== 'string') return null;
+    const text = value.trim();
+    if (!text) return null;
+
+    const sections = text.split(':');
+    const secPart = sections.pop();
+    if (!secPart || !secPart.includes('.')) return null;
+
+    const [secWhole, msPart] = secPart.split('.');
+    if (!/^\d+$/.test(secWhole) || !/^\d+$/.test(msPart)) return null;
+
+    let total = Number(secWhole);
+    total += Number(msPart.padEnd(3, '0').slice(0, 3)) / 1000;
+
+    let multiplier = 60;
+    for (let i = sections.length - 1; i >= 0; i -= 1) {
+      const unit = sections[i];
+      if (!/^\d+$/.test(unit)) return null;
+      total += Number(unit) * multiplier;
+      multiplier *= 60;
+    }
+
+    return Number.isFinite(total) ? total : null;
   }
 
   _compareRacingNumber(a, b) {
@@ -2702,6 +2984,11 @@ class F1DriverLapTimesCard extends LitElement {
     if (!match) return null;
     const num = Number(match[0]);
     return Number.isFinite(num) ? num : null;
+  }
+
+  _normalizeLapHistoryLimit(value) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 
   _normalizeFastestLap(value) {
@@ -2944,6 +3231,28 @@ class F1DriverLapTimesCardEditor extends LitElement {
         ${this._renderSwitch('show_tla', 'Show TLA', 'Driver codes like VER, HAM')}
         ${this._renderSwitch('show_status', 'Show status')}
         ${this._renderSwitch('show_last_lap', 'Show last lap time')}
+        ${this._renderSwitch('show_best_lap', 'Show best lap time')}
+        ${this._renderSwitch('show_lap_trend', 'Show lap trend arrows', 'Shows ▲/▼ versus previous lap in lap columns')}
+        ${this._renderSwitch(
+          'show_lap_history',
+          'Show lap history',
+          'Displays lap columns in table form (L1, L2, L3...). Use 0 below to show all laps.'
+        )}
+
+        ${this._config.show_lap_history === true ? html`
+          <ha-textfield
+            .label=${'Lap history limit (0 = all laps)'}
+            .type=${'number'}
+            .min=${'0'}
+            .step=${'1'}
+            .value=${String(this._normalizeLapHistoryLimit(this._config.lap_history_limit))}
+            @input=${(e) => {
+              const parsed = Number.parseInt(e.target.value, 10);
+              const limit = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+              this._valueChanged('lap_history_limit', limit);
+            }}
+          ></ha-textfield>
+        ` : null}
       </div>
     `;
   }
@@ -2997,6 +3306,11 @@ class F1DriverLapTimesCardEditor extends LitElement {
     const newConfig = { ...this._config, [name]: value };
     this._config = newConfig;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+
+  _normalizeLapHistoryLimit(value) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 }
 
@@ -3257,7 +3571,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       `;
     }
 
-    const predictionState = this.hass.states?.[this.config.entity];
+    const predictionState = getEntityStateWithFallback(this.hass, this.config.entity);
     if (!predictionState) {
       return html`
         <ha-card>
@@ -3286,7 +3600,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     }
 
     const driverListState = this.config.drivers_entity
-      ? this.hass.states?.[this.config.drivers_entity]
+      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
       : null;
     const driverList = Array.isArray(driverListState?.attributes?.drivers)
       ? driverListState.attributes.drivers
@@ -3841,7 +4155,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       `;
     }
 
-    const predictionState = this.hass.states?.[this.config.entity];
+    const predictionState = getEntityStateWithFallback(this.hass, this.config.entity);
     if (!predictionState) {
       return html`
         <ha-card>
@@ -4877,7 +5191,7 @@ class F1InvestigationsCard extends LitElement {
       show_team_logo: false,
       team_logo_style: 'color',
       show_all_drivers: false,
-      investigations_entity: 'sensor.f1_officials_investigations_penalties',
+      investigations_entity: 'sensor.f1_officials_investigations',
       drivers_entity: 'sensor.f1_drivers_driver_list',
       positions_entity: 'sensor.f1_drivers_driver_positions',
       ...config,
@@ -4892,7 +5206,7 @@ class F1InvestigationsCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-investigations-card',
-      investigations_entity: 'sensor.f1_officials_investigations_penalties',
+      investigations_entity: 'sensor.f1_officials_investigations',
       drivers_entity: 'sensor.f1_drivers_driver_list',
       positions_entity: 'sensor.f1_drivers_driver_positions',
       title: 'Investigations & Penalties',
@@ -4909,19 +5223,19 @@ class F1InvestigationsCard extends LitElement {
       return html`<ha-card><div class="inv-card"><div class="inv-empty">Select entities in the editor</div></div></ha-card>`;
     }
 
-    const invState = this.hass.states?.[this.config.investigations_entity];
+    const invState = getEntityStateWithFallback(this.hass, this.config.investigations_entity);
     if (!invState) {
       return html`<ha-card><div class="inv-card"><div class="inv-empty">Investigations entity not found</div></div></ha-card>`;
     }
 
     const driversState = this.config.drivers_entity
-      ? this.hass.states?.[this.config.drivers_entity]
+      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
       : null;
     const drivers = Array.isArray(driversState?.attributes?.drivers)
       ? driversState.attributes.drivers
       : [];
     const positionsState = this.config.positions_entity
-      ? this.hass.states?.[this.config.positions_entity]
+      ? getEntityStateWithFallback(this.hass, this.config.positions_entity)
       : null;
     const positions = positionsState?.attributes?.drivers;
 
@@ -5769,19 +6083,19 @@ class F1TrackLimitsCard extends LitElement {
       return html`<ha-card><div class="tl-card"><div class="tl-empty">Select entities in the editor</div></div></ha-card>`;
     }
 
-    const limitsState = this.hass.states?.[this.config.track_limits_entity];
+    const limitsState = getEntityStateWithFallback(this.hass, this.config.track_limits_entity);
     if (!limitsState) {
       return html`<ha-card><div class="tl-card"><div class="tl-empty">Track limits entity not found</div></div></ha-card>`;
     }
 
     const driversState = this.config.drivers_entity
-      ? this.hass.states?.[this.config.drivers_entity]
+      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
       : null;
     const drivers = Array.isArray(driversState?.attributes?.drivers)
       ? driversState.attributes.drivers
       : [];
     const positionsState = this.config.positions_entity
-      ? this.hass.states?.[this.config.positions_entity]
+      ? getEntityStateWithFallback(this.hass, this.config.positions_entity)
       : null;
     const positions = positionsState?.attributes?.drivers;
 
@@ -6605,7 +6919,7 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getSessionData() {
-    const entity = this.hass?.states?.[this.config.session_entity];
+    const entity = getEntityStateWithFallback(this.hass, this.config.session_entity);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6614,8 +6928,7 @@ class F1LiveSessionCard extends LitElement {
 
   _getSessionStatusData() {
     const primaryId = this.config.session_status_entity || 'sensor.f1_session_session_status';
-    const entity = this.hass?.states?.[primaryId]
-      || this.hass?.states?.['sensor.f1_session_session_status'];
+    const entity = getEntityStateWithFallback(this.hass, primaryId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6624,8 +6937,7 @@ class F1LiveSessionCard extends LitElement {
 
   _getNextRaceData() {
     const primaryId = this.config.next_race_entity || 'sensor.f1_race_next_race';
-    const entity = this.hass?.states?.[primaryId]
-      || this.hass?.states?.['sensor.f1_race_next_race'];
+    const entity = getEntityStateWithFallback(this.hass, primaryId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6635,8 +6947,8 @@ class F1LiveSessionCard extends LitElement {
   _getSessionClockData() {
     const remainingId = this.config.session_time_remaining_entity || 'sensor.f1_session_session_time_remaining';
     const elapsedId = this.config.session_time_elapsed_entity || 'sensor.f1_session_session_time_elapsed';
-    const remainingEntity = this.hass?.states?.[remainingId];
-    const elapsedEntity = this.hass?.states?.[elapsedId];
+    const remainingEntity = getEntityStateWithFallback(this.hass, remainingId);
+    const elapsedEntity = getEntityStateWithFallback(this.hass, elapsedId);
     const isValid = (e) => e && e.state !== 'unavailable' && e.state !== 'unknown' && e.state;
 
     const parseHMS = (s) => {
@@ -6742,7 +7054,7 @@ class F1LiveSessionCard extends LitElement {
 
   _getFormationStart() {
     const entityId = this.config.formation_start_entity || 'binary_sensor.f1_session_formation_start';
-    const entity = this.hass?.states?.[entityId];
+    const entity = getEntityStateWithFallback(this.hass, entityId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return false;
     }
@@ -6936,7 +7248,7 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getLapData() {
-    const entity = this.hass?.states?.[this.config.lap_count_entity];
+    const entity = getEntityStateWithFallback(this.hass, this.config.lap_count_entity);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6947,7 +7259,7 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getTrackStatus() {
-    const entity = this.hass?.states?.[this.config.track_status_entity];
+    const entity = getEntityStateWithFallback(this.hass, this.config.track_status_entity);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6955,7 +7267,7 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getWeatherData() {
-    const entity = this.hass?.states?.[this.config.weather_entity];
+    const entity = getEntityStateWithFallback(this.hass, this.config.weather_entity);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -7698,7 +8010,7 @@ class F1RaceControlCard extends LitElement {
   updated(changedProps) {
     if (changedProps.has('hass')) {
       this._checkForNewMessage();
-      const entity = this.hass?.states?.[this.config?.entity];
+      const entity = getEntityStateWithFallback(this.hass, this.config?.entity);
       if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
         this._currentMessage = null;
         this._messageQueue = [];
@@ -7711,7 +8023,7 @@ class F1RaceControlCard extends LitElement {
   }
 
   _checkForNewMessage() {
-    const entity = this.hass?.states?.[this.config?.entity];
+    const entity = getEntityStateWithFallback(this.hass, this.config?.entity);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') return;
 
     const minDisplayTime = this.config?.min_display_time || 0;
@@ -7894,7 +8206,7 @@ class F1RaceControlCard extends LitElement {
       `;
     }
 
-    const currentEntity = this.hass?.states?.[this.config.entity];
+    const currentEntity = getEntityStateWithFallback(this.hass, this.config.entity);
     if (!currentEntity || currentEntity.state === 'unavailable' || currentEntity.state === 'unknown') {
       const showLogo = this.config.show_fia_logo;
       return html`
@@ -8293,7 +8605,7 @@ window.customCards.push({
 window.customCards.push({
   type: 'f1-driver-lap-times-card',
   name: 'F1 Driver Lap Times',
-  description: 'Driver table focused on latest lap times',
+  description: 'Driver lap table with latest, best, and configurable lap history',
   configurable: true,
   preview: true,
 });
