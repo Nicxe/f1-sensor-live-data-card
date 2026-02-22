@@ -231,6 +231,8 @@ const LEGACY_ENTITY_ID_FALLBACKS = {
   'sensor.f1_session_session_time_elapsed': 'sensor.f1_session_time_elapsed',
   'sensor.f1_race_next_race': 'sensor.f1_next_race',
   'binary_sensor.f1_session_formation_start': 'binary_sensor.f1_formation_start',
+  'binary_sensor.f1_session_overtake_mode': 'binary_sensor.f1_overtake_mode',
+  'sensor.f1_session_straight_mode': 'sensor.f1_straight_mode',
 };
 
 const resolveEntityIdWithFallback = (hass, entityId) => {
@@ -6909,8 +6911,8 @@ class F1LiveSessionCard extends LitElement {
       next_race_entity: 'sensor.f1_race_next_race',
       session_time_remaining_entity: 'sensor.f1_session_session_time_remaining',
       session_time_elapsed_entity: 'sensor.f1_session_session_time_elapsed',
-      overtake_mode_entity: 'binary_sensor.f1_overtake_mode',
-      straight_mode_entity: 'sensor.f1_straight_mode',
+      overtake_mode_entity: 'binary_sensor.f1_session_overtake_mode',
+      straight_mode_entity: 'sensor.f1_session_straight_mode',
       show_flag: true,
       show_lap_progress: true,
       show_track_status: true,
@@ -6935,8 +6937,8 @@ class F1LiveSessionCard extends LitElement {
       track_status_entity: 'sensor.f1_session_track_status',
       weather_entity: 'sensor.f1_session_track_weather',
       next_race_entity: 'sensor.f1_race_next_race',
-      overtake_mode_entity: 'binary_sensor.f1_overtake_mode',
-      straight_mode_entity: 'sensor.f1_straight_mode',
+      overtake_mode_entity: 'binary_sensor.f1_session_overtake_mode',
+      straight_mode_entity: 'sensor.f1_session_straight_mode',
     };
   }
 
@@ -7097,14 +7099,14 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getOvertakeMode() {
-    const entityId = this.config.overtake_mode_entity || 'binary_sensor.f1_overtake_mode';
+    const entityId = this.config.overtake_mode_entity || 'binary_sensor.f1_session_overtake_mode';
     const entity = getEntityStateWithFallback(this.hass, entityId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') return null;
     return entity.state;
   }
 
   _getStraightMode() {
-    const entityId = this.config.straight_mode_entity || 'sensor.f1_straight_mode';
+    const entityId = this.config.straight_mode_entity || 'sensor.f1_session_straight_mode';
     const entity = getEntityStateWithFallback(this.hass, entityId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') return null;
     return entity.state;
@@ -7713,8 +7715,8 @@ class F1LiveSessionCardEditor extends LitElement {
       next_race_entity: 'sensor.f1_race_next_race',
       session_time_remaining_entity: 'sensor.f1_session_session_time_remaining',
       session_time_elapsed_entity: 'sensor.f1_session_session_time_elapsed',
-      overtake_mode_entity: 'binary_sensor.f1_overtake_mode',
-      straight_mode_entity: 'sensor.f1_straight_mode',
+      overtake_mode_entity: 'binary_sensor.f1_session_overtake_mode',
+      straight_mode_entity: 'sensor.f1_session_straight_mode',
       show_flag: true,
       show_lap_progress: true,
       show_track_status: true,
