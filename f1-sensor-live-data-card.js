@@ -6723,8 +6723,15 @@ class F1LiveSessionCard extends LitElement {
     .ls-status-group {
       margin-left: auto;
       display: inline-flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: clamp(3px, 0.5vw, 5px);
+    }
+
+    .ls-status-row {
+      display: flex;
       align-items: center;
-      gap: clamp(6px, 1vw, 10px);
+      gap: clamp(4px, 0.7vw, 6px);
     }
 
     .ls-status-pill {
@@ -6763,6 +6770,27 @@ class F1LiveSessionCard extends LitElement {
     .ls-grip-pill {
       --status-color: #f59e0b;
       --status-bg: rgba(245, 158, 11, 0.2);
+    }
+
+    .ls-overtake-on-pill {
+      --status-color: #34c759;
+      --status-bg: rgba(52, 199, 89, 0.2);
+    }
+
+    .ls-straight-low-pill {
+      --status-color: #f59e0b;
+      --status-bg: rgba(245, 158, 11, 0.2);
+    }
+
+    .ls-straight-disabled-pill {
+      --status-color: rgba(255, 255, 255, 0.4);
+      --status-bg: rgba(255, 255, 255, 0.08);
+    }
+
+    .ls-aero-pill {
+      font-size: clamp(7px, 1vw, 8px);
+      padding: clamp(2px, 0.4vw, 3px) clamp(5px, 0.8vw, 7px);
+      letter-spacing: 0.03em;
     }
 
     .ls-session-state.state-live {
@@ -6853,6 +6881,9 @@ class F1LiveSessionCard extends LitElement {
       .ls-weather-col {
         flex: 0 1 auto;
       }
+      .ls-laps-group {
+        display: none;
+      }
     }
   `;
 
@@ -6878,6 +6909,8 @@ class F1LiveSessionCard extends LitElement {
       next_race_entity: 'sensor.f1_race_next_race',
       session_time_remaining_entity: 'sensor.f1_session_session_time_remaining',
       session_time_elapsed_entity: 'sensor.f1_session_session_time_elapsed',
+      overtake_mode_entity: 'binary_sensor.f1_overtake_mode',
+      straight_mode_entity: 'sensor.f1_straight_mode',
       show_flag: true,
       show_lap_progress: true,
       show_track_status: true,
@@ -6902,6 +6935,8 @@ class F1LiveSessionCard extends LitElement {
       track_status_entity: 'sensor.f1_session_track_status',
       weather_entity: 'sensor.f1_session_track_weather',
       next_race_entity: 'sensor.f1_race_next_race',
+      overtake_mode_entity: 'binary_sensor.f1_overtake_mode',
+      straight_mode_entity: 'sensor.f1_straight_mode',
     };
   }
 
@@ -7059,6 +7094,32 @@ class F1LiveSessionCard extends LitElement {
       return false;
     }
     return entity.state === 'on';
+  }
+
+  _getOvertakeMode() {
+    const entityId = this.config.overtake_mode_entity || 'binary_sensor.f1_overtake_mode';
+    const entity = getEntityStateWithFallback(this.hass, entityId);
+    if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') return null;
+    return entity.state;
+  }
+
+  _getStraightMode() {
+    const entityId = this.config.straight_mode_entity || 'sensor.f1_straight_mode';
+    const entity = getEntityStateWithFallback(this.hass, entityId);
+    if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') return null;
+    return entity.state;
+  }
+
+  _getStraightModeClass(state) {
+    if (state === 'low_grip') return 'ls-straight-low-pill';
+    if (state === 'disabled') return 'ls-straight-disabled-pill';
+    return '';
+  }
+
+  _getStraightModeLabel(state) {
+    if (state === 'low_grip') return 'Low Grip';
+    if (state === 'disabled') return 'Aero Off';
+    return '';
   }
 
   _normalizeOffset(offset) {
@@ -7383,6 +7444,11 @@ class F1LiveSessionCard extends LitElement {
     const trackGrip = String(trackGripRaw || '').toLowerCase();
     const showGrip = trackGrip && trackGrip !== 'normal';
     const gripLabel = trackGrip ? `Grip ${trackGrip.toUpperCase()}` : '';
+    const overtakeMode = this._getOvertakeMode();
+    const straightMode = this._getStraightMode();
+    const showOvertake = overtakeMode === 'on';
+    const showStraightMode = straightMode === 'low_grip' || straightMode === 'disabled';
+    const hasAeroRow = showOvertake || showStraightMode;
 
     const gpName = data.meeting_name?.replace(' Grand Prix', ' GP') || data.meeting_name || 'Unknown GP';
     const sessionName = session
@@ -7461,19 +7527,29 @@ class F1LiveSessionCard extends LitElement {
               ` : null;
             })()}
 
-            ${this.config.show_track_status !== false && (trackStatus || showGrip) ? html`
+            ${this.config.show_track_status !== false && (trackStatus || showGrip || hasAeroRow) ? html`
               <div class="ls-status-group">
-                ${showGrip ? html`
-                  <div class="ls-status-pill ls-grip-pill">
-                    ${gripLabel}
-                  </div>
-                ` : null}
-                ${trackStatus ? html`
-                  <div
-                    class="ls-status-pill ${this._getStatusClass(trackStatus)}"
-                    style="--status-color: ${statusColor}; --status-bg: ${statusColor}22;"
-                  >
-                    ${statusLabel}
+                <div class="ls-status-row">
+                  ${showGrip ? html`
+                    <div class="ls-status-pill ls-grip-pill">${gripLabel}</div>
+                  ` : null}
+                  ${trackStatus ? html`
+                    <div
+                      class="ls-status-pill ${this._getStatusClass(trackStatus)}"
+                      style="--status-color: ${statusColor}; --status-bg: ${statusColor}22;"
+                    >${statusLabel}</div>
+                  ` : null}
+                </div>
+                ${hasAeroRow ? html`
+                  <div class="ls-status-row">
+                    ${showOvertake ? html`
+                      <div class="ls-status-pill ls-aero-pill ls-overtake-on-pill">OVTK</div>
+                    ` : null}
+                    ${showStraightMode ? html`
+                      <div class="ls-status-pill ls-aero-pill ${this._getStraightModeClass(straightMode)}">
+                        ${this._getStraightModeLabel(straightMode)}
+                      </div>
+                    ` : null}
                   </div>
                 ` : null}
               </div>
@@ -7637,6 +7713,8 @@ class F1LiveSessionCardEditor extends LitElement {
       next_race_entity: 'sensor.f1_race_next_race',
       session_time_remaining_entity: 'sensor.f1_session_session_time_remaining',
       session_time_elapsed_entity: 'sensor.f1_session_session_time_elapsed',
+      overtake_mode_entity: 'binary_sensor.f1_overtake_mode',
+      straight_mode_entity: 'sensor.f1_straight_mode',
       show_flag: true,
       show_lap_progress: true,
       show_track_status: true,
@@ -7741,6 +7819,20 @@ class F1LiveSessionCardEditor extends LitElement {
           'session_time_elapsed_entity',
           'Session Time Elapsed Sensor',
           'Provides elapsed session time. Enable display under Display tab.',
+          false,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'overtake_mode_entity',
+          'Overtake Mode Sensor',
+          'Indicates whether overtake mode is enabled. Shows pill when active.',
+          false,
+          'binary_sensor'
+        )}
+        ${this._renderEntityPicker(
+          'straight_mode_entity',
+          'Straight Mode Sensor',
+          'Active aero permission on straights. Shows pill when restricted or disabled.',
           false,
           'sensor'
         )}
