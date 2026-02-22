@@ -211,6 +211,43 @@ const TRACK_STATUS_LABELS = {
   RED: 'Red Flag',
 };
 
+const LEGACY_ENTITY_ID_FALLBACKS = {
+  'sensor.f1_drivers_driver_list': 'sensor.f1_driver_list',
+  'sensor.f1_drivers_tyre_statistics': 'sensor.f1_tyre_statistics',
+  'sensor.f1_drivers_current_tyres': 'sensor.f1_current_tyres',
+  'sensor.f1_drivers_pitstops': 'sensor.f1_pitstops',
+  'sensor.f1_drivers_driver_positions': 'sensor.f1_driver_positions',
+  'sensor.f1_championship_championship_prediction_drivers': 'sensor.f1_championship_prediction_drivers',
+  'sensor.f1_championship_championship_prediction_teams': 'sensor.f1_championship_prediction_teams',
+  'sensor.f1_officials_investigations': 'sensor.f1_investigations',
+  'sensor.f1_officials_track_limits': 'sensor.f1_track_limits',
+  'sensor.f1_officials_race_control': 'sensor.f1_race_control',
+  'sensor.f1_session_current_session': 'sensor.f1_current_session',
+  'sensor.f1_session_session_status': 'sensor.f1_session_status',
+  'sensor.f1_session_race_lap_count': 'sensor.f1_race_lap_count',
+  'sensor.f1_session_track_status': 'sensor.f1_track_status',
+  'sensor.f1_session_track_weather': 'sensor.f1_track_weather',
+  'sensor.f1_session_session_time_remaining': 'sensor.f1_session_time_remaining',
+  'sensor.f1_session_session_time_elapsed': 'sensor.f1_session_time_elapsed',
+  'sensor.f1_race_next_race': 'sensor.f1_next_race',
+  'binary_sensor.f1_session_formation_start': 'binary_sensor.f1_formation_start',
+};
+
+const resolveEntityIdWithFallback = (hass, entityId) => {
+  if (!hass || !entityId) return entityId;
+  const states = hass.states || {};
+  if (states[entityId]) return entityId;
+  const fallback = LEGACY_ENTITY_ID_FALLBACKS[entityId];
+  if (fallback && states[fallback]) return fallback;
+  return entityId;
+};
+
+const getEntityStateWithFallback = (hass, entityId) => {
+  if (!hass || !entityId) return null;
+  const resolvedId = resolveEntityIdWithFallback(hass, entityId);
+  return hass.states?.[resolvedId] || null;
+};
+
 const F1_COUNTRY_CODES = {
   'Bahrain': 'bh', 'Saudi Arabia': 'sa', 'Australia': 'au',
   'Japan': 'jp', 'China': 'cn', 'USA': 'us', 'Monaco': 'mc',
@@ -548,7 +585,7 @@ class F1TyreStatisticsCard extends LitElement {
       `;
     }
 
-    const stateObj = this.hass.states?.[this.config.entity];
+    const stateObj = getEntityStateWithFallback(this.hass, this.config.entity);
     if (!stateObj) {
       return html`
         <ha-card>
@@ -764,7 +801,7 @@ class F1TyreStatisticsCard extends LitElement {
   _buildTeamLogoLookup() {
     if (!this.config.show_team_logo) return null;
     const entityId = this.config.drivers_entity || 'sensor.f1_drivers_driver_list';
-    const driversState = this.hass?.states?.[entityId];
+    const driversState = getEntityStateWithFallback(this.hass, entityId);
     const drivers = Array.isArray(driversState?.attributes?.drivers)
       ? driversState.attributes.drivers
       : [];
@@ -1180,7 +1217,7 @@ class F1PitStopOverviewCard extends LitElement {
       show_pit_delta: true,
       drivers_entity: 'sensor.f1_drivers_driver_list',
       tyres_entity: 'sensor.f1_drivers_current_tyres',
-      pitstops_entity: 'sensor.f1_drivers_pit_stops',
+      pitstops_entity: 'sensor.f1_drivers_pitstops',
       positions_entity: 'sensor.f1_drivers_driver_positions',
       ...config,
     };
@@ -1210,7 +1247,7 @@ class F1PitStopOverviewCard extends LitElement {
       drivers_entity: 'sensor.f1_drivers_driver_list',
       positions_entity: 'sensor.f1_drivers_driver_positions',
       tyres_entity: 'sensor.f1_drivers_current_tyres',
-      pitstops_entity: 'sensor.f1_drivers_pit_stops',
+      pitstops_entity: 'sensor.f1_drivers_pitstops',
       title: 'Pit Stops & Tyres',
     };
   }
@@ -1232,7 +1269,7 @@ class F1PitStopOverviewCard extends LitElement {
       `;
     }
 
-    const driversState = this.hass.states?.[this.config.drivers_entity];
+    const driversState = getEntityStateWithFallback(this.hass, this.config.drivers_entity);
     if (!driversState) {
       return html`
         <ha-card>
@@ -1244,14 +1281,14 @@ class F1PitStopOverviewCard extends LitElement {
     }
 
     const drivers = this._asList(driversState?.attributes?.drivers);
-    const tyresState = this.hass.states?.[this.config.tyres_entity];
+    const tyresState = getEntityStateWithFallback(this.hass, this.config.tyres_entity);
     const tyres = this._asList(tyresState?.attributes?.drivers);
-    const pitState = this.hass.states?.[this.config.pitstops_entity];
+    const pitState = getEntityStateWithFallback(this.hass, this.config.pitstops_entity);
     const pitCars = pitState?.attributes?.cars && typeof pitState.attributes.cars === 'object'
       ? pitState.attributes.cars
       : {};
     const positionsState = this.config.positions_entity
-      ? this.hass.states?.[this.config.positions_entity]
+      ? getEntityStateWithFallback(this.hass, this.config.positions_entity)
       : null;
     const positions = positionsState?.attributes?.drivers;
 
@@ -2446,8 +2483,8 @@ class F1DriverLapTimesCard extends LitElement {
       `;
     }
 
-    const driversState = this.hass.states?.[this.config.drivers_entity];
-    const positionsState = this.hass.states?.[this.config.positions_entity];
+    const driversState = getEntityStateWithFallback(this.hass, this.config.drivers_entity);
+    const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
     if (!driversState || !positionsState) {
       return html`
         <ha-card>
@@ -3257,7 +3294,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       `;
     }
 
-    const predictionState = this.hass.states?.[this.config.entity];
+    const predictionState = getEntityStateWithFallback(this.hass, this.config.entity);
     if (!predictionState) {
       return html`
         <ha-card>
@@ -3286,7 +3323,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     }
 
     const driverListState = this.config.drivers_entity
-      ? this.hass.states?.[this.config.drivers_entity]
+      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
       : null;
     const driverList = Array.isArray(driverListState?.attributes?.drivers)
       ? driverListState.attributes.drivers
@@ -3841,7 +3878,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       `;
     }
 
-    const predictionState = this.hass.states?.[this.config.entity];
+    const predictionState = getEntityStateWithFallback(this.hass, this.config.entity);
     if (!predictionState) {
       return html`
         <ha-card>
@@ -4877,7 +4914,7 @@ class F1InvestigationsCard extends LitElement {
       show_team_logo: false,
       team_logo_style: 'color',
       show_all_drivers: false,
-      investigations_entity: 'sensor.f1_officials_investigations_penalties',
+      investigations_entity: 'sensor.f1_officials_investigations',
       drivers_entity: 'sensor.f1_drivers_driver_list',
       positions_entity: 'sensor.f1_drivers_driver_positions',
       ...config,
@@ -4892,7 +4929,7 @@ class F1InvestigationsCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-investigations-card',
-      investigations_entity: 'sensor.f1_officials_investigations_penalties',
+      investigations_entity: 'sensor.f1_officials_investigations',
       drivers_entity: 'sensor.f1_drivers_driver_list',
       positions_entity: 'sensor.f1_drivers_driver_positions',
       title: 'Investigations & Penalties',
@@ -4909,19 +4946,19 @@ class F1InvestigationsCard extends LitElement {
       return html`<ha-card><div class="inv-card"><div class="inv-empty">Select entities in the editor</div></div></ha-card>`;
     }
 
-    const invState = this.hass.states?.[this.config.investigations_entity];
+    const invState = getEntityStateWithFallback(this.hass, this.config.investigations_entity);
     if (!invState) {
       return html`<ha-card><div class="inv-card"><div class="inv-empty">Investigations entity not found</div></div></ha-card>`;
     }
 
     const driversState = this.config.drivers_entity
-      ? this.hass.states?.[this.config.drivers_entity]
+      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
       : null;
     const drivers = Array.isArray(driversState?.attributes?.drivers)
       ? driversState.attributes.drivers
       : [];
     const positionsState = this.config.positions_entity
-      ? this.hass.states?.[this.config.positions_entity]
+      ? getEntityStateWithFallback(this.hass, this.config.positions_entity)
       : null;
     const positions = positionsState?.attributes?.drivers;
 
@@ -5769,19 +5806,19 @@ class F1TrackLimitsCard extends LitElement {
       return html`<ha-card><div class="tl-card"><div class="tl-empty">Select entities in the editor</div></div></ha-card>`;
     }
 
-    const limitsState = this.hass.states?.[this.config.track_limits_entity];
+    const limitsState = getEntityStateWithFallback(this.hass, this.config.track_limits_entity);
     if (!limitsState) {
       return html`<ha-card><div class="tl-card"><div class="tl-empty">Track limits entity not found</div></div></ha-card>`;
     }
 
     const driversState = this.config.drivers_entity
-      ? this.hass.states?.[this.config.drivers_entity]
+      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
       : null;
     const drivers = Array.isArray(driversState?.attributes?.drivers)
       ? driversState.attributes.drivers
       : [];
     const positionsState = this.config.positions_entity
-      ? this.hass.states?.[this.config.positions_entity]
+      ? getEntityStateWithFallback(this.hass, this.config.positions_entity)
       : null;
     const positions = positionsState?.attributes?.drivers;
 
@@ -6605,7 +6642,7 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getSessionData() {
-    const entity = this.hass?.states?.[this.config.session_entity];
+    const entity = getEntityStateWithFallback(this.hass, this.config.session_entity);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6614,8 +6651,7 @@ class F1LiveSessionCard extends LitElement {
 
   _getSessionStatusData() {
     const primaryId = this.config.session_status_entity || 'sensor.f1_session_session_status';
-    const entity = this.hass?.states?.[primaryId]
-      || this.hass?.states?.['sensor.f1_session_session_status'];
+    const entity = getEntityStateWithFallback(this.hass, primaryId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6624,8 +6660,7 @@ class F1LiveSessionCard extends LitElement {
 
   _getNextRaceData() {
     const primaryId = this.config.next_race_entity || 'sensor.f1_race_next_race';
-    const entity = this.hass?.states?.[primaryId]
-      || this.hass?.states?.['sensor.f1_race_next_race'];
+    const entity = getEntityStateWithFallback(this.hass, primaryId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6635,8 +6670,8 @@ class F1LiveSessionCard extends LitElement {
   _getSessionClockData() {
     const remainingId = this.config.session_time_remaining_entity || 'sensor.f1_session_session_time_remaining';
     const elapsedId = this.config.session_time_elapsed_entity || 'sensor.f1_session_session_time_elapsed';
-    const remainingEntity = this.hass?.states?.[remainingId];
-    const elapsedEntity = this.hass?.states?.[elapsedId];
+    const remainingEntity = getEntityStateWithFallback(this.hass, remainingId);
+    const elapsedEntity = getEntityStateWithFallback(this.hass, elapsedId);
     const isValid = (e) => e && e.state !== 'unavailable' && e.state !== 'unknown' && e.state;
 
     const parseHMS = (s) => {
@@ -6742,7 +6777,7 @@ class F1LiveSessionCard extends LitElement {
 
   _getFormationStart() {
     const entityId = this.config.formation_start_entity || 'binary_sensor.f1_session_formation_start';
-    const entity = this.hass?.states?.[entityId];
+    const entity = getEntityStateWithFallback(this.hass, entityId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return false;
     }
@@ -6936,7 +6971,7 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getLapData() {
-    const entity = this.hass?.states?.[this.config.lap_count_entity];
+    const entity = getEntityStateWithFallback(this.hass, this.config.lap_count_entity);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6947,7 +6982,7 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getTrackStatus() {
-    const entity = this.hass?.states?.[this.config.track_status_entity];
+    const entity = getEntityStateWithFallback(this.hass, this.config.track_status_entity);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6955,7 +6990,7 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getWeatherData() {
-    const entity = this.hass?.states?.[this.config.weather_entity];
+    const entity = getEntityStateWithFallback(this.hass, this.config.weather_entity);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -7698,7 +7733,7 @@ class F1RaceControlCard extends LitElement {
   updated(changedProps) {
     if (changedProps.has('hass')) {
       this._checkForNewMessage();
-      const entity = this.hass?.states?.[this.config?.entity];
+      const entity = getEntityStateWithFallback(this.hass, this.config?.entity);
       if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
         this._currentMessage = null;
         this._messageQueue = [];
@@ -7711,7 +7746,7 @@ class F1RaceControlCard extends LitElement {
   }
 
   _checkForNewMessage() {
-    const entity = this.hass?.states?.[this.config?.entity];
+    const entity = getEntityStateWithFallback(this.hass, this.config?.entity);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') return;
 
     const minDisplayTime = this.config?.min_display_time || 0;
@@ -7894,7 +7929,7 @@ class F1RaceControlCard extends LitElement {
       `;
     }
 
-    const currentEntity = this.hass?.states?.[this.config.entity];
+    const currentEntity = getEntityStateWithFallback(this.hass, this.config.entity);
     if (!currentEntity || currentEntity.state === 'unavailable' || currentEntity.state === 'unknown') {
       const showLogo = this.config.show_fia_logo;
       return html`
