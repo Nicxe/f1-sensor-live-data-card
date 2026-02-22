@@ -1928,6 +1928,7 @@ class F1TyreStatisticsCardEditor extends LitElement {
     this._config = newConfig;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
   }
+
 }
 
 class F1PitStopOverviewCardEditor extends LitElement {
@@ -2187,6 +2188,7 @@ class F1PitStopOverviewCardEditor extends LitElement {
     this._config = newConfig;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
   }
+
 }
 
 // ============================================================================
@@ -2236,10 +2238,13 @@ class F1DriverLapTimesCard extends LitElement {
       background: transparent;
       box-shadow: none;
       border: none;
+      overflow: hidden;
     }
 
     .dl-card {
       position: relative;
+      display: flex;
+      flex-direction: column;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
@@ -2268,6 +2273,12 @@ class F1DriverLapTimesCard extends LitElement {
     .dl-table {
       display: grid;
       gap: 6px;
+      min-width: max-content;
+    }
+
+    .dl-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     .dl-row {
@@ -2339,6 +2350,52 @@ class F1DriverLapTimesCard extends LitElement {
     .dl-cell.group-start {
       padding-left: 6px;
       border-left: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .dl-cell.lap-column {
+      justify-content: center;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      min-width: 84px;
+    }
+
+    .dl-lap-value-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+    }
+
+    .dl-lap-time {
+      display: inline-block;
+      min-width: 58px;
+      text-align: right;
+    }
+
+    .dl-lap-trend {
+      font-size: 9px;
+      line-height: 1;
+      font-weight: 700;
+      opacity: 0.95;
+      min-width: 10px;
+      text-align: center;
+    }
+
+    .dl-lap-trend.faster {
+      color: #22c55e;
+    }
+
+    .dl-lap-trend.slower {
+      color: #f87171;
+    }
+
+    .dl-cell.lap-column.best-lap-cell {
+      background: rgba(34, 197, 94, 0.22);
+      border-radius: 8px;
+      color: #dcfce7;
+      font-weight: 700;
+      margin: 1px 4px 1px 2px;
     }
 
     .dl-tla {
@@ -2432,6 +2489,10 @@ class F1DriverLapTimesCard extends LitElement {
       show_tla: true,
       show_status: true,
       show_last_lap: true,
+      show_best_lap: true,
+      show_lap_history: false,
+      lap_history_limit: 0,
+      show_lap_trend: true,
       team_logo_style: 'color',
       drivers_entity: 'sensor.f1_drivers_driver_list',
       positions_entity: 'sensor.f1_drivers_driver_positions',
@@ -2453,7 +2514,7 @@ class F1DriverLapTimesCard extends LitElement {
       columns: 12,
       min_columns: 4,
       max_columns: 12,
-      min_rows: 4,
+      min_rows: 13,
     };
   }
 
@@ -2499,8 +2560,12 @@ class F1DriverLapTimesCard extends LitElement {
     const positions = positionsState?.attributes?.drivers;
     const fastestLap = positionsState?.attributes?.fastest_lap;
 
+    const lapHistoryLimit = this._normalizeLapHistoryLimit(this.config?.lap_history_limit);
     const rows = this._buildRows(drivers, positions, fastestLap);
-    const columns = this._columns();
+    const lapNumbers = this.config.show_lap_history === true
+      ? this._resolveLapNumbers(positionsState, rows, lapHistoryLimit)
+      : [];
+    const columns = this._columns(lapNumbers);
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
@@ -2519,28 +2584,51 @@ class F1DriverLapTimesCard extends LitElement {
           ${this.config.show_header
             ? html`<div class="dl-header">${this.config.title || 'Driver Lap Times'}</div>`
             : null}
-          <div class="dl-table" style="--dl-columns: ${gridColumns};">
-            ${this.config.show_table_header ? this._renderHeader(columns) : null}
-            ${rows.map((row) => this._renderRow(row, columns))}
+          <div class="dl-scroll">
+            <div class="dl-table" style="--dl-columns: ${gridColumns};">
+              ${this.config.show_table_header ? this._renderHeader(columns) : null}
+              ${rows.map((row) => this._renderRow(row, columns))}
+            </div>
           </div>
         </div>
       </ha-card>
     `;
   }
 
-  _columns() {
+  _columns(lapNumbers = []) {
     const cols = [];
     if (this.config.show_position !== false) {
-      cols.push({ key: 'position', label: 'POS', width: '0.14fr', tabular: true, compact: true, hideHeader: true });
+      cols.push({ key: 'position', label: 'POS', width: '44px', tabular: true, compact: true, hideHeader: true });
     }
     if (this.config.show_team_logo !== false) {
-      cols.push({ key: 'logo', label: 'LOGO', width: '0.16fr', compact: true, hideHeader: true });
+      cols.push({ key: 'logo', label: 'LOGO', width: '30px', compact: true, hideHeader: true });
     }
     if (this.config.show_tla !== false) {
-      cols.push({ key: 'tla', label: 'TLA', width: '0.36fr', compact: true, hideHeader: true });
+      cols.push({ key: 'tla', label: 'TLA', width: '74px', compact: true, hideHeader: true });
     }
+    const lapColumns = [];
     if (this.config.show_last_lap !== false) {
-      cols.push({ key: 'last_lap', label: 'LAST', width: '1fr', numeric: true, groupStart: true });
+      lapColumns.push({ key: 'last_lap', label: 'LAST', width: '86px', numeric: true });
+    }
+    if (this.config.show_best_lap !== false) {
+      lapColumns.push({ key: 'best_lap', label: 'BEST', width: '86px', numeric: true });
+    }
+    if (this.config.show_lap_history === true && Array.isArray(lapNumbers)) {
+      lapNumbers.forEach((lap, index) => {
+        lapColumns.push({
+          key: `lap_${lap}`,
+          label: `L${lap}`,
+          width: '92px',
+          numeric: true,
+          type: 'lap',
+          lap,
+          groupStart: index === 0,
+        });
+      });
+    }
+    if (lapColumns.length > 0) {
+      lapColumns[0].groupStart = true;
+      cols.push(...lapColumns);
     }
     return cols;
   }
@@ -2548,11 +2636,20 @@ class F1DriverLapTimesCard extends LitElement {
   _renderHeader(columns) {
     return html`
       <div class="dl-row header">
-        ${columns.map((col) => html`
-          <div class="dl-cell ${col.numeric ? 'numeric' : ''} ${col.center ? 'center' : ''} ${col.tabular ? 'tabular' : ''} ${col.groupStart ? 'group-start' : ''} ${col.compact ? 'compact' : ''}">
-            ${col.hideHeader ? '' : col.label}
-          </div>
-        `)}
+        ${columns.map((col) => {
+          const classes = ['dl-cell'];
+          if (col.numeric) classes.push('numeric');
+          if (col.center) classes.push('center');
+          if (col.tabular) classes.push('tabular');
+          if (col.groupStart) classes.push('group-start');
+          if (col.compact) classes.push('compact');
+          if (col.type === 'lap') classes.push('lap-column');
+          return html`
+            <div class="${classes.join(' ')}">
+              ${col.hideHeader ? '' : col.label}
+            </div>
+          `;
+        })}
       </div>
     `;
   }
@@ -2576,6 +2673,7 @@ class F1DriverLapTimesCard extends LitElement {
     if (col.groupStart) classes.push('group-start');
     if (col.compact) classes.push('compact');
     if (col.key === 'tla') classes.push('dl-tla');
+    if (col.type === 'lap') classes.push('lap-column');
 
     let style = '';
     if (col.key === 'tla' && row.team_color) {
@@ -2603,7 +2701,27 @@ class F1DriverLapTimesCard extends LitElement {
     let value = row[col.key];
     if (col.key === 'position') value = row.position ?? '--';
     if (col.key === 'last_lap') value = row.last_lap || '--:--.---';
+    if (col.key === 'best_lap') value = row.best_lap || '--:--.---';
     if (col.key === 'tla') value = row.tla || '--';
+    if (col.type === 'lap') {
+      const lapTime = row.laps_by_number?.[col.lap] || '--';
+      value = lapTime;
+      if (Number.isFinite(row.best_lap_number) && row.best_lap_number === col.lap && lapTime !== '--') {
+        classes.push('best-lap-cell');
+      }
+      const trend = this.config.show_lap_trend !== false
+        ? this._resolveLapTrend(row.laps_by_number, col.lap)
+        : '';
+      const trendArrow = trend === 'faster' ? '▲' : trend === 'slower' ? '▼' : '';
+      return html`
+        <div class="${classes.join(' ')}" style="${style}">
+          <span class="dl-lap-value-wrap">
+            <span class="dl-lap-time">${value ?? '--'}</span>
+            ${trendArrow ? html`<span class="dl-lap-trend ${trend}" aria-hidden="true">${trendArrow}</span>` : null}
+          </span>
+        </div>
+      `;
+    }
 
     if (col.key === 'tla' && this.config.show_status !== false && row.status) {
       const statusClasses = ['dl-status', 'dl-status-inline'];
@@ -2639,7 +2757,7 @@ class F1DriverLapTimesCard extends LitElement {
         pos?.current_position ?? pos?.grid_position ?? driver?.position,
       );
 
-      const latestLap = this._latestLapTime(pos);
+      const lapSnapshot = this._buildLapSnapshot(pos);
       const isFastest = Boolean(pos?.fastest_lap) || this._matchesFastest(rn, tlaKey, fastestInfo);
       const statusInfo = this._statusLabel(pos);
 
@@ -2652,7 +2770,12 @@ class F1DriverLapTimesCard extends LitElement {
         retired: statusInfo?.retired === true,
         team_color: teamColor,
         team_logo: teamLogo,
-        last_lap: latestLap,
+        last_lap: lapSnapshot.last_lap,
+        best_lap: lapSnapshot.best_lap,
+        best_lap_number: lapSnapshot.best_lap_number,
+        laps_by_number: lapSnapshot.laps_by_number,
+        max_lap: lapSnapshot.max_lap,
+        completed_laps: lapSnapshot.completed_laps,
         is_fastest: isFastest,
       };
     });
@@ -2694,30 +2817,152 @@ class F1DriverLapTimesCard extends LitElement {
     return map;
   }
 
-  _latestLapTime(positionInfo) {
-    if (!positionInfo || typeof positionInfo !== 'object') return '--:--.---';
-    const laps = positionInfo?.laps;
-    if (!laps || typeof laps !== 'object') return '--:--.---';
-    let lapKey = null;
-    const completed = Number(positionInfo?.completed_laps);
-    if (Number.isFinite(completed) && completed > 0) {
-      lapKey = String(Math.floor(completed));
-      if (!Object.prototype.hasOwnProperty.call(laps, lapKey)) {
-        lapKey = null;
+  _buildLapSnapshot(positionInfo) {
+    const lapEntries = this._normalizeLapEntries(positionInfo?.laps);
+    const completedLaps = Number(positionInfo?.completed_laps);
+    const lastLapEntry = this._resolveLastLapEntry(lapEntries, completedLaps);
+    const bestLapEntry = this._resolveBestLapEntry(lapEntries);
+    const lapsByNumber = {};
+    lapEntries.forEach((entry) => {
+      lapsByNumber[entry.lap] = entry.time;
+    });
+    const maxLap = lapEntries.length > 0 ? lapEntries[lapEntries.length - 1].lap : 0;
+    const completed = Number.isFinite(completedLaps) && completedLaps > 0
+      ? Math.floor(completedLaps)
+      : 0;
+
+    return {
+      last_lap: lastLapEntry?.time || '--:--.---',
+      best_lap: bestLapEntry?.time || '--:--.---',
+      best_lap_number: bestLapEntry?.lap ?? null,
+      laps_by_number: lapsByNumber,
+      max_lap: maxLap,
+      completed_laps: completed,
+    };
+  }
+
+  _resolveLapNumbers(positionsState, rows, lapHistoryLimit) {
+    const totalLaps = this._parsePositiveInt(positionsState?.attributes?.total_laps);
+    const currentLap = this._parsePositiveInt(positionsState?.state);
+    let maxSeenLap = 0;
+    rows.forEach((row) => {
+      const completed = this._parsePositiveInt(row?.completed_laps);
+      const maxLap = this._parsePositiveInt(row?.max_lap);
+      if (completed > maxSeenLap) maxSeenLap = completed;
+      if (maxLap > maxSeenLap) maxSeenLap = maxLap;
+    });
+
+    const knownLapExtent = totalLaps || Math.max(currentLap, maxSeenLap);
+    if (knownLapExtent <= 0) return [];
+
+    if (lapHistoryLimit > 0) {
+      const limit = lapHistoryLimit;
+      const anchorLap = currentLap || maxSeenLap || 1;
+      if (anchorLap > limit) {
+        const end = totalLaps ? Math.min(anchorLap, totalLaps) : anchorLap;
+        const start = Math.max(1, end - limit + 1);
+        return this._buildLapRange(start, end);
       }
+      const end = totalLaps ? Math.min(limit, totalLaps) : limit;
+      return this._buildLapRange(1, end);
     }
-    if (!lapKey) {
-      let maxKey = null;
-      Object.keys(laps).forEach((key) => {
-        const num = Number(key);
-        if (!Number.isFinite(num)) return;
-        if (maxKey === null || num > maxKey) maxKey = num;
-      });
-      if (maxKey !== null) lapKey = String(maxKey);
+
+    return this._buildLapRange(1, knownLapExtent);
+  }
+
+  _buildLapRange(startLap, endLap) {
+    const start = this._parsePositiveInt(startLap);
+    const end = this._parsePositiveInt(endLap);
+    if (start <= 0 || end <= 0 || end < start) return [];
+    const range = [];
+    for (let lap = start; lap <= end; lap += 1) {
+      range.push(lap);
     }
-    const time = lapKey ? laps[lapKey] : null;
-    if (typeof time === 'string' && time.trim()) return time;
-    return '--:--.---';
+    return range;
+  }
+
+  _parsePositiveInt(value) {
+    const num = Number.parseInt(value, 10);
+    return Number.isFinite(num) && num > 0 ? num : 0;
+  }
+
+  _resolveLapTrend(lapsByNumber, lap) {
+    if (!lapsByNumber || typeof lapsByNumber !== 'object') return '';
+    const currentLap = this._parsePositiveInt(lap);
+    if (currentLap <= 1) return '';
+    const currentTime = lapsByNumber[currentLap];
+    const previousTime = lapsByNumber[currentLap - 1];
+    const currentSecs = this._parseLapTimeSeconds(currentTime);
+    const previousSecs = this._parseLapTimeSeconds(previousTime);
+    if (currentSecs === null || previousSecs === null) return '';
+    if (currentSecs < previousSecs) return 'faster';
+    if (currentSecs > previousSecs) return 'slower';
+    return '';
+  }
+
+  _normalizeLapEntries(laps) {
+    if (!laps || typeof laps !== 'object') return [];
+    const map = new Map();
+    Object.entries(laps).forEach(([key, value]) => {
+      const lap = Number(key);
+      if (!Number.isFinite(lap) || lap <= 0) return;
+      if (typeof value !== 'string' || !value.trim()) return;
+      map.set(Math.floor(lap), value.trim());
+    });
+    return [...map.entries()]
+      .map(([lap, time]) => ({ lap, time }))
+      .sort((a, b) => a.lap - b.lap);
+  }
+
+  _resolveLastLapEntry(entries, completedLaps) {
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    if (Number.isFinite(completedLaps) && completedLaps > 0) {
+      const completedLap = Math.floor(completedLaps);
+      const fromCompleted = entries.find((entry) => entry.lap === completedLap);
+      if (fromCompleted) return fromCompleted;
+    }
+    return entries[entries.length - 1];
+  }
+
+  _resolveBestLapEntry(entries) {
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    let bestEntry = null;
+    let bestSeconds = null;
+    entries.forEach((entry) => {
+      const seconds = this._parseLapTimeSeconds(entry.time);
+      if (seconds === null) return;
+      if (bestSeconds === null || seconds < bestSeconds || (seconds === bestSeconds && entry.lap < bestEntry.lap)) {
+        bestSeconds = seconds;
+        bestEntry = entry;
+      }
+    });
+    return bestEntry;
+  }
+
+  _parseLapTimeSeconds(value) {
+    if (typeof value !== 'string') return null;
+    const text = value.trim();
+    if (!text) return null;
+
+    const sections = text.split(':');
+    const secPart = sections.pop();
+    if (!secPart || !secPart.includes('.')) return null;
+
+    const [secWhole, msPart] = secPart.split('.');
+    if (!/^\d+$/.test(secWhole) || !/^\d+$/.test(msPart)) return null;
+
+    let total = Number(secWhole);
+    total += Number(msPart.padEnd(3, '0').slice(0, 3)) / 1000;
+
+    let multiplier = 60;
+    for (let i = sections.length - 1; i >= 0; i -= 1) {
+      const unit = sections[i];
+      if (!/^\d+$/.test(unit)) return null;
+      total += Number(unit) * multiplier;
+      multiplier *= 60;
+    }
+
+    return Number.isFinite(total) ? total : null;
   }
 
   _compareRacingNumber(a, b) {
@@ -2739,6 +2984,11 @@ class F1DriverLapTimesCard extends LitElement {
     if (!match) return null;
     const num = Number(match[0]);
     return Number.isFinite(num) ? num : null;
+  }
+
+  _normalizeLapHistoryLimit(value) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 
   _normalizeFastestLap(value) {
@@ -2981,6 +3231,28 @@ class F1DriverLapTimesCardEditor extends LitElement {
         ${this._renderSwitch('show_tla', 'Show TLA', 'Driver codes like VER, HAM')}
         ${this._renderSwitch('show_status', 'Show status')}
         ${this._renderSwitch('show_last_lap', 'Show last lap time')}
+        ${this._renderSwitch('show_best_lap', 'Show best lap time')}
+        ${this._renderSwitch('show_lap_trend', 'Show lap trend arrows', 'Shows ▲/▼ versus previous lap in lap columns')}
+        ${this._renderSwitch(
+          'show_lap_history',
+          'Show lap history',
+          'Displays lap columns in table form (L1, L2, L3...). Use 0 below to show all laps.'
+        )}
+
+        ${this._config.show_lap_history === true ? html`
+          <ha-textfield
+            .label=${'Lap history limit (0 = all laps)'}
+            .type=${'number'}
+            .min=${'0'}
+            .step=${'1'}
+            .value=${String(this._normalizeLapHistoryLimit(this._config.lap_history_limit))}
+            @input=${(e) => {
+              const parsed = Number.parseInt(e.target.value, 10);
+              const limit = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+              this._valueChanged('lap_history_limit', limit);
+            }}
+          ></ha-textfield>
+        ` : null}
       </div>
     `;
   }
@@ -3034,6 +3306,11 @@ class F1DriverLapTimesCardEditor extends LitElement {
     const newConfig = { ...this._config, [name]: value };
     this._config = newConfig;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+
+  _normalizeLapHistoryLimit(value) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 }
 
@@ -8328,7 +8605,7 @@ window.customCards.push({
 window.customCards.push({
   type: 'f1-driver-lap-times-card',
   name: 'F1 Driver Lap Times',
-  description: 'Driver table focused on latest lap times',
+  description: 'Driver lap table with latest, best, and configurable lap history',
   configurable: true,
   preview: true,
 });
