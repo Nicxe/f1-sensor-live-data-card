@@ -11,6 +11,8 @@ body:
       options:
         - label: I am running the latest version of F1 Sensor Alert Card
           required: true
+        - label: I am running the latest version of F1 Sensor
+          required: true
         - label: I have searched existing issues
           required: true
         - label: I have restarted Home Assistant
@@ -21,6 +23,15 @@ body:
     attributes:
       label: F1 Sensor Alert Card Version
       placeholder: e.g. 1.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: sensor_version
+    attributes:
+      label: F1 Sensor Version
+      description: The version of the F1 Sensor integration installed in Home Assistant.
+      placeholder: e.g. 2.0.0
     validations:
       required: true
 
