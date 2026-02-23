@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     if: contains(github.event.issue.labels.*.name, 'bug')
     steps:
-      - name: Check reported version against latest release
+      - name: Check reported versions against latest releases
         uses: actions/github-script@v7
         with:
           script: |
@@ -37,14 +37,18 @@ jobs:
             const issueNumber = context.payload.issue.number;
             const existingLabels = context.payload.issue.labels.map(l => l.name);
 
-            // Extract reported version from issue body
-            const versionMatch = body.match(/### F1 Sensor Alert Card Version\s*\n+([^\n#]+)/);
-            if (!versionMatch) return;
-            const reportedVersion = normalize(versionMatch[1]);
-            if (!reportedVersion) return;
+            // Parse card version (required field)
+            const cardMatch = body.match(/### F1 Sensor Alert Card Version\s*\n+([^\n#]+)/);
+            if (!cardMatch) return;
+            const cardVersion = normalize(cardMatch[1]);
+            if (!cardVersion) return;
 
-            // Beta version — acknowledge as tester, skip outdated check
-            if (isBeta(reportedVersion)) {
+            // Parse sensor version (may be absent in older reports)
+            const sensorMatch = body.match(/### F1 Sensor Version\s*\n+([^\n#]+)/);
+            const sensorVersion = sensorMatch ? normalize(sensorMatch[1]) : null;
+
+            // Beta card — acknowledge tester, skip version comparison
+            if (isBeta(cardVersion)) {
               if (existingLabels.includes('beta')) return;
 
               await ensureLabel('beta', 'bfd4f2', 'Reported on a beta version');
@@ -61,9 +65,9 @@ jobs:
                 body: [
                   '👋 Thanks for testing the beta and taking the time to report this!',
                   '',
-                  `You're running **${reportedVersion}**, which is a pre-release version. Beta feedback is valuable and helps improve the card before stable releases.`,
+                  `You're running **${cardVersion}** of F1 Sensor Alert Card, which is a pre-release version. Beta feedback is valuable and helps improve the card before stable releases.`,
                   '',
-                  'If this issue is affecting your day-to-day use of F1 Sensor Alert Card, you can revert to the latest stable release via HACS at any time.',
+                  'If this issue is affecting your day-to-day use, you can revert to the latest stable release via HACS at any time.',
                   '',
                   '**How to switch back to a stable release via HACS:**',
                   '1. Go to **HACS** in your Home Assistant sidebar',
@@ -76,25 +80,42 @@ jobs:
               return;
             }
 
-            // Stable version — skip if already labeled
+            // Stable version path — skip if already processed
             if (existingLabels.includes('outdated-version')) return;
 
-            // Get latest release
-            let latestRelease;
+            // Fetch latest card release
+            let latestCard;
             try {
               const { data } = await github.rest.repos.getLatestRelease({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
               });
-              latestRelease = data;
+              latestCard = normalize(data.tag_name);
             } catch {
-              // No releases yet — nothing to compare against
+              // No card releases yet — nothing to compare against
               return;
             }
 
-            const latestVersion = normalize(latestRelease.tag_name);
+            // Fetch latest F1 Sensor release (cross-repo)
+            let latestSensor = null;
+            try {
+              const { data } = await github.rest.repos.getLatestRelease({
+                owner: 'Nicxe',
+                repo: 'f1_sensor',
+              });
+              latestSensor = normalize(data.tag_name);
+            } catch {
+              // Could not fetch — skip sensor check
+            }
 
-            if (reportedVersion === latestVersion) return;
+            const cardOutdated = cardVersion !== latestCard;
+            const sensorOutdated =
+              sensorVersion !== null &&
+              !isBeta(sensorVersion) &&
+              latestSensor !== null &&
+              sensorVersion !== latestSensor;
+
+            if (!cardOutdated && !sensorOutdated) return;
 
             await ensureLabel('outdated-version', 'e4e669', 'Issue reported on an outdated version');
             await github.rest.issues.addLabels({
@@ -103,23 +124,50 @@ jobs:
               issue_number: issueNumber,
               labels: ['outdated-version'],
             });
+
+            // Build targeted comment
+            const lines = ['👋 Thanks for the report!', ''];
+
+            if (cardOutdated && sensorOutdated) {
+              lines.push('I noticed that both components are running outdated versions:');
+              lines.push(`- **F1 Sensor Alert Card**: you reported **${cardVersion}**, but the latest is **${latestCard}**`);
+              lines.push(`- **F1 Sensor**: you reported **${sensorVersion}**, but the latest is **${latestSensor}**`);
+              lines.push('');
+              lines.push('Please update both components and check whether the issue still occurs — many problems are already fixed in newer releases.');
+              lines.push('');
+              lines.push('**How to update via HACS:**');
+              lines.push('1. Go to **HACS** in your Home Assistant sidebar');
+              lines.push('2. Update both **F1 Sensor** and **F1 Sensor Alert Card** to their latest versions');
+              lines.push('3. Restart Home Assistant, then reload your browser or clear the cache');
+            } else if (cardOutdated) {
+              lines.push(`I noticed you're running version **${cardVersion}** of F1 Sensor Alert Card, but the latest release is **${latestCard}**.`);
+              lines.push('');
+              lines.push('Please update to the latest version and check whether the issue still occurs — many problems are already fixed in newer releases.');
+              lines.push('');
+              lines.push('**How to update via HACS:**');
+              lines.push('1. Go to **HACS** in your Home Assistant sidebar');
+              lines.push('2. Find **F1 Sensor Alert Card**, click **Download**, and select the latest version');
+              lines.push('3. Reload your browser or clear the cache');
+            } else {
+              lines.push(`I noticed you're running version **${sensorVersion}** of F1 Sensor, but the latest release is **${latestSensor}**.`);
+              lines.push('');
+              lines.push('F1 Sensor Alert Card depends on F1 Sensor, so running an outdated version of the integration may be the cause of this issue.');
+              lines.push('');
+              lines.push('Please update F1 Sensor and check whether the issue still occurs.');
+              lines.push('');
+              lines.push('**How to update via HACS:**');
+              lines.push('1. Go to **HACS** in your Home Assistant sidebar');
+              lines.push('2. Find **F1 Sensor**, click **Download**, and select the latest version');
+              lines.push('3. Restart Home Assistant');
+            }
+
+            lines.push('');
+            lines.push('If the issue persists after updating, please comment here and we\'ll continue investigating.');
+            lines.push('If we don\'t hear back within **24 hours**, this issue will be automatically closed.');
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: issueNumber,
-              body: [
-                '👋 Thanks for the report!',
-                '',
-                `I noticed you're running version **${reportedVersion}**, but the latest release of F1 Sensor Alert Card is **${latestVersion}**.`,
-                '',
-                'Please update to the latest version and check whether the issue still occurs — many problems are already fixed in newer releases.',
-                '',
-                '**How to update via HACS:**',
-                '1. Go to **HACS** in your Home Assistant sidebar',
-                '2. Find **F1 Sensor Alert Card**, click **Download**, and select the latest version',
-                '3. Reload your browser or clear the cache',
-                '',
-                'If the issue persists after updating, please comment here and we\'ll continue investigating.',
-                'If we don\'t hear back within **24 hours**, this issue will be automatically closed.',
-              ].join('\n'),
+              body: lines.join('\n'),
             });
