@@ -565,8 +565,8 @@ class F1TyreStatisticsCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-sensor-live-data-card',
-      entity: 'sensor.f1_tyre_statistics',
-      drivers_entity: 'sensor.f1_driver_list',
+      entity: '',
+      drivers_entity: '',
       title: 'Tyres Statistics',
     };
   }
@@ -1246,10 +1246,10 @@ class F1PitStopOverviewCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-pitstop-overview-card',
-      drivers_entity: 'sensor.f1_driver_list',
-      positions_entity: 'sensor.f1_driver_positions',
-      tyres_entity: 'sensor.f1_current_tyres',
-      pitstops_entity: 'sensor.f1_pitstops',
+      drivers_entity: '',
+      positions_entity: '',
+      tyres_entity: '',
+      pitstops_entity: '',
       title: 'Pit Stops & Tyres',
     };
   }
@@ -2523,8 +2523,8 @@ class F1DriverLapTimesCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-driver-lap-times-card',
-      drivers_entity: 'sensor.f1_driver_list',
-      positions_entity: 'sensor.f1_driver_positions',
+      drivers_entity: '',
+      positions_entity: '',
       title: 'Driver Lap Times',
     };
   }
@@ -3547,8 +3547,8 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-championship-prediction-drivers-card',
-      entity: 'sensor.f1_championship_prediction_drivers',
-      drivers_entity: 'sensor.f1_driver_list',
+      entity: '',
+      drivers_entity: '',
       title: 'Championship Prediction Drivers',
     };
   }
@@ -4132,7 +4132,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-championship-prediction-teams-card',
-      entity: 'sensor.f1_championship_prediction_teams',
+      entity: '',
       title: 'Championship Prediction Teams',
     };
   }
@@ -4545,8 +4545,6 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      entity: 'sensor.f1_championship_prediction_drivers',
-      drivers_entity: 'sensor.f1_driver_list',
       title: 'Championship Prediction Drivers',
       show_header: true,
       show_table_header: true,
@@ -4816,7 +4814,6 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      entity: 'sensor.f1_championship_prediction_teams',
       title: 'Championship Prediction Teams',
       show_header: true,
       show_table_header: true,
@@ -5208,9 +5205,9 @@ class F1InvestigationsCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-investigations-card',
-      investigations_entity: 'sensor.f1_investigations',
-      drivers_entity: 'sensor.f1_driver_list',
-      positions_entity: 'sensor.f1_driver_positions',
+      investigations_entity: '',
+      drivers_entity: '',
+      positions_entity: '',
       title: 'Investigations & Penalties',
     };
   }
@@ -6068,9 +6065,9 @@ class F1TrackLimitsCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-track-limits-card',
-      track_limits_entity: 'sensor.f1_track_limits',
-      drivers_entity: 'sensor.f1_driver_list',
-      positions_entity: 'sensor.f1_driver_positions',
+      track_limits_entity: '',
+      drivers_entity: '',
+      positions_entity: '',
       title: 'Track Limits',
     };
   }
@@ -6902,17 +6899,6 @@ class F1LiveSessionCard extends LitElement {
 
   setConfig(config) {
     this.config = {
-      session_entity: 'sensor.f1_current_session',
-      session_status_entity: 'sensor.f1_session_status',
-      formation_start_entity: 'binary_sensor.f1_formation_start',
-      lap_count_entity: 'sensor.f1_race_lap_count',
-      track_status_entity: 'sensor.f1_track_status',
-      weather_entity: 'sensor.f1_track_weather',
-      next_race_entity: 'sensor.f1_next_race',
-      session_time_remaining_entity: 'sensor.f1_session_time_remaining',
-      session_time_elapsed_entity: 'sensor.f1_session_time_elapsed',
-      overtake_mode_entity: 'binary_sensor.f1_overtake_mode',
-      straight_mode_entity: 'sensor.f1_straight_mode',
       show_flag: true,
       show_lap_progress: true,
       show_track_status: true,
@@ -6930,15 +6916,17 @@ class F1LiveSessionCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-live-session-card',
-      session_entity: 'sensor.f1_current_session',
-      session_status_entity: 'sensor.f1_session_status',
-      formation_start_entity: 'binary_sensor.f1_formation_start',
-      lap_count_entity: 'sensor.f1_race_lap_count',
-      track_status_entity: 'sensor.f1_track_status',
-      weather_entity: 'sensor.f1_track_weather',
-      next_race_entity: 'sensor.f1_next_race',
-      overtake_mode_entity: 'binary_sensor.f1_overtake_mode',
-      straight_mode_entity: 'sensor.f1_straight_mode',
+      session_entity: '',
+      session_status_entity: '',
+      formation_start_entity: '',
+      lap_count_entity: '',
+      track_status_entity: '',
+      weather_entity: '',
+      next_race_entity: '',
+      session_time_remaining_entity: '',
+      session_time_elapsed_entity: '',
+      overtake_mode_entity: '',
+      straight_mode_entity: '',
     };
   }
 
@@ -6955,8 +6943,43 @@ class F1LiveSessionCard extends LitElement {
     };
   }
 
+  _configuredEntityId(key, legacyDefault = null) {
+    if (!this.config || typeof this.config !== 'object') return legacyDefault;
+    const hasKey = Object.prototype.hasOwnProperty.call(this.config, key);
+    const value = this.config[key];
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) return trimmed;
+      return hasKey ? null : legacyDefault;
+    }
+    if (value != null) return value;
+    return hasKey ? null : legacyDefault;
+  }
+
+  _legacyEntityId(key) {
+    const defaults = {
+      session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
+      formation_start_entity: 'binary_sensor.f1_formation_start',
+      lap_count_entity: 'sensor.f1_race_lap_count',
+      track_status_entity: 'sensor.f1_track_status',
+      weather_entity: 'sensor.f1_track_weather',
+      next_race_entity: 'sensor.f1_next_race',
+      session_time_remaining_entity: 'sensor.f1_session_time_remaining',
+      session_time_elapsed_entity: 'sensor.f1_session_time_elapsed',
+      overtake_mode_entity: 'binary_sensor.f1_overtake_mode',
+      straight_mode_entity: 'sensor.f1_straight_mode',
+    };
+    return defaults[key] ?? null;
+  }
+
   _getSessionData() {
-    const entity = getEntityStateWithFallback(this.hass, this.config.session_entity);
+    const entityId = this._configuredEntityId(
+      'session_entity',
+      this._legacyEntityId('session_entity'),
+    );
+    if (!entityId) return null;
+    const entity = getEntityStateWithFallback(this.hass, entityId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -6964,7 +6987,11 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getSessionStatusData() {
-    const primaryId = this.config.session_status_entity || 'sensor.f1_session_status';
+    const primaryId = this._configuredEntityId(
+      'session_status_entity',
+      this._legacyEntityId('session_status_entity'),
+    );
+    if (!primaryId) return null;
     const entity = getEntityStateWithFallback(this.hass, primaryId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
@@ -6973,7 +7000,11 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getNextRaceData() {
-    const primaryId = this.config.next_race_entity || 'sensor.f1_next_race';
+    const primaryId = this._configuredEntityId(
+      'next_race_entity',
+      this._legacyEntityId('next_race_entity'),
+    );
+    if (!primaryId) return null;
     const entity = getEntityStateWithFallback(this.hass, primaryId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
@@ -6982,8 +7013,14 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getSessionClockData() {
-    const remainingId = this.config.session_time_remaining_entity || 'sensor.f1_session_time_remaining';
-    const elapsedId = this.config.session_time_elapsed_entity || 'sensor.f1_session_time_elapsed';
+    const remainingId = this._configuredEntityId(
+      'session_time_remaining_entity',
+      this._legacyEntityId('session_time_remaining_entity'),
+    );
+    const elapsedId = this._configuredEntityId(
+      'session_time_elapsed_entity',
+      this._legacyEntityId('session_time_elapsed_entity'),
+    );
     const remainingEntity = getEntityStateWithFallback(this.hass, remainingId);
     const elapsedEntity = getEntityStateWithFallback(this.hass, elapsedId);
     const isValid = (e) => e && e.state !== 'unavailable' && e.state !== 'unknown' && e.state;
@@ -7090,7 +7127,11 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getFormationStart() {
-    const entityId = this.config.formation_start_entity || 'binary_sensor.f1_formation_start';
+    const entityId = this._configuredEntityId(
+      'formation_start_entity',
+      this._legacyEntityId('formation_start_entity'),
+    );
+    if (!entityId) return false;
     const entity = getEntityStateWithFallback(this.hass, entityId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return false;
@@ -7099,14 +7140,22 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getOvertakeMode() {
-    const entityId = this.config.overtake_mode_entity || 'binary_sensor.f1_overtake_mode';
+    const entityId = this._configuredEntityId(
+      'overtake_mode_entity',
+      this._legacyEntityId('overtake_mode_entity'),
+    );
+    if (!entityId) return null;
     const entity = getEntityStateWithFallback(this.hass, entityId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') return null;
     return entity.state;
   }
 
   _getStraightMode() {
-    const entityId = this.config.straight_mode_entity || 'sensor.f1_straight_mode';
+    const entityId = this._configuredEntityId(
+      'straight_mode_entity',
+      this._legacyEntityId('straight_mode_entity'),
+    );
+    if (!entityId) return null;
     const entity = getEntityStateWithFallback(this.hass, entityId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') return null;
     return entity.state;
@@ -7311,7 +7360,12 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getLapData() {
-    const entity = getEntityStateWithFallback(this.hass, this.config.lap_count_entity);
+    const entityId = this._configuredEntityId(
+      'lap_count_entity',
+      this._legacyEntityId('lap_count_entity'),
+    );
+    if (!entityId) return null;
+    const entity = getEntityStateWithFallback(this.hass, entityId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -7322,7 +7376,12 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getTrackStatus() {
-    const entity = getEntityStateWithFallback(this.hass, this.config.track_status_entity);
+    const entityId = this._configuredEntityId(
+      'track_status_entity',
+      this._legacyEntityId('track_status_entity'),
+    );
+    if (!entityId) return null;
+    const entity = getEntityStateWithFallback(this.hass, entityId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -7330,7 +7389,12 @@ class F1LiveSessionCard extends LitElement {
   }
 
   _getWeatherData() {
-    const entity = getEntityStateWithFallback(this.hass, this.config.weather_entity);
+    const entityId = this._configuredEntityId(
+      'weather_entity',
+      this._legacyEntityId('weather_entity'),
+    );
+    if (!entityId) return null;
+    const entity = getEntityStateWithFallback(this.hass, entityId);
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
       return null;
     }
@@ -7390,6 +7454,13 @@ class F1LiveSessionCard extends LitElement {
   render() {
     if (!this.hass || !this.config) {
       return html`<ha-card><div class="ls-card ls-unavailable">Loading...</div></ha-card>`;
+    }
+    const sessionEntityId = this._configuredEntityId(
+      'session_entity',
+      this._legacyEntityId('session_entity'),
+    );
+    if (!sessionEntityId) {
+      return html`<ha-card><div class="ls-card ls-unavailable">Select a Current Session Sensor in card settings</div></ha-card>`;
     }
 
     const session = this._getSessionData();
@@ -7707,16 +7778,6 @@ class F1LiveSessionCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      session_entity: 'sensor.f1_current_session',
-      session_status_entity: 'sensor.f1_session_status',
-      lap_count_entity: 'sensor.f1_race_lap_count',
-      track_status_entity: 'sensor.f1_track_status',
-      weather_entity: 'sensor.f1_track_weather',
-      next_race_entity: 'sensor.f1_next_race',
-      session_time_remaining_entity: 'sensor.f1_session_time_remaining',
-      session_time_elapsed_entity: 'sensor.f1_session_time_elapsed',
-      overtake_mode_entity: 'binary_sensor.f1_overtake_mode',
-      straight_mode_entity: 'sensor.f1_straight_mode',
       show_flag: true,
       show_lap_progress: true,
       show_track_status: true,
@@ -8201,7 +8262,7 @@ class F1RaceControlCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-race-control-card',
-      entity: 'sensor.f1_race_control',
+      entity: '',
     };
   }
 
@@ -8488,7 +8549,6 @@ class F1RaceControlCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      entity: 'sensor.f1_race_control',
       show_fia_logo: true,
       min_display_time: 0,
       ...config,
