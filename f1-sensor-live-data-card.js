@@ -8141,27 +8141,36 @@ class F1RaceControlCard extends LitElement {
     }
   }
 
-  updated(changedProps) {
-    if (changedProps.has('hass')) {
-      this._checkForNewMessage();
-      const entity = getEntityStateWithFallback(this.hass, this.config?.entity);
-      if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
-        this._currentMessage = null;
-        this._messageQueue = [];
-        this._historyQueue = [];
-        this._historyIndex = 0;
-        this._lastEventId = null;
-        this._clearDisplayTimer();
-      }
+  willUpdate(changedProps) {
+    if (changedProps.has('hass') || changedProps.has('config')) {
+      this._syncMessageState();
     }
   }
 
-  _checkForNewMessage() {
+  _resetMessageState() {
+    this._currentMessage = null;
+    this._messageQueue = [];
+    this._historyQueue = [];
+    this._historyIndex = 0;
+    this._lastEventId = null;
+    this._clearDisplayTimer();
+  }
+
+  _syncMessageState() {
     const entity = getEntityStateWithFallback(this.hass, this.config?.entity);
-    if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') return;
+    if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
+      this._resetMessageState();
+      return;
+    }
+    this._checkForNewMessage(entity);
+  }
+
+  _checkForNewMessage(entity = null) {
+    const entityState = entity || getEntityStateWithFallback(this.hass, this.config?.entity);
+    if (!entityState || entityState.state === 'unavailable' || entityState.state === 'unknown') return;
 
     const minDisplayTime = this.config?.min_display_time || 0;
-    const queue = this._buildHistoryQueue(entity);
+    const queue = this._buildHistoryQueue(entityState);
 
     if (minDisplayTime > 0 && queue.length > 0) {
       const changed = this._historyChanged(queue);
@@ -8302,6 +8311,17 @@ class F1RaceControlCard extends LitElement {
     if (queue.length !== this._historyQueue.length) return true;
     const currentLast = this._historyQueue[this._historyQueue.length - 1]?.id;
     return queue[queue.length - 1]?.id !== currentLast;
+  }
+
+  _parseIncidentTime(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const normalized = text.includes('Z') || /[+-]\d{2}:\d{2}$/.test(text)
+      ? text
+      : `${text}Z`;
+    const ts = Date.parse(normalized);
+    return Number.isNaN(ts) ? null : ts;
   }
 
   _ensureQueueTimer(minDisplayTime, queueLength) {
