@@ -7104,10 +7104,6 @@ class F1LiveSessionCard extends LitElement {
       const startValue = this._getSessionStartValue(sessionStatus);
       const start = this._parseDateWithOffset(startValue, sessionStatus?.gmt_offset);
       diff = start ? start.getTime() - Date.now() : 0;
-      if (diff <= 0 && start) {
-        const fallback = this._getCountdownTarget(start);
-        diff = fallback ? fallback.getTime() - Date.now() : diff;
-      }
     } else if (nextRace) {
       const startValue = nextRace.race_start_utc || nextRace.state || nextRace.race_start;
       const start = this._parseDateWithOffset(startValue, null);
@@ -7314,19 +7310,6 @@ class F1LiveSessionCard extends LitElement {
     return `T-${m}:${pad(s)}`;
   }
 
-  _getCountdownTarget(start) {
-    if (!start) return null;
-    const timeZone = this._getTimeZone();
-    const nowZoned = this._getZonedDate(new Date(), timeZone);
-    const startZoned = this._getZonedDate(start, timeZone);
-    const target = new Date(nowZoned);
-    target.setHours(startZoned.getHours(), startZoned.getMinutes(), startZoned.getSeconds(), 0);
-    if (target.getTime() <= nowZoned.getTime()) {
-      target.setDate(target.getDate() + 1);
-    }
-    return target;
-  }
-
   _getCountdown(sessionStatus) {
     const state = String(sessionStatus?.state || '').toLowerCase();
     if (state !== 'pre') return '';
@@ -7338,11 +7321,7 @@ class F1LiveSessionCard extends LitElement {
     const nowZoned = this._getZonedDate(new Date(), timeZone);
     let diffSeconds = Math.floor((startZoned.getTime() - nowZoned.getTime()) / 1000);
     if (diffSeconds <= 0) {
-      const fallback = this._getCountdownTarget(start);
-      if (!fallback) return '';
-      const fallbackZoned = this._getZonedDate(fallback, timeZone);
-      diffSeconds = Math.floor((fallbackZoned.getTime() - nowZoned.getTime()) / 1000);
-      if (diffSeconds <= 0) return '';
+      diffSeconds = 0;
     }
     return this._formatCountdown(diffSeconds);
   }
