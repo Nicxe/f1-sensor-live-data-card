@@ -7104,10 +7104,6 @@ class F1LiveSessionCard extends LitElement {
       const startValue = this._getSessionStartValue(sessionStatus);
       const start = this._parseDateWithOffset(startValue, sessionStatus?.gmt_offset);
       diff = start ? start.getTime() - Date.now() : 0;
-      if (diff <= 0 && start) {
-        const fallback = this._getCountdownTarget(start);
-        diff = fallback ? fallback.getTime() - Date.now() : diff;
-      }
     } else if (nextRace) {
       const startValue = nextRace.race_start_utc || nextRace.state || nextRace.race_start;
       const start = this._parseDateWithOffset(startValue, null);
@@ -7314,19 +7310,6 @@ class F1LiveSessionCard extends LitElement {
     return `T-${m}:${pad(s)}`;
   }
 
-  _getCountdownTarget(start) {
-    if (!start) return null;
-    const timeZone = this._getTimeZone();
-    const nowZoned = this._getZonedDate(new Date(), timeZone);
-    const startZoned = this._getZonedDate(start, timeZone);
-    const target = new Date(nowZoned);
-    target.setHours(startZoned.getHours(), startZoned.getMinutes(), startZoned.getSeconds(), 0);
-    if (target.getTime() <= nowZoned.getTime()) {
-      target.setDate(target.getDate() + 1);
-    }
-    return target;
-  }
-
   _getCountdown(sessionStatus) {
     const state = String(sessionStatus?.state || '').toLowerCase();
     if (state !== 'pre') return '';
@@ -7338,11 +7321,7 @@ class F1LiveSessionCard extends LitElement {
     const nowZoned = this._getZonedDate(new Date(), timeZone);
     let diffSeconds = Math.floor((startZoned.getTime() - nowZoned.getTime()) / 1000);
     if (diffSeconds <= 0) {
-      const fallback = this._getCountdownTarget(start);
-      if (!fallback) return '';
-      const fallbackZoned = this._getZonedDate(fallback, timeZone);
-      diffSeconds = Math.floor((fallbackZoned.getTime() - nowZoned.getTime()) / 1000);
-      if (diffSeconds <= 0) return '';
+      diffSeconds = 0;
     }
     return this._formatCountdown(diffSeconds);
   }
@@ -8162,27 +8141,36 @@ class F1RaceControlCard extends LitElement {
     }
   }
 
-  updated(changedProps) {
-    if (changedProps.has('hass')) {
-      this._checkForNewMessage();
-      const entity = getEntityStateWithFallback(this.hass, this.config?.entity);
-      if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
-        this._currentMessage = null;
-        this._messageQueue = [];
-        this._historyQueue = [];
-        this._historyIndex = 0;
-        this._lastEventId = null;
-        this._clearDisplayTimer();
-      }
+  willUpdate(changedProps) {
+    if (changedProps.has('hass') || changedProps.has('config')) {
+      this._syncMessageState();
     }
   }
 
-  _checkForNewMessage() {
+  _resetMessageState() {
+    this._currentMessage = null;
+    this._messageQueue = [];
+    this._historyQueue = [];
+    this._historyIndex = 0;
+    this._lastEventId = null;
+    this._clearDisplayTimer();
+  }
+
+  _syncMessageState() {
     const entity = getEntityStateWithFallback(this.hass, this.config?.entity);
-    if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') return;
+    if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
+      this._resetMessageState();
+      return;
+    }
+    this._checkForNewMessage(entity);
+  }
+
+  _checkForNewMessage(entity = null) {
+    const entityState = entity || getEntityStateWithFallback(this.hass, this.config?.entity);
+    if (!entityState || entityState.state === 'unavailable' || entityState.state === 'unknown') return;
 
     const minDisplayTime = this.config?.min_display_time || 0;
-    const queue = this._buildHistoryQueue(entity);
+    const queue = this._buildHistoryQueue(entityState);
 
     if (minDisplayTime > 0 && queue.length > 0) {
       const changed = this._historyChanged(queue);
@@ -8323,6 +8311,17 @@ class F1RaceControlCard extends LitElement {
     if (queue.length !== this._historyQueue.length) return true;
     const currentLast = this._historyQueue[this._historyQueue.length - 1]?.id;
     return queue[queue.length - 1]?.id !== currentLast;
+  }
+
+  _parseIncidentTime(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const normalized = text.includes('Z') || /[+-]\d{2}:\d{2}$/.test(text)
+      ? text
+      : `${text}Z`;
+    const ts = Date.parse(normalized);
+    return Number.isNaN(ts) ? null : ts;
   }
 
   _ensureQueueTimer(minDisplayTime, queueLength) {
@@ -8939,6 +8938,11 @@ class F1QualifyingTimingCard extends LitElement {
       --lap-text: #d8b4fe;
     }
 
+    .qt-lap.personal-fastest {
+      --lap-bg: rgba(34, 197, 94, 0.22);
+      --lap-text: #86efac;
+    }
+
     .qt-lap.timed {
       --lap-bg: rgba(234, 179, 8, 0.14);
       --lap-text: #fde047;
@@ -9059,8 +9063,11 @@ class F1QualifyingTimingCard extends LitElement {
     const sessionState = this.config.session_entity
       ? getEntityStateWithFallback(this.hass, this.config.session_entity)
       : null;
-    // session_part from current_session sensor (1/2/3), fallback to positions attr
-    const sessionPart = sessionState?.attributes?.session_part ?? currentQPart ?? null;
+    const sessionPart = this._resolveDisplayQualifyingPart(
+      sessionState,
+      currentQPart,
+      positionDrivers,
+    );
 
     const rows = this._buildRows(positionDrivers, tyresDrivers, driverList, currentQPart);
 
@@ -9074,10 +9081,15 @@ class F1QualifyingTimingCard extends LitElement {
       `;
     }
 
-    const fastestLastLapSecs = this._computeFastestLastLap(rows);
     const fastestLapRn = fastestLap
       ? String(fastestLap.racing_number || '').trim()
       : null;
+    const fastestLapTime = typeof fastestLap?.time === 'string'
+      ? fastestLap.time.trim()
+      : null;
+    const fastestLapTimeSecs = Number.isFinite(fastestLap?.time_secs)
+      ? fastestLap.time_secs
+      : this._parseLapTimeSeconds(fastestLapTime);
     const columns = this._columns();
     const gridColumns = columns.map((col) => col.width).join(' ');
 
@@ -9088,7 +9100,7 @@ class F1QualifyingTimingCard extends LitElement {
             ? html`
               <div class="qt-header-row">
                 <div class="qt-header">${this.config.title || 'Qualifying'}</div>
-                ${sessionPart != null
+                ${sessionPart !== null
                   ? html`<div class="qt-q-badge">Q${sessionPart}</div>`
                   : null}
               </div>`
@@ -9096,7 +9108,13 @@ class F1QualifyingTimingCard extends LitElement {
           <div class="qt-scroll">
             <div class="qt-table" style="--qt-columns: ${gridColumns};">
               ${this.config.show_table_header !== false ? this._renderHeader(columns) : null}
-              ${rows.map((row) => this._renderRow(row, columns, fastestLastLapSecs, fastestLapRn))}
+              ${rows.map((row) => this._renderRow(
+                row,
+                columns,
+                fastestLapRn,
+                fastestLapTime,
+                fastestLapTimeSecs,
+              ))}
             </div>
           </div>
         </div>
@@ -9134,17 +9152,23 @@ class F1QualifyingTimingCard extends LitElement {
     `;
   }
 
-  _renderRow(row, columns, fastestLastLapSecs, fastestLapRn) {
+  _renderRow(row, columns, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
     const rowClasses = ['qt-row'];
     if (row.knocked_out) rowClasses.push('knocked-out');
     return html`
       <div class="${rowClasses.join(' ')}">
-        ${columns.map((col) => this._renderCell(row, col, fastestLastLapSecs, fastestLapRn))}
+        ${columns.map((col) => this._renderCell(
+          row,
+          col,
+          fastestLapRn,
+          fastestLapTime,
+          fastestLapTimeSecs,
+        ))}
       </div>
     `;
   }
 
-  _renderCell(row, col, fastestLastLapSecs, fastestLapRn) {
+  _renderCell(row, col, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
     const classes = ['qt-cell'];
     if (col.center) classes.push('center');
     if (col.compact) classes.push('compact');
@@ -9222,11 +9246,21 @@ class F1QualifyingTimingCard extends LitElement {
 
     if (col.key === 'last_lap') {
       const lastLapTime = row.last_lap;
-      const lastLapSecs = lastLapTime ? this._parseLapTimeSeconds(lastLapTime) : null;
-      const isLastLapFastest = lastLapSecs != null
-        && fastestLastLapSecs != null
-        && Math.abs(lastLapSecs - fastestLastLapSecs) < 0.001;
-      const lapClass = isLastLapFastest ? 'overall-fastest' : lastLapTime ? 'timed' : '';
+      const isOverallFastest = this._isOverallFastestLap(
+        row.rn,
+        lastLapTime,
+        fastestLapRn,
+        fastestLapTime,
+        fastestLapTimeSecs,
+      );
+      const isPersonalFastest = !isOverallFastest && this._isLapTimeMatch(lastLapTime, row.best_lap);
+      const lapClass = isOverallFastest
+        ? 'overall-fastest'
+        : isPersonalFastest
+          ? 'personal-fastest'
+          : lastLapTime
+            ? 'timed'
+            : '';
       return html`
         <div class="${classes.join(' ')}">
           <span class="qt-lap ${lapClass}">${lastLapTime || '--:--.---'}</span>
@@ -9236,8 +9270,12 @@ class F1QualifyingTimingCard extends LitElement {
 
     if (col.key === 'best_lap') {
       const bestTime = row.best_lap;
-      const isOverallFastest = fastestLapRn && row.rn && fastestLapRn === row.rn;
-      const lapClass = isOverallFastest ? 'overall-fastest' : bestTime ? 'timed' : '';
+      const isOverallFastest = Boolean(bestTime && fastestLapRn && row.rn && fastestLapRn === row.rn);
+      const lapClass = isOverallFastest
+        ? 'overall-fastest'
+        : bestTime
+          ? 'personal-fastest'
+          : '';
       return html`
         <div class="${classes.join(' ')}">
           <span class="qt-lap ${lapClass}">${bestTime || '--:--.---'}</span>
@@ -9342,6 +9380,41 @@ class F1QualifyingTimingCard extends LitElement {
     return rows;
   }
 
+  _resolveDisplayQualifyingPart(sessionState, ...parts) {
+    for (const part of parts) {
+      const normalized = this._normalizeQualifyingPart(part);
+      if (normalized !== null) {
+        return normalized;
+      }
+    }
+    const inferred = this._inferQualifyingPartFromDrivers(parts.at(-1));
+    if (inferred !== null) {
+      return inferred;
+    }
+    const sessionLabel = String(sessionState?.state || '').trim().toLowerCase();
+    if (sessionLabel === 'qualifying' || sessionLabel === 'sprint qualifying') {
+      return 1;
+    }
+    return null;
+  }
+
+  _normalizeQualifyingPart(value) {
+    if (value == null || value === '') return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    const part = Math.trunc(parsed);
+    if (part === 0) return 1;
+    return [1, 2, 3].includes(part) ? part : null;
+  }
+
+  _inferQualifyingPartFromDrivers(drivers) {
+    if (!Array.isArray(drivers) || drivers.length === 0) return null;
+    if (drivers.some((driver) => driver?.q3_time)) return 3;
+    if (drivers.some((driver) => driver?.q2_time)) return 2;
+    if (drivers.some((driver) => driver?.q1_time)) return 1;
+    return null;
+  }
+
   _resolveLastLapTime(pos) {
     const laps = pos?.laps;
     if (!laps || typeof laps !== 'object') return null;
@@ -9357,15 +9430,24 @@ class F1QualifyingTimingCard extends LitElement {
     return entries.length > 0 ? entries[0].time.trim() : null;
   }
 
-  _computeFastestLastLap(rows) {
-    let fastest = null;
-    rows.forEach((row) => {
-      if (!row.last_lap) return;
-      const secs = this._parseLapTimeSeconds(row.last_lap);
-      if (secs === null) return;
-      if (fastest === null || secs < fastest) fastest = secs;
-    });
-    return fastest;
+  _isOverallFastestLap(rowRn, lapTime, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
+    if (!rowRn || !fastestLapRn || rowRn !== fastestLapRn) return false;
+    if (!lapTime) return false;
+    if (this._isLapTimeMatch(lapTime, fastestLapTime)) return true;
+    const lapSecs = this._parseLapTimeSeconds(lapTime);
+    return lapSecs != null
+      && fastestLapTimeSecs != null
+      && Math.abs(lapSecs - fastestLapTimeSecs) < 0.001;
+  }
+
+  _isLapTimeMatch(left, right) {
+    if (!left || !right) return false;
+    if (String(left).trim() === String(right).trim()) return true;
+    const leftSecs = this._parseLapTimeSeconds(left);
+    const rightSecs = this._parseLapTimeSeconds(right);
+    return leftSecs != null
+      && rightSecs != null
+      && Math.abs(leftSecs - rightSecs) < 0.001;
   }
 
   _formatSectorTime(secs) {
