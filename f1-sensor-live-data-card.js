@@ -8124,7 +8124,6 @@ class F1RaceControlCard extends LitElement {
   constructor() {
     super();
     this._currentMessage = null;
-    this._messageQueue = [];
     this._historyQueue = [];
     this._historyIndex = 0;
     this._lastEventId = null;
@@ -8157,10 +8156,10 @@ class F1RaceControlCard extends LitElement {
 
   _resetMessageState() {
     this._currentMessage = null;
-    this._messageQueue = [];
     this._historyQueue = [];
     this._historyIndex = 0;
     this._lastEventId = null;
+    this._messageShownAt = 0;
     this._clearDisplayTimer();
   }
 
@@ -8179,44 +8178,47 @@ class F1RaceControlCard extends LitElement {
 
     const minDisplayTime = this.config?.min_display_time || 0;
     const queue = this._buildHistoryQueue(entityState);
+    const currentId = this._currentMessage?.id || this._lastEventId;
+    const historyChanged = this._historyChanged(queue);
 
-    if (minDisplayTime > 0 && queue.length > 0) {
-      const changed = this._historyChanged(queue);
-      if (changed) {
-        this._historyQueue = queue;
-        this._historyIndex = 0;
-        this._currentMessage = queue[0];
-        this._lastEventId = queue[0]?.id || null;
-      } else if (!this._currentMessage && queue.length > 0) {
-        this._historyQueue = queue;
-        this._currentMessage = queue[this._historyIndex] || queue[0];
+    if (queue.length === 0) {
+      this._resetMessageState();
+      return;
+    }
+
+    if (minDisplayTime > 0) {
+      const currentIndex = currentId
+        ? queue.findIndex((item) => item?.id === currentId)
+        : -1;
+      const shouldResetToStart = historyChanged && currentIndex === -1;
+      const nextIndex = currentIndex >= 0 ? currentIndex : 0;
+      const nextMessage = queue[nextIndex];
+      const nextId = nextMessage?.id || null;
+
+      if (!this._currentMessage || this._currentMessage.id !== nextId) {
+        this._showMessage(nextMessage, { resetTimer: shouldResetToStart });
       }
+
+      this._historyQueue = queue;
+      this._historyIndex = nextIndex;
       this._ensureQueueTimer(minDisplayTime, this._historyQueue.length);
       return;
     }
 
     this._historyQueue = queue;
-    this._historyIndex = 0;
+    this._historyIndex = queue.length - 1;
     this._clearDisplayTimer();
-    if (queue.length > 0) {
-      const latest = queue[queue.length - 1];
-      this._currentMessage = latest;
-      this._lastEventId = latest?.id || null;
-    }
+    this._showMessage(queue[this._historyIndex]);
   }
 
-  _showMessage(msg) {
-    this._currentMessage = msg;
-    this._messageShownAt = Date.now();
-    this._clearDisplayTimer();
-
-    const minDisplayTime = this.config?.min_display_time || 0;
-    if (minDisplayTime > 0 && this._messageQueue.length > 0) {
-      // Schedule next message
-      this._displayTimer = setTimeout(() => {
-        this._showNextFromQueue();
-      }, minDisplayTime * 1000);
+  _showMessage(msg, options = {}) {
+    const { resetTimer = false } = options;
+    if (resetTimer) {
+      this._clearDisplayTimer();
     }
+    this._currentMessage = msg;
+    this._lastEventId = msg?.id || null;
+    this._messageShownAt = msg ? Date.now() : 0;
   }
 
   _showNextFromQueue() {
@@ -8230,7 +8232,7 @@ class F1RaceControlCard extends LitElement {
       return;
     }
     this._historyIndex = nextIndex;
-    this._currentMessage = this._historyQueue[this._historyIndex];
+    this._showMessage(this._historyQueue[this._historyIndex], { resetTimer: true });
     this.requestUpdate();
     const minDisplayTime = this.config?.min_display_time || 0;
     if (minDisplayTime > 0 && this._historyIndex < this._historyQueue.length - 1) {
@@ -8246,6 +8248,7 @@ class F1RaceControlCard extends LitElement {
     this.config = {
       entity: 'sensor.f1_race_control',
       show_fia_logo: true,
+      hide_blue_flags: false,
       min_display_time: 0,
       ...config,
     };
@@ -8291,6 +8294,7 @@ class F1RaceControlCard extends LitElement {
           _time: parsed,
         };
       })
+      .filter((item) => !this._shouldHideMessage(item))
       .filter(Boolean);
     if (queue.length > 0) {
       const hasTime = queue.some((item) => Number.isFinite(item._time));
@@ -8304,21 +8308,36 @@ class F1RaceControlCard extends LitElement {
     }
     const fallbackId = entity.attributes?.event_id || entity.attributes?.utc || entity.state;
     if (!fallbackId) return [];
-    return [{
+    const fallbackItem = {
       id: fallbackId,
       message: entity.attributes?.message || entity.state,
       category: entity.attributes?.category || null,
       flag: entity.attributes?.flag || null,
       car_number: entity.attributes?.car_number || null,
       utc: entity.attributes?.utc || null,
-    }];
+    };
+    return this._shouldHideMessage(fallbackItem) ? [] : [fallbackItem];
   }
 
   _historyChanged(queue) {
     if (!Array.isArray(queue) || queue.length === 0) return this._historyQueue.length !== 0;
     if (queue.length !== this._historyQueue.length) return true;
-    const currentLast = this._historyQueue[this._historyQueue.length - 1]?.id;
-    return queue[queue.length - 1]?.id !== currentLast;
+    return queue.some((item, index) => item?.id !== this._historyQueue[index]?.id);
+  }
+
+  _shouldHideMessage(item) {
+    if (!item) return true;
+    if (this.config?.hide_blue_flags !== true) return false;
+    return this._isBlueFlagMessage(item);
+  }
+
+  _isBlueFlagMessage(item) {
+    const flag = String(item?.flag || '').trim().toUpperCase();
+    if (flag === 'BLUE') return true;
+    if (flag) return false;
+
+    const message = this._formatMessage(item?.message || '').toLowerCase();
+    return message.includes('waved blue flag') || message.includes('blue flag');
   }
 
   _parseIncidentTime(value) {
@@ -8381,28 +8400,13 @@ class F1RaceControlCard extends LitElement {
       `;
     }
 
-    // Initialize from entity if no current message
-    if (!this._currentMessage) {
-      const entity = currentEntity;
-      if (entity && entity.state !== 'unavailable' && entity.state !== 'unknown') {
-        this._currentMessage = {
-          message: entity.attributes?.message || entity.state,
-          category: entity.attributes?.category || null,
-          flag: entity.attributes?.flag || null,
-          car_number: entity.attributes?.car_number || null,
-          utc: entity.attributes?.utc || null,
-        };
-        this._lastEventId = entity.attributes?.event_id || entity.attributes?.utc || entity.state;
-      }
-    }
-
     if (!this._currentMessage) {
       const showLogo = this.config.show_fia_logo;
       return html`
         <ha-card>
           <div class="rc-card rc-unavailable">
             ${showLogo ? html`<img class="rc-fia-logo" src="https://www.fia.com/sites/all/themes/penceo_theme/images/fia-footer-logo.png" alt="FIA" />` : null}
-            <span class="rc-unavailable-text">No session data</span>
+            <span class="rc-unavailable-text">No visible race control messages</span>
           </div>
         </ha-card>
       `;
@@ -8557,6 +8561,7 @@ class F1RaceControlCardEditor extends LitElement {
   setConfig(config) {
     this._config = {
       show_fia_logo: true,
+      hide_blue_flags: false,
       min_display_time: 0,
       ...config,
     };
@@ -8608,6 +8613,11 @@ class F1RaceControlCardEditor extends LitElement {
     return html`
       <div class="display-section">
         ${this._renderSwitch('show_fia_logo', 'Show FIA logo')}
+        ${this._renderSwitch(
+          'hide_blue_flags',
+          'Hide blue flag messages',
+          'Remove blue flag notices from the banner and queue'
+        )}
 
         <ha-textfield
           .label=${'Min display time per message (seconds)'}
