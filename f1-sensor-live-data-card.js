@@ -5511,8 +5511,10 @@ class F1InvestigationsCard extends LitElement {
     if (!text) return null;
     const upper = String(text).toUpperCase();
     const timeMatch = upper.match(/(\d+)\s*SECOND/);
+    const isStopGo = /STOP(?:[-\s]+AND[-\s]+|\/)?GO/.test(upper);
     if (timeMatch && upper.includes('TIME PENALTY')) return `PENALTY ${timeMatch[1]} SEC`;
-    if (timeMatch && upper.includes('STOP/GO')) return `PENALTY STOP/GO ${timeMatch[1]} SEC`;
+    if (timeMatch && isStopGo) return `PENALTY STOP/GO ${timeMatch[1]} SEC`;
+    if (isStopGo) return 'PENALTY STOP/GO';
     if (upper.includes('DRIVE THROUGH')) return 'PENALTY DRIVE THROUGH';
     if (upper.includes('REPRIMAND')) return 'REPRIMAND';
     return null;
@@ -6281,8 +6283,10 @@ class F1TrackLimitsCard extends LitElement {
     if (!text) return null;
     const upper = String(text).toUpperCase();
     const timeMatch = upper.match(/(\d+)\s*SECOND/);
+    const isStopGo = /STOP(?:[-\s]+AND[-\s]+|\/)?GO/.test(upper);
     if (timeMatch && upper.includes('TIME PENALTY')) return `PENALTY ${timeMatch[1]} SEC`;
-    if (timeMatch && upper.includes('STOP/GO')) return `PENALTY STOP/GO ${timeMatch[1]} SEC`;
+    if (timeMatch && isStopGo) return `PENALTY STOP/GO ${timeMatch[1]} SEC`;
+    if (isStopGo) return 'PENALTY STOP/GO';
     if (upper.includes('DRIVE THROUGH')) return 'PENALTY DRIVE THROUGH';
     if (upper.includes('REPRIMAND')) return 'REPRIMAND';
     return null;
