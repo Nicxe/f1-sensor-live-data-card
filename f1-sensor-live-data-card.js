@@ -1540,9 +1540,9 @@ class F1PitStopOverviewCard extends LitElement {
         ? Number(pit.count)
         : stops.length;
 
-      const pitStopTimeNum = Number(lastStop?.pit_stop_time);
-      const pitLaneTimeNum = Number(lastStop?.pit_lane_time);
-      const pitDeltaNum = Number(lastStop?.pit_delta);
+      const pitStopTimeNum = this._parseOptionalNumber(lastStop?.pit_stop_time);
+      const pitLaneTimeNum = this._parseOptionalNumber(lastStop?.pit_lane_time);
+      const pitDeltaNum = this._parseOptionalNumber(lastStop?.pit_delta);
       const pitStopTime = this._formatSeconds(pitStopTimeNum);
       const pitLaneTime = this._formatSeconds(pitLaneTimeNum);
       const pitDelta = this._formatSeconds(pitDeltaNum);
@@ -1624,6 +1624,13 @@ class F1PitStopOverviewCard extends LitElement {
     const match = text.match(/\d+/);
     if (!match) return null;
     const num = Number(match[0]);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  _parseOptionalNumber(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string' && value.trim() === '') return null;
+    const num = Number(value);
     return Number.isFinite(num) ? num : null;
   }
 
