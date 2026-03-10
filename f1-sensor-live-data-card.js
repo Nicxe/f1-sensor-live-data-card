@@ -250,6 +250,121 @@ const getEntityStateWithFallback = (hass, entityId) => {
   return hass.states?.[resolvedId] || null;
 };
 
+const measureRenderedCardHeight = (host) => {
+  const card = host?.renderRoot?.querySelector?.('ha-card');
+  const content = card?.firstElementChild;
+  const cardHeight = card?.getBoundingClientRect?.().height ?? 0;
+  const contentHeight = content?.scrollHeight ?? 0;
+  return Math.max(cardHeight, contentHeight);
+};
+
+const attachSectionsHeightObserver = (host) => {
+  if (!host?.isConnected || typeof ResizeObserver === 'undefined') {
+    return;
+  }
+
+  const card = host.renderRoot?.querySelector?.('ha-card');
+  if (!card) {
+    return;
+  }
+
+  if (!host._sectionsHeightObserver) {
+    host._sectionsHeightObserver = new ResizeObserver(() => {
+      updateSectionsHeight(host);
+    });
+  }
+
+  if (host._sectionsObservedCard === card) {
+    return;
+  }
+
+  detachSectionsHeightObserver(host);
+  host._sectionsObservedCard = card;
+  host._sectionsHeightObserver.observe(card);
+};
+
+const detachSectionsHeightObserver = (host) => {
+  if (host?._sectionsHeightObserver && host?._sectionsObservedCard) {
+    host._sectionsHeightObserver.unobserve(host._sectionsObservedCard);
+  }
+  host._sectionsObservedCard = undefined;
+};
+
+const updateSectionsHeight = (host) => {
+  const measuredHeight = measureRenderedCardHeight(host);
+  const nextHeight = measuredHeight > 0 ? Math.ceil(measuredHeight) : 0;
+
+  if (nextHeight <= 0 || nextHeight === host._sectionsMeasuredHeight) {
+    return;
+  }
+
+  host._sectionsMeasuredHeight = nextHeight;
+  host.dispatchEvent(new Event('card-updated', { bubbles: true, composed: true }));
+};
+
+const installSectionsAutoHeight = (CardClass, fallbackGridOptions = {}) => {
+  const proto = CardClass.prototype;
+  const originalDisconnected = proto.disconnectedCallback;
+  const originalFirstUpdated = proto.firstUpdated;
+  const originalUpdated = proto.updated;
+  const originalGetCardSize = proto.getCardSize;
+  const originalGetGridOptions = proto.getGridOptions;
+
+  proto.disconnectedCallback = function disconnectedCallback() {
+    detachSectionsHeightObserver(this);
+    originalDisconnected?.call(this);
+  };
+
+  proto.firstUpdated = function firstUpdated(changedProps) {
+    originalFirstUpdated?.call(this, changedProps);
+    attachSectionsHeightObserver(this);
+    updateSectionsHeight(this);
+  };
+
+  proto.updated = function updated(changedProps) {
+    originalUpdated?.call(this, changedProps);
+
+    if (!changedProps?.has?.('hass') && !changedProps?.has?.('config')) {
+      return;
+    }
+
+    attachSectionsHeightObserver(this);
+    updateSectionsHeight(this);
+  };
+
+  proto.getCardSize = async function getCardSize() {
+    await this.updateComplete;
+
+    const renderedHeight = measureRenderedCardHeight(this);
+    if (renderedHeight > 0) {
+      return Math.max(1, Math.ceil(renderedHeight / 50));
+    }
+
+    if (typeof originalGetCardSize === 'function') {
+      return originalGetCardSize.call(this);
+    }
+
+    return fallbackGridOptions.min_rows ?? 1;
+  };
+
+  proto.getGridOptions = function getGridOptions() {
+    const originalOptions = typeof originalGetGridOptions === 'function'
+      ? originalGetGridOptions.call(this)
+      : {};
+    const merged = {
+      columns: 12,
+      min_rows: 1,
+      ...fallbackGridOptions,
+      ...originalOptions,
+    };
+
+    delete merged.rows;
+    delete merged.fixed_rows;
+
+    return merged;
+  };
+};
+
 const F1_COUNTRY_CODES = {
   'Bahrain': 'bh', 'Saudi Arabia': 'sa', 'Australia': 'au',
   'Japan': 'jp', 'China': 'cn', 'USA': 'us', 'Monaco': 'mc',
@@ -2515,8 +2630,35 @@ class F1DriverLapTimesCard extends LitElement {
     ensureF1Fonts();
   }
 
-  getCardSize() {
-    return 6;
+  disconnectedCallback() {
+    this._detachCardObserver();
+    super.disconnectedCallback();
+  }
+
+  firstUpdated() {
+    this._attachCardObserver();
+    this._updateGridRows();
+  }
+
+  updated(changedProps) {
+    super.updated(changedProps);
+
+    if (changedProps.has('hass') || changedProps.has('config')) {
+      this._attachCardObserver();
+      this._updateGridRows();
+    }
+  }
+
+  async getCardSize() {
+    await this.updateComplete;
+
+    const renderedHeight = this._measureCardHeight();
+
+    if (renderedHeight > 0) {
+      return Math.max(1, Math.ceil(renderedHeight / 50));
+    }
+
+    return this._estimateGridRows();
   }
 
   getGridOptions() {
@@ -2524,7 +2666,7 @@ class F1DriverLapTimesCard extends LitElement {
       columns: 12,
       min_columns: 4,
       max_columns: 12,
-      min_rows: 13,
+      min_rows: 1,
     };
   }
 
@@ -2802,6 +2944,101 @@ class F1DriverLapTimesCard extends LitElement {
     });
 
     return rows;
+  }
+
+  _attachCardObserver() {
+    if (!this.isConnected || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const card = this.renderRoot?.querySelector('ha-card');
+    if (!card) {
+      return;
+    }
+
+    if (!this._cardResizeObserver) {
+      this._cardResizeObserver = new ResizeObserver(() => {
+        this._updateGridRows();
+      });
+    }
+
+    if (this._observedCard === card) {
+      return;
+    }
+
+    this._detachCardObserver();
+    this._observedCard = card;
+    this._cardResizeObserver.observe(card);
+  }
+
+  _detachCardObserver() {
+    if (this._cardResizeObserver && this._observedCard) {
+      this._cardResizeObserver.unobserve(this._observedCard);
+    }
+    this._observedCard = undefined;
+  }
+
+  _updateGridRows() {
+    const measuredHeight = this._measureCardHeight();
+    const nextHeight = measuredHeight > 0 ? Math.ceil(measuredHeight) : 0;
+
+    if (nextHeight <= 0 || nextHeight === this._lastMeasuredHeight) {
+      return;
+    }
+
+    this._lastMeasuredHeight = nextHeight;
+    this.dispatchEvent(new Event('card-updated', { bubbles: true, composed: true }));
+  }
+
+  _measureCardHeight() {
+    const card = this.renderRoot?.querySelector('ha-card');
+    const content = card?.querySelector('.dl-card');
+
+    const cardHeight = card?.getBoundingClientRect?.().height ?? 0;
+    const contentHeight = content?.scrollHeight ?? 0;
+
+    return Math.max(cardHeight, contentHeight);
+  }
+
+  _heightToGridRows(height) {
+    const sectionRowHeight = 56;
+    const sectionRowGap = 8;
+    return Math.max(1, Math.ceil((height + sectionRowGap) / (sectionRowHeight + sectionRowGap)));
+  }
+
+  _estimateGridRows() {
+    const dataRows = this._estimateDataRowCount();
+    const cardPadding = 28;
+    const headerHeight = this.config?.show_header === false ? 0 : 44;
+    const tableHeaderHeight = this.config?.show_table_header === false ? 0 : 26;
+    const rowHeight = 32;
+    const rowGap = 6;
+    const totalHeight = cardPadding
+      + headerHeight
+      + tableHeaderHeight
+      + (dataRows * rowHeight)
+      + (Math.max(0, dataRows + (tableHeaderHeight > 0 ? 1 : 0) - 1) * rowGap);
+
+    return this._heightToGridRows(totalHeight);
+  }
+
+  _estimateDataRowCount() {
+    if (!this.hass || !this.config?.drivers_entity || !this.config?.positions_entity) {
+      return 20;
+    }
+
+    const driversState = getEntityStateWithFallback(this.hass, this.config.drivers_entity);
+    const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
+    if (!driversState || !positionsState) {
+      return 20;
+    }
+
+    const drivers = this._asList(driversState?.attributes?.drivers);
+    const positions = positionsState?.attributes?.drivers;
+    const fastestLap = positionsState?.attributes?.fastest_lap;
+    const rows = this._buildRows(drivers, positions, fastestLap);
+
+    return Math.max(rows.length, 1);
   }
 
   _buildPositionMap(positions) {
@@ -9008,6 +9245,7 @@ class F1QualifyingTimingCard extends LitElement {
       tyres_entity: 'sensor.f1_current_tyres',
       drivers_entity: 'sensor.f1_driver_list',
       session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
       ...config,
     };
   }
@@ -9060,6 +9298,9 @@ class F1QualifyingTimingCard extends LitElement {
     const sessionState = this.config.session_entity
       ? getEntityStateWithFallback(this.hass, this.config.session_entity)
       : null;
+    const sessionStatusState = this.config.session_status_entity
+      ? getEntityStateWithFallback(this.hass, this.config.session_status_entity)
+      : null;
     if (this.config.session_entity && !sessionState) {
       return html`
         <ha-card>
@@ -9070,7 +9311,7 @@ class F1QualifyingTimingCard extends LitElement {
       `;
     }
 
-    if (!this._isQualifyingSession(sessionState)) {
+    if (!this._isQualifyingSession(sessionState, sessionStatusState)) {
       return html`
         <ha-card>
           <div class="qt-card">
@@ -9472,9 +9713,14 @@ class F1QualifyingTimingCard extends LitElement {
     return entries.length > 0 ? entries[0].time.trim() : null;
   }
 
-  _isQualifyingSession(sessionState) {
+  _isQualifyingSession(sessionState, sessionStatusState) {
     const state = String(sessionState?.state || '').trim().toLowerCase();
-    return state === 'qualifying';
+    if (state === 'qualifying') {
+      return true;
+    }
+    const lastLabel = String(sessionState?.attributes?.last_label || '').trim().toLowerCase();
+    const sessionStatus = String(sessionStatusState?.state || '').trim().toLowerCase();
+    return lastLabel === 'qualifying' && sessionStatus === 'break';
   }
 
   _isOverallFastestLap(rowRn, lapTime, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
@@ -9715,7 +9961,13 @@ class F1QualifyingTimingCardEditor extends LitElement {
         ${this._renderEntityPicker(
           'session_entity',
           'Current Session Sensor',
-          'Shows Q1 / Q2 / Q3 badge in the header',
+          'Scopes the card to the active qualifying session and shows the Q1 / Q2 / Q3 badge',
+          false,
+        )}
+        ${this._renderEntityPicker(
+          'session_status_entity',
+          'Session Status Sensor',
+          'Keeps the card visible during qualifying breaks between Q1, Q2, and Q3',
           false,
         )}
       </div>
@@ -9799,6 +10051,69 @@ class F1QualifyingTimingCardEditor extends LitElement {
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
   }
 }
+
+installSectionsAutoHeight(F1TyreStatisticsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 2,
+});
+
+installSectionsAutoHeight(F1PitStopOverviewCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 6,
+});
+
+installSectionsAutoHeight(F1ChampionshipPredictionDriversCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 5,
+});
+
+installSectionsAutoHeight(F1ChampionshipPredictionTeamsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 5,
+});
+
+installSectionsAutoHeight(F1InvestigationsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 1,
+});
+
+installSectionsAutoHeight(F1TrackLimitsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 1,
+});
+
+installSectionsAutoHeight(F1LiveSessionCard, {
+  columns: 12,
+  min_columns: 6,
+  max_columns: 12,
+  min_rows: 1,
+});
+
+installSectionsAutoHeight(F1RaceControlCard, {
+  columns: 12,
+  min_columns: 6,
+  max_columns: 12,
+  min_rows: 1,
+});
+
+installSectionsAutoHeight(F1QualifyingTimingCard, {
+  columns: 12,
+  min_columns: 6,
+  max_columns: 12,
+  min_rows: 10,
+});
 
 
 if (!customElements.get('f1-sensor-live-data-card')) {
