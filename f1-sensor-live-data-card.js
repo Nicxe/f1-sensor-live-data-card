@@ -9274,6 +9274,7 @@ class F1QualifyingTimingCard extends LitElement {
       positions_entity: '',
       tyres_entity: '',
       drivers_entity: '',
+      session_status_entity: 'sensor.f1_session_status',
       title: 'Qualifying',
     };
   }
@@ -9315,7 +9316,7 @@ class F1QualifyingTimingCard extends LitElement {
       return html`
         <ha-card>
           <div class="qt-card">
-            <div class="qt-empty">Available during Qualifying only</div>
+            <div class="qt-empty">Available during Qualifying and Sprint Qualifying only</div>
           </div>
         </ha-card>
       `;
@@ -9333,7 +9334,6 @@ class F1QualifyingTimingCard extends LitElement {
     }
 
     const positionDrivers = positionsState?.attributes?.drivers || [];
-    const fastestLap = positionsState?.attributes?.fastest_lap;
     const currentQPart = positionsState?.attributes?.current_qualifying_part;
 
     const tyresState = this.config.tyres_entity
@@ -9364,15 +9364,6 @@ class F1QualifyingTimingCard extends LitElement {
       `;
     }
 
-    const fastestLapRn = fastestLap
-      ? String(fastestLap.racing_number || '').trim()
-      : null;
-    const fastestLapTime = typeof fastestLap?.time === 'string'
-      ? fastestLap.time.trim()
-      : null;
-    const fastestLapTimeSecs = Number.isFinite(fastestLap?.time_secs)
-      ? fastestLap.time_secs
-      : this._parseLapTimeSeconds(fastestLapTime);
     const columns = this._columns();
     const gridColumns = columns.map((col) => col.width).join(' ');
 
@@ -9391,13 +9382,7 @@ class F1QualifyingTimingCard extends LitElement {
           <div class="qt-scroll">
             <div class="qt-table" style="--qt-columns: ${gridColumns};">
               ${this.config.show_table_header !== false ? this._renderHeader(columns) : null}
-              ${rows.map((row) => this._renderRow(
-                row,
-                columns,
-                fastestLapRn,
-                fastestLapTime,
-                fastestLapTimeSecs,
-              ))}
+              ${rows.map((row) => this._renderRow(row, columns))}
             </div>
           </div>
         </div>
@@ -9417,7 +9402,9 @@ class F1QualifyingTimingCard extends LitElement {
       { key: 'sector_2', label: 'S2', width: '72px', center: true },
       { key: 'sector_3', label: 'S3', width: '72px', center: true },
       { key: 'last_lap', label: 'LAST', width: '86px', center: true, groupStart: true },
-      { key: 'best_lap', label: 'BEST', width: '86px', center: true },
+      { key: 'q1_lap', label: 'Q1', width: '86px', center: true },
+      { key: 'q2_lap', label: 'Q2', width: '86px', center: true },
+      { key: 'q3_lap', label: 'Q3', width: '86px', center: true },
     ];
   }
 
@@ -9435,23 +9422,17 @@ class F1QualifyingTimingCard extends LitElement {
     `;
   }
 
-  _renderRow(row, columns, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
+  _renderRow(row, columns) {
     const rowClasses = ['qt-row'];
     if (row.knocked_out) rowClasses.push('knocked-out');
     return html`
       <div class="${rowClasses.join(' ')}">
-        ${columns.map((col) => this._renderCell(
-          row,
-          col,
-          fastestLapRn,
-          fastestLapTime,
-          fastestLapTimeSecs,
-        ))}
+        ${columns.map((col) => this._renderCell(row, col))}
       </div>
     `;
   }
 
-  _renderCell(row, col, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
+  _renderCell(row, col) {
     const classes = ['qt-cell'];
     if (col.center) classes.push('center');
     if (col.compact) classes.push('compact');
@@ -9529,17 +9510,8 @@ class F1QualifyingTimingCard extends LitElement {
 
     if (col.key === 'last_lap') {
       const lastLapTime = row.last_lap;
-      const isOverallFastest = this._isOverallFastestLap(
-        row.rn,
-        lastLapTime,
-        fastestLapRn,
-        fastestLapTime,
-        fastestLapTimeSecs,
-      );
-      const isPersonalFastest = !isOverallFastest && this._isLapTimeMatch(lastLapTime, row.best_lap);
-      const lapClass = isOverallFastest
-        ? 'overall-fastest'
-        : isPersonalFastest
+      const isPersonalFastest = this._isLapTimeMatch(lastLapTime, row.current_segment_best_lap);
+      const lapClass = isPersonalFastest
           ? 'personal-fastest'
           : lastLapTime
             ? 'timed'
@@ -9551,13 +9523,13 @@ class F1QualifyingTimingCard extends LitElement {
       `;
     }
 
-    if (col.key === 'best_lap') {
-      const bestTime = row.best_lap;
-      const isOverallFastest = Boolean(bestTime && fastestLapRn && row.rn && fastestLapRn === row.rn);
-      const lapClass = isOverallFastest
+    if (col.key === 'q1_lap' || col.key === 'q2_lap' || col.key === 'q3_lap') {
+      const bestTime = row[col.key];
+      const positionKey = `${col.key}_position`;
+      const lapClass = row[positionKey] === 1
         ? 'overall-fastest'
         : bestTime
-          ? 'personal-fastest'
+          ? 'timed'
           : '';
       return html`
         <div class="${classes.join(' ')}">
@@ -9608,9 +9580,6 @@ class F1QualifyingTimingCard extends LitElement {
         position = qPos != null ? qPos : this._parsePosition(pos.current_position);
       }
 
-      // Best lap: highest Q segment the driver participated in
-      const bestLap = pos.q3_time || pos.q2_time || pos.q1_time || null;
-
       // Last lap: from laps dict
       const lastLap = this._resolveLastLapTime(pos);
 
@@ -9626,6 +9595,11 @@ class F1QualifyingTimingCard extends LitElement {
       const compoundShort = tyre?.compound_short || (compound ? compound[0] : null);
       const compoundColor = tyre?.compound_color || COMPOUND_FALLBACK[compoundKey] || null;
       const tyreAge = tyre?.stint_laps ?? null;
+      const currentSegmentBestLap = currentQPart === 3
+        ? (pos.q3_time ?? null)
+        : currentQPart === 2
+          ? (pos.q2_time ?? null)
+          : (pos.q1_time ?? null);
 
       return {
         rn,
@@ -9649,7 +9623,13 @@ class F1QualifyingTimingCard extends LitElement {
         sector_3_overall_fastest: pos.sector_3_overall_fastest ?? null,
         sector_3_personal_fastest: pos.sector_3_personal_fastest ?? null,
         last_lap: lastLap,
-        best_lap: bestLap,
+        current_segment_best_lap: currentSegmentBestLap,
+        q1_lap: pos.q1_time ?? null,
+        q1_lap_position: pos.q1_position ?? null,
+        q2_lap: pos.q2_time ?? null,
+        q2_lap_position: pos.q2_position ?? null,
+        q3_lap: pos.q3_time ?? null,
+        q3_lap_position: pos.q3_position ?? null,
       };
     });
 
@@ -9675,10 +9655,14 @@ class F1QualifyingTimingCard extends LitElement {
       return inferred;
     }
     const sessionLabel = String(sessionState?.state || '').trim().toLowerCase();
-    if (sessionLabel === 'qualifying' || sessionLabel === 'sprint qualifying') {
+    if (this._isQualifyingLikeLabel(sessionLabel)) {
       return 1;
     }
     return null;
+  }
+
+  _isQualifyingLikeLabel(label) {
+    return label === 'qualifying' || label === 'sprint qualifying';
   }
 
   _normalizeQualifyingPart(value) {
@@ -9715,12 +9699,12 @@ class F1QualifyingTimingCard extends LitElement {
 
   _isQualifyingSession(sessionState, sessionStatusState) {
     const state = String(sessionState?.state || '').trim().toLowerCase();
-    if (state === 'qualifying') {
+    if (this._isQualifyingLikeLabel(state)) {
       return true;
     }
     const lastLabel = String(sessionState?.attributes?.last_label || '').trim().toLowerCase();
     const sessionStatus = String(sessionStatusState?.state || '').trim().toLowerCase();
-    return lastLabel === 'qualifying' && sessionStatus === 'break';
+    return this._isQualifyingLikeLabel(lastLabel) && sessionStatus === 'break';
   }
 
   _isOverallFastestLap(rowRn, lapTime, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
@@ -9961,13 +9945,13 @@ class F1QualifyingTimingCardEditor extends LitElement {
         ${this._renderEntityPicker(
           'session_entity',
           'Current Session Sensor',
-          'Scopes the card to the active qualifying session and shows the Q1 / Q2 / Q3 badge',
+          'Scopes the card to the active qualifying or sprint qualifying session and shows the Q1 / Q2 / Q3 badge',
           false,
         )}
         ${this._renderEntityPicker(
           'session_status_entity',
           'Session Status Sensor',
-          'Keeps the card visible during qualifying breaks between Q1, Q2, and Q3',
+          'Keeps the card visible during qualifying and sprint qualifying breaks between Q1, Q2, and Q3',
           false,
         )}
       </div>
