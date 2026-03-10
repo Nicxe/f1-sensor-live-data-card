@@ -250,6 +250,121 @@ const getEntityStateWithFallback = (hass, entityId) => {
   return hass.states?.[resolvedId] || null;
 };
 
+const measureRenderedCardHeight = (host) => {
+  const card = host?.renderRoot?.querySelector?.('ha-card');
+  const content = card?.firstElementChild;
+  const cardHeight = card?.getBoundingClientRect?.().height ?? 0;
+  const contentHeight = content?.scrollHeight ?? 0;
+  return Math.max(cardHeight, contentHeight);
+};
+
+const attachSectionsHeightObserver = (host) => {
+  if (!host?.isConnected || typeof ResizeObserver === 'undefined') {
+    return;
+  }
+
+  const card = host.renderRoot?.querySelector?.('ha-card');
+  if (!card) {
+    return;
+  }
+
+  if (!host._sectionsHeightObserver) {
+    host._sectionsHeightObserver = new ResizeObserver(() => {
+      updateSectionsHeight(host);
+    });
+  }
+
+  if (host._sectionsObservedCard === card) {
+    return;
+  }
+
+  detachSectionsHeightObserver(host);
+  host._sectionsObservedCard = card;
+  host._sectionsHeightObserver.observe(card);
+};
+
+const detachSectionsHeightObserver = (host) => {
+  if (host?._sectionsHeightObserver && host?._sectionsObservedCard) {
+    host._sectionsHeightObserver.unobserve(host._sectionsObservedCard);
+  }
+  host._sectionsObservedCard = undefined;
+};
+
+const updateSectionsHeight = (host) => {
+  const measuredHeight = measureRenderedCardHeight(host);
+  const nextHeight = measuredHeight > 0 ? Math.ceil(measuredHeight) : 0;
+
+  if (nextHeight <= 0 || nextHeight === host._sectionsMeasuredHeight) {
+    return;
+  }
+
+  host._sectionsMeasuredHeight = nextHeight;
+  host.dispatchEvent(new Event('card-updated', { bubbles: true, composed: true }));
+};
+
+const installSectionsAutoHeight = (CardClass, fallbackGridOptions = {}) => {
+  const proto = CardClass.prototype;
+  const originalDisconnected = proto.disconnectedCallback;
+  const originalFirstUpdated = proto.firstUpdated;
+  const originalUpdated = proto.updated;
+  const originalGetCardSize = proto.getCardSize;
+  const originalGetGridOptions = proto.getGridOptions;
+
+  proto.disconnectedCallback = function disconnectedCallback() {
+    detachSectionsHeightObserver(this);
+    originalDisconnected?.call(this);
+  };
+
+  proto.firstUpdated = function firstUpdated(changedProps) {
+    originalFirstUpdated?.call(this, changedProps);
+    attachSectionsHeightObserver(this);
+    updateSectionsHeight(this);
+  };
+
+  proto.updated = function updated(changedProps) {
+    originalUpdated?.call(this, changedProps);
+
+    if (!changedProps?.has?.('hass') && !changedProps?.has?.('config')) {
+      return;
+    }
+
+    attachSectionsHeightObserver(this);
+    updateSectionsHeight(this);
+  };
+
+  proto.getCardSize = async function getCardSize() {
+    await this.updateComplete;
+
+    const renderedHeight = measureRenderedCardHeight(this);
+    if (renderedHeight > 0) {
+      return Math.max(1, Math.ceil(renderedHeight / 50));
+    }
+
+    if (typeof originalGetCardSize === 'function') {
+      return originalGetCardSize.call(this);
+    }
+
+    return fallbackGridOptions.min_rows ?? 1;
+  };
+
+  proto.getGridOptions = function getGridOptions() {
+    const originalOptions = typeof originalGetGridOptions === 'function'
+      ? originalGetGridOptions.call(this)
+      : {};
+    const merged = {
+      columns: 12,
+      min_rows: 1,
+      ...fallbackGridOptions,
+      ...originalOptions,
+    };
+
+    delete merged.rows;
+    delete merged.fixed_rows;
+
+    return merged;
+  };
+};
+
 const F1_COUNTRY_CODES = {
   'Bahrain': 'bh', 'Saudi Arabia': 'sa', 'Australia': 'au',
   'Japan': 'jp', 'China': 'cn', 'USA': 'us', 'Monaco': 'mc',
@@ -1540,9 +1655,9 @@ class F1PitStopOverviewCard extends LitElement {
         ? Number(pit.count)
         : stops.length;
 
-      const pitStopTimeNum = Number(lastStop?.pit_stop_time);
-      const pitLaneTimeNum = Number(lastStop?.pit_lane_time);
-      const pitDeltaNum = Number(lastStop?.pit_delta);
+      const pitStopTimeNum = this._parseOptionalNumber(lastStop?.pit_stop_time);
+      const pitLaneTimeNum = this._parseOptionalNumber(lastStop?.pit_lane_time);
+      const pitDeltaNum = this._parseOptionalNumber(lastStop?.pit_delta);
       const pitStopTime = this._formatSeconds(pitStopTimeNum);
       const pitLaneTime = this._formatSeconds(pitLaneTimeNum);
       const pitDelta = this._formatSeconds(pitDeltaNum);
@@ -1627,7 +1742,15 @@ class F1PitStopOverviewCard extends LitElement {
     return Number.isFinite(num) ? num : null;
   }
 
+  _parseOptionalNumber(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string' && value.trim() === '') return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
   _formatSeconds(value) {
+    if (value === null || value === undefined || value === '') return '--';
     const num = Number(value);
     if (!Number.isFinite(num)) return '--';
     return num.toFixed(1);
@@ -2507,8 +2630,35 @@ class F1DriverLapTimesCard extends LitElement {
     ensureF1Fonts();
   }
 
-  getCardSize() {
-    return 6;
+  disconnectedCallback() {
+    this._detachCardObserver();
+    super.disconnectedCallback();
+  }
+
+  firstUpdated() {
+    this._attachCardObserver();
+    this._updateGridRows();
+  }
+
+  updated(changedProps) {
+    super.updated(changedProps);
+
+    if (changedProps.has('hass') || changedProps.has('config')) {
+      this._attachCardObserver();
+      this._updateGridRows();
+    }
+  }
+
+  async getCardSize() {
+    await this.updateComplete;
+
+    const renderedHeight = this._measureCardHeight();
+
+    if (renderedHeight > 0) {
+      return Math.max(1, Math.ceil(renderedHeight / 50));
+    }
+
+    return this._estimateGridRows();
   }
 
   getGridOptions() {
@@ -2516,7 +2666,7 @@ class F1DriverLapTimesCard extends LitElement {
       columns: 12,
       min_columns: 4,
       max_columns: 12,
-      min_rows: 13,
+      min_rows: 1,
     };
   }
 
@@ -2794,6 +2944,101 @@ class F1DriverLapTimesCard extends LitElement {
     });
 
     return rows;
+  }
+
+  _attachCardObserver() {
+    if (!this.isConnected || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const card = this.renderRoot?.querySelector('ha-card');
+    if (!card) {
+      return;
+    }
+
+    if (!this._cardResizeObserver) {
+      this._cardResizeObserver = new ResizeObserver(() => {
+        this._updateGridRows();
+      });
+    }
+
+    if (this._observedCard === card) {
+      return;
+    }
+
+    this._detachCardObserver();
+    this._observedCard = card;
+    this._cardResizeObserver.observe(card);
+  }
+
+  _detachCardObserver() {
+    if (this._cardResizeObserver && this._observedCard) {
+      this._cardResizeObserver.unobserve(this._observedCard);
+    }
+    this._observedCard = undefined;
+  }
+
+  _updateGridRows() {
+    const measuredHeight = this._measureCardHeight();
+    const nextHeight = measuredHeight > 0 ? Math.ceil(measuredHeight) : 0;
+
+    if (nextHeight <= 0 || nextHeight === this._lastMeasuredHeight) {
+      return;
+    }
+
+    this._lastMeasuredHeight = nextHeight;
+    this.dispatchEvent(new Event('card-updated', { bubbles: true, composed: true }));
+  }
+
+  _measureCardHeight() {
+    const card = this.renderRoot?.querySelector('ha-card');
+    const content = card?.querySelector('.dl-card');
+
+    const cardHeight = card?.getBoundingClientRect?.().height ?? 0;
+    const contentHeight = content?.scrollHeight ?? 0;
+
+    return Math.max(cardHeight, contentHeight);
+  }
+
+  _heightToGridRows(height) {
+    const sectionRowHeight = 56;
+    const sectionRowGap = 8;
+    return Math.max(1, Math.ceil((height + sectionRowGap) / (sectionRowHeight + sectionRowGap)));
+  }
+
+  _estimateGridRows() {
+    const dataRows = this._estimateDataRowCount();
+    const cardPadding = 28;
+    const headerHeight = this.config?.show_header === false ? 0 : 44;
+    const tableHeaderHeight = this.config?.show_table_header === false ? 0 : 26;
+    const rowHeight = 32;
+    const rowGap = 6;
+    const totalHeight = cardPadding
+      + headerHeight
+      + tableHeaderHeight
+      + (dataRows * rowHeight)
+      + (Math.max(0, dataRows + (tableHeaderHeight > 0 ? 1 : 0) - 1) * rowGap);
+
+    return this._heightToGridRows(totalHeight);
+  }
+
+  _estimateDataRowCount() {
+    if (!this.hass || !this.config?.drivers_entity || !this.config?.positions_entity) {
+      return 20;
+    }
+
+    const driversState = getEntityStateWithFallback(this.hass, this.config.drivers_entity);
+    const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
+    if (!driversState || !positionsState) {
+      return 20;
+    }
+
+    const drivers = this._asList(driversState?.attributes?.drivers);
+    const positions = positionsState?.attributes?.drivers;
+    const fastestLap = positionsState?.attributes?.fastest_lap;
+    const rows = this._buildRows(drivers, positions, fastestLap);
+
+    return Math.max(rows.length, 1);
   }
 
   _buildPositionMap(positions) {
@@ -5503,8 +5748,10 @@ class F1InvestigationsCard extends LitElement {
     if (!text) return null;
     const upper = String(text).toUpperCase();
     const timeMatch = upper.match(/(\d+)\s*SECOND/);
+    const isStopGo = /STOP(?:[-\s]+AND[-\s]+|\/)?GO/.test(upper);
     if (timeMatch && upper.includes('TIME PENALTY')) return `PENALTY ${timeMatch[1]} SEC`;
-    if (timeMatch && upper.includes('STOP/GO')) return `PENALTY STOP/GO ${timeMatch[1]} SEC`;
+    if (timeMatch && isStopGo) return `PENALTY STOP/GO ${timeMatch[1]} SEC`;
+    if (isStopGo) return 'PENALTY STOP/GO';
     if (upper.includes('DRIVE THROUGH')) return 'PENALTY DRIVE THROUGH';
     if (upper.includes('REPRIMAND')) return 'REPRIMAND';
     return null;
@@ -6273,8 +6520,10 @@ class F1TrackLimitsCard extends LitElement {
     if (!text) return null;
     const upper = String(text).toUpperCase();
     const timeMatch = upper.match(/(\d+)\s*SECOND/);
+    const isStopGo = /STOP(?:[-\s]+AND[-\s]+|\/)?GO/.test(upper);
     if (timeMatch && upper.includes('TIME PENALTY')) return `PENALTY ${timeMatch[1]} SEC`;
-    if (timeMatch && upper.includes('STOP/GO')) return `PENALTY STOP/GO ${timeMatch[1]} SEC`;
+    if (timeMatch && isStopGo) return `PENALTY STOP/GO ${timeMatch[1]} SEC`;
+    if (isStopGo) return 'PENALTY STOP/GO';
     if (upper.includes('DRIVE THROUGH')) return 'PENALTY DRIVE THROUGH';
     if (upper.includes('REPRIMAND')) return 'REPRIMAND';
     return null;
@@ -8116,7 +8365,6 @@ class F1RaceControlCard extends LitElement {
   constructor() {
     super();
     this._currentMessage = null;
-    this._messageQueue = [];
     this._historyQueue = [];
     this._historyIndex = 0;
     this._lastEventId = null;
@@ -8149,10 +8397,10 @@ class F1RaceControlCard extends LitElement {
 
   _resetMessageState() {
     this._currentMessage = null;
-    this._messageQueue = [];
     this._historyQueue = [];
     this._historyIndex = 0;
     this._lastEventId = null;
+    this._messageShownAt = 0;
     this._clearDisplayTimer();
   }
 
@@ -8171,44 +8419,47 @@ class F1RaceControlCard extends LitElement {
 
     const minDisplayTime = this.config?.min_display_time || 0;
     const queue = this._buildHistoryQueue(entityState);
+    const currentId = this._currentMessage?.id || this._lastEventId;
+    const historyChanged = this._historyChanged(queue);
 
-    if (minDisplayTime > 0 && queue.length > 0) {
-      const changed = this._historyChanged(queue);
-      if (changed) {
-        this._historyQueue = queue;
-        this._historyIndex = 0;
-        this._currentMessage = queue[0];
-        this._lastEventId = queue[0]?.id || null;
-      } else if (!this._currentMessage && queue.length > 0) {
-        this._historyQueue = queue;
-        this._currentMessage = queue[this._historyIndex] || queue[0];
+    if (queue.length === 0) {
+      this._resetMessageState();
+      return;
+    }
+
+    if (minDisplayTime > 0) {
+      const currentIndex = currentId
+        ? queue.findIndex((item) => item?.id === currentId)
+        : -1;
+      const shouldResetToStart = historyChanged && currentIndex === -1;
+      const nextIndex = currentIndex >= 0 ? currentIndex : 0;
+      const nextMessage = queue[nextIndex];
+      const nextId = nextMessage?.id || null;
+
+      if (!this._currentMessage || this._currentMessage.id !== nextId) {
+        this._showMessage(nextMessage, { resetTimer: shouldResetToStart });
       }
+
+      this._historyQueue = queue;
+      this._historyIndex = nextIndex;
       this._ensureQueueTimer(minDisplayTime, this._historyQueue.length);
       return;
     }
 
     this._historyQueue = queue;
-    this._historyIndex = 0;
+    this._historyIndex = queue.length - 1;
     this._clearDisplayTimer();
-    if (queue.length > 0) {
-      const latest = queue[queue.length - 1];
-      this._currentMessage = latest;
-      this._lastEventId = latest?.id || null;
-    }
+    this._showMessage(queue[this._historyIndex]);
   }
 
-  _showMessage(msg) {
-    this._currentMessage = msg;
-    this._messageShownAt = Date.now();
-    this._clearDisplayTimer();
-
-    const minDisplayTime = this.config?.min_display_time || 0;
-    if (minDisplayTime > 0 && this._messageQueue.length > 0) {
-      // Schedule next message
-      this._displayTimer = setTimeout(() => {
-        this._showNextFromQueue();
-      }, minDisplayTime * 1000);
+  _showMessage(msg, options = {}) {
+    const { resetTimer = false } = options;
+    if (resetTimer) {
+      this._clearDisplayTimer();
     }
+    this._currentMessage = msg;
+    this._lastEventId = msg?.id || null;
+    this._messageShownAt = msg ? Date.now() : 0;
   }
 
   _showNextFromQueue() {
@@ -8222,7 +8473,7 @@ class F1RaceControlCard extends LitElement {
       return;
     }
     this._historyIndex = nextIndex;
-    this._currentMessage = this._historyQueue[this._historyIndex];
+    this._showMessage(this._historyQueue[this._historyIndex], { resetTimer: true });
     this.requestUpdate();
     const minDisplayTime = this.config?.min_display_time || 0;
     if (minDisplayTime > 0 && this._historyIndex < this._historyQueue.length - 1) {
@@ -8238,6 +8489,7 @@ class F1RaceControlCard extends LitElement {
     this.config = {
       entity: 'sensor.f1_race_control',
       show_fia_logo: true,
+      hide_blue_flags: false,
       min_display_time: 0,
       ...config,
     };
@@ -8283,6 +8535,7 @@ class F1RaceControlCard extends LitElement {
           _time: parsed,
         };
       })
+      .filter((item) => !this._shouldHideMessage(item))
       .filter(Boolean);
     if (queue.length > 0) {
       const hasTime = queue.some((item) => Number.isFinite(item._time));
@@ -8296,21 +8549,36 @@ class F1RaceControlCard extends LitElement {
     }
     const fallbackId = entity.attributes?.event_id || entity.attributes?.utc || entity.state;
     if (!fallbackId) return [];
-    return [{
+    const fallbackItem = {
       id: fallbackId,
       message: entity.attributes?.message || entity.state,
       category: entity.attributes?.category || null,
       flag: entity.attributes?.flag || null,
       car_number: entity.attributes?.car_number || null,
       utc: entity.attributes?.utc || null,
-    }];
+    };
+    return this._shouldHideMessage(fallbackItem) ? [] : [fallbackItem];
   }
 
   _historyChanged(queue) {
     if (!Array.isArray(queue) || queue.length === 0) return this._historyQueue.length !== 0;
     if (queue.length !== this._historyQueue.length) return true;
-    const currentLast = this._historyQueue[this._historyQueue.length - 1]?.id;
-    return queue[queue.length - 1]?.id !== currentLast;
+    return queue.some((item, index) => item?.id !== this._historyQueue[index]?.id);
+  }
+
+  _shouldHideMessage(item) {
+    if (!item) return true;
+    if (this.config?.hide_blue_flags !== true) return false;
+    return this._isBlueFlagMessage(item);
+  }
+
+  _isBlueFlagMessage(item) {
+    const flag = String(item?.flag || '').trim().toUpperCase();
+    if (flag === 'BLUE') return true;
+    if (flag) return false;
+
+    const message = this._formatMessage(item?.message || '').toLowerCase();
+    return message.includes('waved blue flag') || message.includes('blue flag');
   }
 
   _parseIncidentTime(value) {
@@ -8373,28 +8641,13 @@ class F1RaceControlCard extends LitElement {
       `;
     }
 
-    // Initialize from entity if no current message
-    if (!this._currentMessage) {
-      const entity = currentEntity;
-      if (entity && entity.state !== 'unavailable' && entity.state !== 'unknown') {
-        this._currentMessage = {
-          message: entity.attributes?.message || entity.state,
-          category: entity.attributes?.category || null,
-          flag: entity.attributes?.flag || null,
-          car_number: entity.attributes?.car_number || null,
-          utc: entity.attributes?.utc || null,
-        };
-        this._lastEventId = entity.attributes?.event_id || entity.attributes?.utc || entity.state;
-      }
-    }
-
     if (!this._currentMessage) {
       const showLogo = this.config.show_fia_logo;
       return html`
         <ha-card>
           <div class="rc-card rc-unavailable">
             ${showLogo ? html`<img class="rc-fia-logo" src="https://www.fia.com/sites/all/themes/penceo_theme/images/fia-footer-logo.png" alt="FIA" />` : null}
-            <span class="rc-unavailable-text">No session data</span>
+            <span class="rc-unavailable-text">No visible race control messages</span>
           </div>
         </ha-card>
       `;
@@ -8549,6 +8802,7 @@ class F1RaceControlCardEditor extends LitElement {
   setConfig(config) {
     this._config = {
       show_fia_logo: true,
+      hide_blue_flags: false,
       min_display_time: 0,
       ...config,
     };
@@ -8600,6 +8854,11 @@ class F1RaceControlCardEditor extends LitElement {
     return html`
       <div class="display-section">
         ${this._renderSwitch('show_fia_logo', 'Show FIA logo')}
+        ${this._renderSwitch(
+          'hide_blue_flags',
+          'Hide blue flag messages',
+          'Remove blue flag notices from the banner and queue'
+        )}
 
         <ha-textfield
           .label=${'Min display time per message (seconds)'}
@@ -8986,6 +9245,7 @@ class F1QualifyingTimingCard extends LitElement {
       tyres_entity: 'sensor.f1_current_tyres',
       drivers_entity: 'sensor.f1_driver_list',
       session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
       ...config,
     };
   }
@@ -9014,6 +9274,7 @@ class F1QualifyingTimingCard extends LitElement {
       positions_entity: '',
       tyres_entity: '',
       drivers_entity: '',
+      session_status_entity: 'sensor.f1_session_status',
       title: 'Qualifying',
     };
   }
@@ -9035,6 +9296,32 @@ class F1QualifyingTimingCard extends LitElement {
       `;
     }
 
+    const sessionState = this.config.session_entity
+      ? getEntityStateWithFallback(this.hass, this.config.session_entity)
+      : null;
+    const sessionStatusState = this.config.session_status_entity
+      ? getEntityStateWithFallback(this.hass, this.config.session_status_entity)
+      : null;
+    if (this.config.session_entity && !sessionState) {
+      return html`
+        <ha-card>
+          <div class="qt-card">
+            <div class="qt-empty">Session entity not found</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    if (!this._isQualifyingSession(sessionState, sessionStatusState)) {
+      return html`
+        <ha-card>
+          <div class="qt-card">
+            <div class="qt-empty">Available during Qualifying and Sprint Qualifying only</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
     const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
     if (!positionsState) {
       return html`
@@ -9047,7 +9334,6 @@ class F1QualifyingTimingCard extends LitElement {
     }
 
     const positionDrivers = positionsState?.attributes?.drivers || [];
-    const fastestLap = positionsState?.attributes?.fastest_lap;
     const currentQPart = positionsState?.attributes?.current_qualifying_part;
 
     const tyresState = this.config.tyres_entity
@@ -9060,9 +9346,6 @@ class F1QualifyingTimingCard extends LitElement {
       : null;
     const driverList = driversState?.attributes?.drivers || [];
 
-    const sessionState = this.config.session_entity
-      ? getEntityStateWithFallback(this.hass, this.config.session_entity)
-      : null;
     const sessionPart = this._resolveDisplayQualifyingPart(
       sessionState,
       currentQPart,
@@ -9081,15 +9364,6 @@ class F1QualifyingTimingCard extends LitElement {
       `;
     }
 
-    const fastestLapRn = fastestLap
-      ? String(fastestLap.racing_number || '').trim()
-      : null;
-    const fastestLapTime = typeof fastestLap?.time === 'string'
-      ? fastestLap.time.trim()
-      : null;
-    const fastestLapTimeSecs = Number.isFinite(fastestLap?.time_secs)
-      ? fastestLap.time_secs
-      : this._parseLapTimeSeconds(fastestLapTime);
     const columns = this._columns();
     const gridColumns = columns.map((col) => col.width).join(' ');
 
@@ -9108,13 +9382,7 @@ class F1QualifyingTimingCard extends LitElement {
           <div class="qt-scroll">
             <div class="qt-table" style="--qt-columns: ${gridColumns};">
               ${this.config.show_table_header !== false ? this._renderHeader(columns) : null}
-              ${rows.map((row) => this._renderRow(
-                row,
-                columns,
-                fastestLapRn,
-                fastestLapTime,
-                fastestLapTimeSecs,
-              ))}
+              ${rows.map((row) => this._renderRow(row, columns))}
             </div>
           </div>
         </div>
@@ -9134,7 +9402,9 @@ class F1QualifyingTimingCard extends LitElement {
       { key: 'sector_2', label: 'S2', width: '72px', center: true },
       { key: 'sector_3', label: 'S3', width: '72px', center: true },
       { key: 'last_lap', label: 'LAST', width: '86px', center: true, groupStart: true },
-      { key: 'best_lap', label: 'BEST', width: '86px', center: true },
+      { key: 'q1_lap', label: 'Q1', width: '86px', center: true },
+      { key: 'q2_lap', label: 'Q2', width: '86px', center: true },
+      { key: 'q3_lap', label: 'Q3', width: '86px', center: true },
     ];
   }
 
@@ -9152,23 +9422,17 @@ class F1QualifyingTimingCard extends LitElement {
     `;
   }
 
-  _renderRow(row, columns, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
+  _renderRow(row, columns) {
     const rowClasses = ['qt-row'];
     if (row.knocked_out) rowClasses.push('knocked-out');
     return html`
       <div class="${rowClasses.join(' ')}">
-        ${columns.map((col) => this._renderCell(
-          row,
-          col,
-          fastestLapRn,
-          fastestLapTime,
-          fastestLapTimeSecs,
-        ))}
+        ${columns.map((col) => this._renderCell(row, col))}
       </div>
     `;
   }
 
-  _renderCell(row, col, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
+  _renderCell(row, col) {
     const classes = ['qt-cell'];
     if (col.center) classes.push('center');
     if (col.compact) classes.push('compact');
@@ -9246,17 +9510,8 @@ class F1QualifyingTimingCard extends LitElement {
 
     if (col.key === 'last_lap') {
       const lastLapTime = row.last_lap;
-      const isOverallFastest = this._isOverallFastestLap(
-        row.rn,
-        lastLapTime,
-        fastestLapRn,
-        fastestLapTime,
-        fastestLapTimeSecs,
-      );
-      const isPersonalFastest = !isOverallFastest && this._isLapTimeMatch(lastLapTime, row.best_lap);
-      const lapClass = isOverallFastest
-        ? 'overall-fastest'
-        : isPersonalFastest
+      const isPersonalFastest = this._isLapTimeMatch(lastLapTime, row.current_segment_best_lap);
+      const lapClass = isPersonalFastest
           ? 'personal-fastest'
           : lastLapTime
             ? 'timed'
@@ -9268,13 +9523,13 @@ class F1QualifyingTimingCard extends LitElement {
       `;
     }
 
-    if (col.key === 'best_lap') {
-      const bestTime = row.best_lap;
-      const isOverallFastest = Boolean(bestTime && fastestLapRn && row.rn && fastestLapRn === row.rn);
-      const lapClass = isOverallFastest
+    if (col.key === 'q1_lap' || col.key === 'q2_lap' || col.key === 'q3_lap') {
+      const bestTime = row[col.key];
+      const positionKey = `${col.key}_position`;
+      const lapClass = row[positionKey] === 1
         ? 'overall-fastest'
         : bestTime
-          ? 'personal-fastest'
+          ? 'timed'
           : '';
       return html`
         <div class="${classes.join(' ')}">
@@ -9325,9 +9580,6 @@ class F1QualifyingTimingCard extends LitElement {
         position = qPos != null ? qPos : this._parsePosition(pos.current_position);
       }
 
-      // Best lap: highest Q segment the driver participated in
-      const bestLap = pos.q3_time || pos.q2_time || pos.q1_time || null;
-
       // Last lap: from laps dict
       const lastLap = this._resolveLastLapTime(pos);
 
@@ -9343,6 +9595,11 @@ class F1QualifyingTimingCard extends LitElement {
       const compoundShort = tyre?.compound_short || (compound ? compound[0] : null);
       const compoundColor = tyre?.compound_color || COMPOUND_FALLBACK[compoundKey] || null;
       const tyreAge = tyre?.stint_laps ?? null;
+      const currentSegmentBestLap = currentQPart === 3
+        ? (pos.q3_time ?? null)
+        : currentQPart === 2
+          ? (pos.q2_time ?? null)
+          : (pos.q1_time ?? null);
 
       return {
         rn,
@@ -9366,7 +9623,13 @@ class F1QualifyingTimingCard extends LitElement {
         sector_3_overall_fastest: pos.sector_3_overall_fastest ?? null,
         sector_3_personal_fastest: pos.sector_3_personal_fastest ?? null,
         last_lap: lastLap,
-        best_lap: bestLap,
+        current_segment_best_lap: currentSegmentBestLap,
+        q1_lap: pos.q1_time ?? null,
+        q1_lap_position: pos.q1_position ?? null,
+        q2_lap: pos.q2_time ?? null,
+        q2_lap_position: pos.q2_position ?? null,
+        q3_lap: pos.q3_time ?? null,
+        q3_lap_position: pos.q3_position ?? null,
       };
     });
 
@@ -9392,10 +9655,14 @@ class F1QualifyingTimingCard extends LitElement {
       return inferred;
     }
     const sessionLabel = String(sessionState?.state || '').trim().toLowerCase();
-    if (sessionLabel === 'qualifying' || sessionLabel === 'sprint qualifying') {
+    if (this._isQualifyingLikeLabel(sessionLabel)) {
       return 1;
     }
     return null;
+  }
+
+  _isQualifyingLikeLabel(label) {
+    return label === 'qualifying' || label === 'sprint qualifying';
   }
 
   _normalizeQualifyingPart(value) {
@@ -9428,6 +9695,16 @@ class F1QualifyingTimingCard extends LitElement {
       .filter((e) => Number.isFinite(e.lap) && e.lap > 0 && typeof e.time === 'string' && e.time.trim())
       .sort((a, b) => b.lap - a.lap);
     return entries.length > 0 ? entries[0].time.trim() : null;
+  }
+
+  _isQualifyingSession(sessionState, sessionStatusState) {
+    const state = String(sessionState?.state || '').trim().toLowerCase();
+    if (this._isQualifyingLikeLabel(state)) {
+      return true;
+    }
+    const lastLabel = String(sessionState?.attributes?.last_label || '').trim().toLowerCase();
+    const sessionStatus = String(sessionStatusState?.state || '').trim().toLowerCase();
+    return this._isQualifyingLikeLabel(lastLabel) && sessionStatus === 'break';
   }
 
   _isOverallFastestLap(rowRn, lapTime, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
@@ -9668,7 +9945,13 @@ class F1QualifyingTimingCardEditor extends LitElement {
         ${this._renderEntityPicker(
           'session_entity',
           'Current Session Sensor',
-          'Shows Q1 / Q2 / Q3 badge in the header',
+          'Scopes the card to the active qualifying or sprint qualifying session and shows the Q1 / Q2 / Q3 badge',
+          false,
+        )}
+        ${this._renderEntityPicker(
+          'session_status_entity',
+          'Session Status Sensor',
+          'Keeps the card visible during qualifying and sprint qualifying breaks between Q1, Q2, and Q3',
           false,
         )}
       </div>
@@ -9752,6 +10035,69 @@ class F1QualifyingTimingCardEditor extends LitElement {
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
   }
 }
+
+installSectionsAutoHeight(F1TyreStatisticsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 2,
+});
+
+installSectionsAutoHeight(F1PitStopOverviewCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 6,
+});
+
+installSectionsAutoHeight(F1ChampionshipPredictionDriversCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 5,
+});
+
+installSectionsAutoHeight(F1ChampionshipPredictionTeamsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 5,
+});
+
+installSectionsAutoHeight(F1InvestigationsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 1,
+});
+
+installSectionsAutoHeight(F1TrackLimitsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 1,
+});
+
+installSectionsAutoHeight(F1LiveSessionCard, {
+  columns: 12,
+  min_columns: 6,
+  max_columns: 12,
+  min_rows: 1,
+});
+
+installSectionsAutoHeight(F1RaceControlCard, {
+  columns: 12,
+  min_columns: 6,
+  max_columns: 12,
+  min_rows: 1,
+});
+
+installSectionsAutoHeight(F1QualifyingTimingCard, {
+  columns: 12,
+  min_columns: 6,
+  max_columns: 12,
+  min_rows: 10,
+});
 
 
 if (!customElements.get('f1-sensor-live-data-card')) {
