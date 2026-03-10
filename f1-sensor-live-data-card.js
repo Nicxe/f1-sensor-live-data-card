@@ -9057,6 +9057,29 @@ class F1QualifyingTimingCard extends LitElement {
       `;
     }
 
+    const sessionState = this.config.session_entity
+      ? getEntityStateWithFallback(this.hass, this.config.session_entity)
+      : null;
+    if (this.config.session_entity && !sessionState) {
+      return html`
+        <ha-card>
+          <div class="qt-card">
+            <div class="qt-empty">Session entity not found</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    if (!this._isQualifyingSession(sessionState)) {
+      return html`
+        <ha-card>
+          <div class="qt-card">
+            <div class="qt-empty">Available during Qualifying only</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
     const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
     if (!positionsState) {
       return html`
@@ -9082,9 +9105,6 @@ class F1QualifyingTimingCard extends LitElement {
       : null;
     const driverList = driversState?.attributes?.drivers || [];
 
-    const sessionState = this.config.session_entity
-      ? getEntityStateWithFallback(this.hass, this.config.session_entity)
-      : null;
     const sessionPart = this._resolveDisplayQualifyingPart(
       sessionState,
       currentQPart,
@@ -9450,6 +9470,11 @@ class F1QualifyingTimingCard extends LitElement {
       .filter((e) => Number.isFinite(e.lap) && e.lap > 0 && typeof e.time === 'string' && e.time.trim())
       .sort((a, b) => b.lap - a.lap);
     return entries.length > 0 ? entries[0].time.trim() : null;
+  }
+
+  _isQualifyingSession(sessionState) {
+    const state = String(sessionState?.state || '').trim().toLowerCase();
+    return state === 'qualifying';
   }
 
   _isOverallFastestLap(rowRn, lapTime, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
