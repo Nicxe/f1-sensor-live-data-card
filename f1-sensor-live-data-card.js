@@ -250,6 +250,121 @@ const getEntityStateWithFallback = (hass, entityId) => {
   return hass.states?.[resolvedId] || null;
 };
 
+const measureRenderedCardHeight = (host) => {
+  const card = host?.renderRoot?.querySelector?.('ha-card');
+  const content = card?.firstElementChild;
+  const cardHeight = card?.getBoundingClientRect?.().height ?? 0;
+  const contentHeight = content?.scrollHeight ?? 0;
+  return Math.max(cardHeight, contentHeight);
+};
+
+const attachSectionsHeightObserver = (host) => {
+  if (!host?.isConnected || typeof ResizeObserver === 'undefined') {
+    return;
+  }
+
+  const card = host.renderRoot?.querySelector?.('ha-card');
+  if (!card) {
+    return;
+  }
+
+  if (!host._sectionsHeightObserver) {
+    host._sectionsHeightObserver = new ResizeObserver(() => {
+      updateSectionsHeight(host);
+    });
+  }
+
+  if (host._sectionsObservedCard === card) {
+    return;
+  }
+
+  detachSectionsHeightObserver(host);
+  host._sectionsObservedCard = card;
+  host._sectionsHeightObserver.observe(card);
+};
+
+const detachSectionsHeightObserver = (host) => {
+  if (host?._sectionsHeightObserver && host?._sectionsObservedCard) {
+    host._sectionsHeightObserver.unobserve(host._sectionsObservedCard);
+  }
+  host._sectionsObservedCard = undefined;
+};
+
+const updateSectionsHeight = (host) => {
+  const measuredHeight = measureRenderedCardHeight(host);
+  const nextHeight = measuredHeight > 0 ? Math.ceil(measuredHeight) : 0;
+
+  if (nextHeight <= 0 || nextHeight === host._sectionsMeasuredHeight) {
+    return;
+  }
+
+  host._sectionsMeasuredHeight = nextHeight;
+  host.dispatchEvent(new Event('card-updated', { bubbles: true, composed: true }));
+};
+
+const installSectionsAutoHeight = (CardClass, fallbackGridOptions = {}) => {
+  const proto = CardClass.prototype;
+  const originalDisconnected = proto.disconnectedCallback;
+  const originalFirstUpdated = proto.firstUpdated;
+  const originalUpdated = proto.updated;
+  const originalGetCardSize = proto.getCardSize;
+  const originalGetGridOptions = proto.getGridOptions;
+
+  proto.disconnectedCallback = function disconnectedCallback() {
+    detachSectionsHeightObserver(this);
+    originalDisconnected?.call(this);
+  };
+
+  proto.firstUpdated = function firstUpdated(changedProps) {
+    originalFirstUpdated?.call(this, changedProps);
+    attachSectionsHeightObserver(this);
+    updateSectionsHeight(this);
+  };
+
+  proto.updated = function updated(changedProps) {
+    originalUpdated?.call(this, changedProps);
+
+    if (!changedProps?.has?.('hass') && !changedProps?.has?.('config')) {
+      return;
+    }
+
+    attachSectionsHeightObserver(this);
+    updateSectionsHeight(this);
+  };
+
+  proto.getCardSize = async function getCardSize() {
+    await this.updateComplete;
+
+    const renderedHeight = measureRenderedCardHeight(this);
+    if (renderedHeight > 0) {
+      return Math.max(1, Math.ceil(renderedHeight / 50));
+    }
+
+    if (typeof originalGetCardSize === 'function') {
+      return originalGetCardSize.call(this);
+    }
+
+    return fallbackGridOptions.min_rows ?? 1;
+  };
+
+  proto.getGridOptions = function getGridOptions() {
+    const originalOptions = typeof originalGetGridOptions === 'function'
+      ? originalGetGridOptions.call(this)
+      : {};
+    const merged = {
+      columns: 12,
+      min_rows: 1,
+      ...fallbackGridOptions,
+      ...originalOptions,
+    };
+
+    delete merged.rows;
+    delete merged.fixed_rows;
+
+    return merged;
+  };
+};
+
 const F1_COUNTRY_CODES = {
   'Bahrain': 'bh', 'Saudi Arabia': 'sa', 'Australia': 'au',
   'Japan': 'jp', 'China': 'cn', 'USA': 'us', 'Monaco': 'mc',
@@ -1540,9 +1655,9 @@ class F1PitStopOverviewCard extends LitElement {
         ? Number(pit.count)
         : stops.length;
 
-      const pitStopTimeNum = Number(lastStop?.pit_stop_time);
-      const pitLaneTimeNum = Number(lastStop?.pit_lane_time);
-      const pitDeltaNum = Number(lastStop?.pit_delta);
+      const pitStopTimeNum = this._parseOptionalNumber(lastStop?.pit_stop_time);
+      const pitLaneTimeNum = this._parseOptionalNumber(lastStop?.pit_lane_time);
+      const pitDeltaNum = this._parseOptionalNumber(lastStop?.pit_delta);
       const pitStopTime = this._formatSeconds(pitStopTimeNum);
       const pitLaneTime = this._formatSeconds(pitLaneTimeNum);
       const pitDelta = this._formatSeconds(pitDeltaNum);
@@ -1627,7 +1742,15 @@ class F1PitStopOverviewCard extends LitElement {
     return Number.isFinite(num) ? num : null;
   }
 
+  _parseOptionalNumber(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string' && value.trim() === '') return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
   _formatSeconds(value) {
+    if (value === null || value === undefined || value === '') return '--';
     const num = Number(value);
     if (!Number.isFinite(num)) return '--';
     return num.toFixed(1);
@@ -2507,8 +2630,35 @@ class F1DriverLapTimesCard extends LitElement {
     ensureF1Fonts();
   }
 
-  getCardSize() {
-    return 6;
+  disconnectedCallback() {
+    this._detachCardObserver();
+    super.disconnectedCallback();
+  }
+
+  firstUpdated() {
+    this._attachCardObserver();
+    this._updateGridRows();
+  }
+
+  updated(changedProps) {
+    super.updated(changedProps);
+
+    if (changedProps.has('hass') || changedProps.has('config')) {
+      this._attachCardObserver();
+      this._updateGridRows();
+    }
+  }
+
+  async getCardSize() {
+    await this.updateComplete;
+
+    const renderedHeight = this._measureCardHeight();
+
+    if (renderedHeight > 0) {
+      return Math.max(1, Math.ceil(renderedHeight / 50));
+    }
+
+    return this._estimateGridRows();
   }
 
   getGridOptions() {
@@ -2516,7 +2666,7 @@ class F1DriverLapTimesCard extends LitElement {
       columns: 12,
       min_columns: 4,
       max_columns: 12,
-      min_rows: 13,
+      min_rows: 1,
     };
   }
 
@@ -2794,6 +2944,101 @@ class F1DriverLapTimesCard extends LitElement {
     });
 
     return rows;
+  }
+
+  _attachCardObserver() {
+    if (!this.isConnected || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const card = this.renderRoot?.querySelector('ha-card');
+    if (!card) {
+      return;
+    }
+
+    if (!this._cardResizeObserver) {
+      this._cardResizeObserver = new ResizeObserver(() => {
+        this._updateGridRows();
+      });
+    }
+
+    if (this._observedCard === card) {
+      return;
+    }
+
+    this._detachCardObserver();
+    this._observedCard = card;
+    this._cardResizeObserver.observe(card);
+  }
+
+  _detachCardObserver() {
+    if (this._cardResizeObserver && this._observedCard) {
+      this._cardResizeObserver.unobserve(this._observedCard);
+    }
+    this._observedCard = undefined;
+  }
+
+  _updateGridRows() {
+    const measuredHeight = this._measureCardHeight();
+    const nextHeight = measuredHeight > 0 ? Math.ceil(measuredHeight) : 0;
+
+    if (nextHeight <= 0 || nextHeight === this._lastMeasuredHeight) {
+      return;
+    }
+
+    this._lastMeasuredHeight = nextHeight;
+    this.dispatchEvent(new Event('card-updated', { bubbles: true, composed: true }));
+  }
+
+  _measureCardHeight() {
+    const card = this.renderRoot?.querySelector('ha-card');
+    const content = card?.querySelector('.dl-card');
+
+    const cardHeight = card?.getBoundingClientRect?.().height ?? 0;
+    const contentHeight = content?.scrollHeight ?? 0;
+
+    return Math.max(cardHeight, contentHeight);
+  }
+
+  _heightToGridRows(height) {
+    const sectionRowHeight = 56;
+    const sectionRowGap = 8;
+    return Math.max(1, Math.ceil((height + sectionRowGap) / (sectionRowHeight + sectionRowGap)));
+  }
+
+  _estimateGridRows() {
+    const dataRows = this._estimateDataRowCount();
+    const cardPadding = 28;
+    const headerHeight = this.config?.show_header === false ? 0 : 44;
+    const tableHeaderHeight = this.config?.show_table_header === false ? 0 : 26;
+    const rowHeight = 32;
+    const rowGap = 6;
+    const totalHeight = cardPadding
+      + headerHeight
+      + tableHeaderHeight
+      + (dataRows * rowHeight)
+      + (Math.max(0, dataRows + (tableHeaderHeight > 0 ? 1 : 0) - 1) * rowGap);
+
+    return this._heightToGridRows(totalHeight);
+  }
+
+  _estimateDataRowCount() {
+    if (!this.hass || !this.config?.drivers_entity || !this.config?.positions_entity) {
+      return 20;
+    }
+
+    const driversState = getEntityStateWithFallback(this.hass, this.config.drivers_entity);
+    const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
+    if (!driversState || !positionsState) {
+      return 20;
+    }
+
+    const drivers = this._asList(driversState?.attributes?.drivers);
+    const positions = positionsState?.attributes?.drivers;
+    const fastestLap = positionsState?.attributes?.fastest_lap;
+    const rows = this._buildRows(drivers, positions, fastestLap);
+
+    return Math.max(rows.length, 1);
   }
 
   _buildPositionMap(positions) {
@@ -5503,8 +5748,10 @@ class F1InvestigationsCard extends LitElement {
     if (!text) return null;
     const upper = String(text).toUpperCase();
     const timeMatch = upper.match(/(\d+)\s*SECOND/);
+    const isStopGo = /STOP(?:[-\s]+AND[-\s]+|\/)?GO/.test(upper);
     if (timeMatch && upper.includes('TIME PENALTY')) return `PENALTY ${timeMatch[1]} SEC`;
-    if (timeMatch && upper.includes('STOP/GO')) return `PENALTY STOP/GO ${timeMatch[1]} SEC`;
+    if (timeMatch && isStopGo) return `PENALTY STOP/GO ${timeMatch[1]} SEC`;
+    if (isStopGo) return 'PENALTY STOP/GO';
     if (upper.includes('DRIVE THROUGH')) return 'PENALTY DRIVE THROUGH';
     if (upper.includes('REPRIMAND')) return 'REPRIMAND';
     return null;
@@ -6273,8 +6520,10 @@ class F1TrackLimitsCard extends LitElement {
     if (!text) return null;
     const upper = String(text).toUpperCase();
     const timeMatch = upper.match(/(\d+)\s*SECOND/);
+    const isStopGo = /STOP(?:[-\s]+AND[-\s]+|\/)?GO/.test(upper);
     if (timeMatch && upper.includes('TIME PENALTY')) return `PENALTY ${timeMatch[1]} SEC`;
-    if (timeMatch && upper.includes('STOP/GO')) return `PENALTY STOP/GO ${timeMatch[1]} SEC`;
+    if (timeMatch && isStopGo) return `PENALTY STOP/GO ${timeMatch[1]} SEC`;
+    if (isStopGo) return 'PENALTY STOP/GO';
     if (upper.includes('DRIVE THROUGH')) return 'PENALTY DRIVE THROUGH';
     if (upper.includes('REPRIMAND')) return 'REPRIMAND';
     return null;
@@ -7104,10 +7353,6 @@ class F1LiveSessionCard extends LitElement {
       const startValue = this._getSessionStartValue(sessionStatus);
       const start = this._parseDateWithOffset(startValue, sessionStatus?.gmt_offset);
       diff = start ? start.getTime() - Date.now() : 0;
-      if (diff <= 0 && start) {
-        const fallback = this._getCountdownTarget(start);
-        diff = fallback ? fallback.getTime() - Date.now() : diff;
-      }
     } else if (nextRace) {
       const startValue = nextRace.race_start_utc || nextRace.state || nextRace.race_start;
       const start = this._parseDateWithOffset(startValue, null);
@@ -7314,19 +7559,6 @@ class F1LiveSessionCard extends LitElement {
     return `T-${m}:${pad(s)}`;
   }
 
-  _getCountdownTarget(start) {
-    if (!start) return null;
-    const timeZone = this._getTimeZone();
-    const nowZoned = this._getZonedDate(new Date(), timeZone);
-    const startZoned = this._getZonedDate(start, timeZone);
-    const target = new Date(nowZoned);
-    target.setHours(startZoned.getHours(), startZoned.getMinutes(), startZoned.getSeconds(), 0);
-    if (target.getTime() <= nowZoned.getTime()) {
-      target.setDate(target.getDate() + 1);
-    }
-    return target;
-  }
-
   _getCountdown(sessionStatus) {
     const state = String(sessionStatus?.state || '').toLowerCase();
     if (state !== 'pre') return '';
@@ -7338,11 +7570,7 @@ class F1LiveSessionCard extends LitElement {
     const nowZoned = this._getZonedDate(new Date(), timeZone);
     let diffSeconds = Math.floor((startZoned.getTime() - nowZoned.getTime()) / 1000);
     if (diffSeconds <= 0) {
-      const fallback = this._getCountdownTarget(start);
-      if (!fallback) return '';
-      const fallbackZoned = this._getZonedDate(fallback, timeZone);
-      diffSeconds = Math.floor((fallbackZoned.getTime() - nowZoned.getTime()) / 1000);
-      if (diffSeconds <= 0) return '';
+      diffSeconds = 0;
     }
     return this._formatCountdown(diffSeconds);
   }
@@ -8137,7 +8365,6 @@ class F1RaceControlCard extends LitElement {
   constructor() {
     super();
     this._currentMessage = null;
-    this._messageQueue = [];
     this._historyQueue = [];
     this._historyIndex = 0;
     this._lastEventId = null;
@@ -8162,65 +8389,77 @@ class F1RaceControlCard extends LitElement {
     }
   }
 
-  updated(changedProps) {
-    if (changedProps.has('hass')) {
-      this._checkForNewMessage();
-      const entity = getEntityStateWithFallback(this.hass, this.config?.entity);
-      if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
-        this._currentMessage = null;
-        this._messageQueue = [];
-        this._historyQueue = [];
-        this._historyIndex = 0;
-        this._lastEventId = null;
-        this._clearDisplayTimer();
-      }
+  willUpdate(changedProps) {
+    if (changedProps.has('hass') || changedProps.has('config')) {
+      this._syncMessageState();
     }
   }
 
-  _checkForNewMessage() {
+  _resetMessageState() {
+    this._currentMessage = null;
+    this._historyQueue = [];
+    this._historyIndex = 0;
+    this._lastEventId = null;
+    this._messageShownAt = 0;
+    this._clearDisplayTimer();
+  }
+
+  _syncMessageState() {
     const entity = getEntityStateWithFallback(this.hass, this.config?.entity);
-    if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') return;
+    if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
+      this._resetMessageState();
+      return;
+    }
+    this._checkForNewMessage(entity);
+  }
+
+  _checkForNewMessage(entity = null) {
+    const entityState = entity || getEntityStateWithFallback(this.hass, this.config?.entity);
+    if (!entityState || entityState.state === 'unavailable' || entityState.state === 'unknown') return;
 
     const minDisplayTime = this.config?.min_display_time || 0;
-    const queue = this._buildHistoryQueue(entity);
+    const queue = this._buildHistoryQueue(entityState);
+    const currentId = this._currentMessage?.id || this._lastEventId;
+    const historyChanged = this._historyChanged(queue);
 
-    if (minDisplayTime > 0 && queue.length > 0) {
-      const changed = this._historyChanged(queue);
-      if (changed) {
-        this._historyQueue = queue;
-        this._historyIndex = 0;
-        this._currentMessage = queue[0];
-        this._lastEventId = queue[0]?.id || null;
-      } else if (!this._currentMessage && queue.length > 0) {
-        this._historyQueue = queue;
-        this._currentMessage = queue[this._historyIndex] || queue[0];
+    if (queue.length === 0) {
+      this._resetMessageState();
+      return;
+    }
+
+    if (minDisplayTime > 0) {
+      const currentIndex = currentId
+        ? queue.findIndex((item) => item?.id === currentId)
+        : -1;
+      const shouldResetToStart = historyChanged && currentIndex === -1;
+      const nextIndex = currentIndex >= 0 ? currentIndex : 0;
+      const nextMessage = queue[nextIndex];
+      const nextId = nextMessage?.id || null;
+
+      if (!this._currentMessage || this._currentMessage.id !== nextId) {
+        this._showMessage(nextMessage, { resetTimer: shouldResetToStart });
       }
+
+      this._historyQueue = queue;
+      this._historyIndex = nextIndex;
       this._ensureQueueTimer(minDisplayTime, this._historyQueue.length);
       return;
     }
 
     this._historyQueue = queue;
-    this._historyIndex = 0;
+    this._historyIndex = queue.length - 1;
     this._clearDisplayTimer();
-    if (queue.length > 0) {
-      const latest = queue[queue.length - 1];
-      this._currentMessage = latest;
-      this._lastEventId = latest?.id || null;
-    }
+    this._showMessage(queue[this._historyIndex]);
   }
 
-  _showMessage(msg) {
-    this._currentMessage = msg;
-    this._messageShownAt = Date.now();
-    this._clearDisplayTimer();
-
-    const minDisplayTime = this.config?.min_display_time || 0;
-    if (minDisplayTime > 0 && this._messageQueue.length > 0) {
-      // Schedule next message
-      this._displayTimer = setTimeout(() => {
-        this._showNextFromQueue();
-      }, minDisplayTime * 1000);
+  _showMessage(msg, options = {}) {
+    const { resetTimer = false } = options;
+    if (resetTimer) {
+      this._clearDisplayTimer();
     }
+    this._currentMessage = msg;
+    this._lastEventId = msg?.id || null;
+    this._messageShownAt = msg ? Date.now() : 0;
   }
 
   _showNextFromQueue() {
@@ -8234,7 +8473,7 @@ class F1RaceControlCard extends LitElement {
       return;
     }
     this._historyIndex = nextIndex;
-    this._currentMessage = this._historyQueue[this._historyIndex];
+    this._showMessage(this._historyQueue[this._historyIndex], { resetTimer: true });
     this.requestUpdate();
     const minDisplayTime = this.config?.min_display_time || 0;
     if (minDisplayTime > 0 && this._historyIndex < this._historyQueue.length - 1) {
@@ -8250,6 +8489,7 @@ class F1RaceControlCard extends LitElement {
     this.config = {
       entity: 'sensor.f1_race_control',
       show_fia_logo: true,
+      hide_blue_flags: false,
       min_display_time: 0,
       ...config,
     };
@@ -8295,6 +8535,7 @@ class F1RaceControlCard extends LitElement {
           _time: parsed,
         };
       })
+      .filter((item) => !this._shouldHideMessage(item))
       .filter(Boolean);
     if (queue.length > 0) {
       const hasTime = queue.some((item) => Number.isFinite(item._time));
@@ -8308,21 +8549,47 @@ class F1RaceControlCard extends LitElement {
     }
     const fallbackId = entity.attributes?.event_id || entity.attributes?.utc || entity.state;
     if (!fallbackId) return [];
-    return [{
+    const fallbackItem = {
       id: fallbackId,
       message: entity.attributes?.message || entity.state,
       category: entity.attributes?.category || null,
       flag: entity.attributes?.flag || null,
       car_number: entity.attributes?.car_number || null,
       utc: entity.attributes?.utc || null,
-    }];
+    };
+    return this._shouldHideMessage(fallbackItem) ? [] : [fallbackItem];
   }
 
   _historyChanged(queue) {
     if (!Array.isArray(queue) || queue.length === 0) return this._historyQueue.length !== 0;
     if (queue.length !== this._historyQueue.length) return true;
-    const currentLast = this._historyQueue[this._historyQueue.length - 1]?.id;
-    return queue[queue.length - 1]?.id !== currentLast;
+    return queue.some((item, index) => item?.id !== this._historyQueue[index]?.id);
+  }
+
+  _shouldHideMessage(item) {
+    if (!item) return true;
+    if (this.config?.hide_blue_flags !== true) return false;
+    return this._isBlueFlagMessage(item);
+  }
+
+  _isBlueFlagMessage(item) {
+    const flag = String(item?.flag || '').trim().toUpperCase();
+    if (flag === 'BLUE') return true;
+    if (flag) return false;
+
+    const message = this._formatMessage(item?.message || '').toLowerCase();
+    return message.includes('waved blue flag') || message.includes('blue flag');
+  }
+
+  _parseIncidentTime(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const normalized = text.includes('Z') || /[+-]\d{2}:\d{2}$/.test(text)
+      ? text
+      : `${text}Z`;
+    const ts = Date.parse(normalized);
+    return Number.isNaN(ts) ? null : ts;
   }
 
   _ensureQueueTimer(minDisplayTime, queueLength) {
@@ -8374,28 +8641,13 @@ class F1RaceControlCard extends LitElement {
       `;
     }
 
-    // Initialize from entity if no current message
-    if (!this._currentMessage) {
-      const entity = currentEntity;
-      if (entity && entity.state !== 'unavailable' && entity.state !== 'unknown') {
-        this._currentMessage = {
-          message: entity.attributes?.message || entity.state,
-          category: entity.attributes?.category || null,
-          flag: entity.attributes?.flag || null,
-          car_number: entity.attributes?.car_number || null,
-          utc: entity.attributes?.utc || null,
-        };
-        this._lastEventId = entity.attributes?.event_id || entity.attributes?.utc || entity.state;
-      }
-    }
-
     if (!this._currentMessage) {
       const showLogo = this.config.show_fia_logo;
       return html`
         <ha-card>
           <div class="rc-card rc-unavailable">
             ${showLogo ? html`<img class="rc-fia-logo" src="https://www.fia.com/sites/all/themes/penceo_theme/images/fia-footer-logo.png" alt="FIA" />` : null}
-            <span class="rc-unavailable-text">No session data</span>
+            <span class="rc-unavailable-text">No visible race control messages</span>
           </div>
         </ha-card>
       `;
@@ -8550,6 +8802,7 @@ class F1RaceControlCardEditor extends LitElement {
   setConfig(config) {
     this._config = {
       show_fia_logo: true,
+      hide_blue_flags: false,
       min_display_time: 0,
       ...config,
     };
@@ -8601,6 +8854,11 @@ class F1RaceControlCardEditor extends LitElement {
     return html`
       <div class="display-section">
         ${this._renderSwitch('show_fia_logo', 'Show FIA logo')}
+        ${this._renderSwitch(
+          'hide_blue_flags',
+          'Hide blue flag messages',
+          'Remove blue flag notices from the banner and queue'
+        )}
 
         <ha-textfield
           .label=${'Min display time per message (seconds)'}
@@ -8666,6 +8924,1181 @@ class F1RaceControlCardEditor extends LitElement {
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
   }
 }
+
+
+// ============================================================================
+// F1 Qualifying Timing Card
+// ============================================================================
+
+class F1QualifyingTimingCard extends LitElement {
+  static properties = {
+    hass: {},
+    config: {},
+  };
+
+  static styles = css`
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    :host {
+      --qt-bg: #0b0b0d;
+      --qt-bg-soft: #131315;
+      --qt-border: rgba(255, 255, 255, 0.08);
+      --qt-text: #f5f5f5;
+      --qt-muted: rgba(255, 255, 255, 0.55);
+      --qt-chip: rgba(255, 255, 255, 0.06);
+      --qt-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      display: block;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+    }
+
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+      overflow: hidden;
+    }
+
+    .qt-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
+        linear-gradient(160deg, var(--qt-bg) 0%, var(--qt-bg-soft) 60%, #0a0a0a 100%);
+      border: 1px solid var(--qt-border);
+      box-shadow: var(--qt-shadow);
+      overflow: hidden;
+      color: var(--qt-text);
+    }
+
+    .qt-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: clamp(8px, 1.4vw, 12px);
+    }
+
+    .qt-header {
+      text-align: center;
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(16px, 2.4vw, 20px);
+      font-weight: 700;
+      letter-spacing: clamp(0.03em, 0.06em, 0.08em);
+      text-transform: uppercase;
+      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      white-space: normal;
+      text-wrap: balance;
+      line-height: 1.1;
+      padding: 0 4px;
+    }
+
+    .qt-q-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3px 10px;
+      border-radius: 6px;
+      background: rgba(139, 92, 246, 0.22);
+      border: 1px solid rgba(139, 92, 246, 0.45);
+      color: #d8b4fe;
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(13px, 2vw, 16px);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .qt-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .qt-table {
+      display: grid;
+      gap: 4px;
+      min-width: max-content;
+    }
+
+    .qt-row {
+      display: grid;
+      grid-template-columns: var(--qt-columns);
+      align-items: center;
+      column-gap: 0px;
+      padding: 5px 4px;
+      border-radius: 10px;
+      background: var(--qt-chip);
+      font-size: clamp(10px, 1.6vw, 11px);
+      color: var(--qt-text);
+    }
+
+    .qt-row.header {
+      background: transparent;
+      padding: 4px 6px 2px;
+      font-size: clamp(9px, 1.4vw, 10px);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--qt-muted);
+    }
+
+    .qt-row.knocked-out {
+      opacity: 0.5;
+    }
+
+    .qt-cell {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      padding: 0 2px;
+    }
+
+    .qt-cell.center {
+      justify-content: center;
+      text-align: center;
+    }
+
+    .qt-cell.compact {
+      padding-right: 0;
+    }
+
+    .qt-cell.group-start {
+      padding-left: 6px;
+      border-left: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .qt-tla {
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--driver-color, var(--qt-text));
+    }
+
+    .qt-tla-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .qt-team-logo {
+      width: 14px;
+      height: 14px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
+    }
+
+    .qt-status {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--qt-muted);
+    }
+
+    .qt-status.pit-in {
+      color: #f59e0b;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .qt-status.pit-out {
+      color: #38bdf8;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .qt-status.stopped {
+      color: #fb7185;
+    }
+
+    .qt-status.retired {
+      color: #a3a3a3;
+    }
+
+    .qt-tyre-circle {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid var(--compound-color, var(--qt-text));
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 9px;
+      line-height: 1;
+      color: var(--compound-color, var(--qt-text));
+    }
+
+    .qt-tyre-age {
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      color: var(--qt-muted);
+      min-width: 14px;
+      text-align: right;
+    }
+
+    .qt-sector {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 5px;
+      border-radius: 5px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      min-width: 52px;
+      font-size: clamp(9px, 1.4vw, 11px);
+      background: var(--sector-bg, transparent);
+      color: var(--sector-text, var(--qt-muted));
+    }
+
+    .qt-sector.overall-fastest {
+      --sector-bg: rgba(139, 92, 246, 0.28);
+      --sector-text: #d8b4fe;
+    }
+
+    .qt-sector.personal-fastest {
+      --sector-bg: rgba(34, 197, 94, 0.22);
+      --sector-text: #86efac;
+    }
+
+    .qt-sector.timed {
+      --sector-bg: rgba(234, 179, 8, 0.18);
+      --sector-text: #fde047;
+    }
+
+    .qt-lap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 5px;
+      border-radius: 5px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      min-width: 68px;
+      font-size: clamp(9px, 1.4vw, 11px);
+      background: var(--lap-bg, transparent);
+      color: var(--lap-text, var(--qt-muted));
+    }
+
+    .qt-lap.overall-fastest {
+      --lap-bg: rgba(139, 92, 246, 0.28);
+      --lap-text: #d8b4fe;
+    }
+
+    .qt-lap.personal-fastest {
+      --lap-bg: rgba(34, 197, 94, 0.22);
+      --lap-text: #86efac;
+    }
+
+    .qt-lap.timed {
+      --lap-bg: rgba(234, 179, 8, 0.14);
+      --lap-text: #fde047;
+    }
+
+    .qt-empty {
+      padding: 16px;
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: var(--qt-chip);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      color: var(--qt-muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 720px) {
+      .qt-card {
+        padding: 12px 10px 12px;
+      }
+
+      .qt-header {
+        font-size: 16px;
+        letter-spacing: 0.03em;
+      }
+
+      .qt-row {
+        font-size: 9px;
+        padding: 4px 4px;
+      }
+    }
+  `;
+
+  setConfig(config) {
+    this.config = {
+      title: 'Qualifying',
+      show_header: true,
+      show_table_header: true,
+      show_team_logo: true,
+      team_logo_style: 'color',
+      positions_entity: 'sensor.f1_driver_positions',
+      tyres_entity: 'sensor.f1_current_tyres',
+      drivers_entity: 'sensor.f1_driver_list',
+      session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
+      ...config,
+    };
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    ensureF1Fonts();
+  }
+
+  getCardSize() {
+    return 7;
+  }
+
+  getGridOptions() {
+    return {
+      columns: 12,
+      min_columns: 6,
+      max_columns: 12,
+      min_rows: 10,
+    };
+  }
+
+  static getStubConfig() {
+    return {
+      type: 'custom:f1-qualifying-timing-card',
+      positions_entity: '',
+      tyres_entity: '',
+      drivers_entity: '',
+      session_status_entity: 'sensor.f1_session_status',
+      title: 'Qualifying',
+    };
+  }
+
+  static getConfigElement() {
+    return document.createElement('f1-qualifying-timing-card-editor');
+  }
+
+  render() {
+    if (!this.hass || !this.config) return html``;
+
+    if (!this.config.positions_entity) {
+      return html`
+        <ha-card>
+          <div class="qt-card">
+            <div class="qt-empty">Select positions entity in the editor</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const sessionState = this.config.session_entity
+      ? getEntityStateWithFallback(this.hass, this.config.session_entity)
+      : null;
+    const sessionStatusState = this.config.session_status_entity
+      ? getEntityStateWithFallback(this.hass, this.config.session_status_entity)
+      : null;
+    if (this.config.session_entity && !sessionState) {
+      return html`
+        <ha-card>
+          <div class="qt-card">
+            <div class="qt-empty">Session entity not found</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    if (!this._isQualifyingSession(sessionState, sessionStatusState)) {
+      return html`
+        <ha-card>
+          <div class="qt-card">
+            <div class="qt-empty">Available during Qualifying and Sprint Qualifying only</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
+    if (!positionsState) {
+      return html`
+        <ha-card>
+          <div class="qt-card">
+            <div class="qt-empty">Positions entity not found</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const positionDrivers = positionsState?.attributes?.drivers || [];
+    const currentQPart = positionsState?.attributes?.current_qualifying_part;
+
+    const tyresState = this.config.tyres_entity
+      ? getEntityStateWithFallback(this.hass, this.config.tyres_entity)
+      : null;
+    const tyresDrivers = tyresState?.attributes?.drivers || [];
+
+    const driversState = this.config.drivers_entity
+      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
+      : null;
+    const driverList = driversState?.attributes?.drivers || [];
+
+    const sessionPart = this._resolveDisplayQualifyingPart(
+      sessionState,
+      currentQPart,
+      positionDrivers,
+    );
+
+    const rows = this._buildRows(positionDrivers, tyresDrivers, driverList, currentQPart);
+
+    if (rows.length === 0) {
+      return html`
+        <ha-card>
+          <div class="qt-card">
+            <div class="qt-empty">No qualifying data</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const columns = this._columns();
+    const gridColumns = columns.map((col) => col.width).join(' ');
+
+    return html`
+      <ha-card>
+        <div class="qt-card">
+          ${this.config.show_header !== false
+            ? html`
+              <div class="qt-header-row">
+                <div class="qt-header">${this.config.title || 'Qualifying'}</div>
+                ${sessionPart !== null
+                  ? html`<div class="qt-q-badge">Q${sessionPart}</div>`
+                  : null}
+              </div>`
+            : null}
+          <div class="qt-scroll">
+            <div class="qt-table" style="--qt-columns: ${gridColumns};">
+              ${this.config.show_table_header !== false ? this._renderHeader(columns) : null}
+              ${rows.map((row) => this._renderRow(row, columns))}
+            </div>
+          </div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _columns() {
+    return [
+      { key: 'position', label: 'P', width: '28px', center: true, compact: true },
+      { key: 'logo', label: '', width: '24px', compact: true, hideHeader: true },
+      { key: 'tla', label: 'Driver', width: '76px', compact: true, hideHeader: true },
+      { key: 'status', label: '', width: '36px', center: true, hideHeader: true },
+      { key: 'tyre', label: 'TYR', width: '26px', center: true },
+      { key: 'tyre_age', label: 'AGE', width: '28px', center: true },
+      { key: 'sector_1', label: 'S1', width: '72px', center: true, groupStart: true },
+      { key: 'sector_2', label: 'S2', width: '72px', center: true },
+      { key: 'sector_3', label: 'S3', width: '72px', center: true },
+      { key: 'last_lap', label: 'LAST', width: '86px', center: true, groupStart: true },
+      { key: 'q1_lap', label: 'Q1', width: '86px', center: true },
+      { key: 'q2_lap', label: 'Q2', width: '86px', center: true },
+      { key: 'q3_lap', label: 'Q3', width: '86px', center: true },
+    ];
+  }
+
+  _renderHeader(columns) {
+    return html`
+      <div class="qt-row header">
+        ${columns.map((col) => {
+          const classes = ['qt-cell'];
+          if (col.center) classes.push('center');
+          if (col.compact) classes.push('compact');
+          if (col.groupStart) classes.push('group-start');
+          return html`<div class="${classes.join(' ')}">${col.hideHeader ? '' : col.label}</div>`;
+        })}
+      </div>
+    `;
+  }
+
+  _renderRow(row, columns) {
+    const rowClasses = ['qt-row'];
+    if (row.knocked_out) rowClasses.push('knocked-out');
+    return html`
+      <div class="${rowClasses.join(' ')}">
+        ${columns.map((col) => this._renderCell(row, col))}
+      </div>
+    `;
+  }
+
+  _renderCell(row, col) {
+    const classes = ['qt-cell'];
+    if (col.center) classes.push('center');
+    if (col.compact) classes.push('compact');
+    if (col.groupStart) classes.push('group-start');
+
+    if (col.key === 'position') {
+      return html`<div class="${classes.join(' ')}">${row.position != null ? row.position : '--'}</div>`;
+    }
+
+    if (col.key === 'logo') {
+      if (this.config.show_team_logo === false) {
+        return html`<div class="${classes.join(' ')}"></div>`;
+      }
+      const logo = row.team_logo;
+      return html`
+        <div class="${classes.join(' ')}">
+          ${logo ? html`<img class="qt-team-logo" src="${logo.src}" data-fallback="${logo.fallback || ''}" loading="lazy" @error=${handleTeamLogoError} alt="" />` : null}
+        </div>
+      `;
+    }
+
+    if (col.key === 'tla') {
+      const style = row.team_color ? `--driver-color: ${row.team_color};` : '';
+      return html`
+        <div class="${[...classes, 'qt-tla'].join(' ')}" style="${style}">
+          <span class="qt-tla-wrap">${row.tla || '--'}</span>
+        </div>
+      `;
+    }
+
+    if (col.key === 'status') {
+      if (!row.status_label) {
+        return html`<div class="${classes.join(' ')}"></div>`;
+      }
+      const statusClasses = ['qt-status'];
+      if (row.status_key) statusClasses.push(row.status_key);
+      return html`
+        <div class="${classes.join(' ')}">
+          <span class="${statusClasses.join(' ')}">${row.status_label}</span>
+        </div>
+      `;
+    }
+
+    if (col.key === 'tyre') {
+      const style = row.compound_color ? `--compound-color: ${row.compound_color};` : '';
+      const letter = row.compound_short || '-';
+      return html`
+        <div class="${classes.join(' ')}" style="${style}">
+          <div class="qt-tyre-circle">${letter}</div>
+        </div>
+      `;
+    }
+
+    if (col.key === 'tyre_age') {
+      return html`
+        <div class="${classes.join(' ')}">
+          <span class="qt-tyre-age">${row.tyre_age != null ? row.tyre_age : '-'}</span>
+        </div>
+      `;
+    }
+
+    if (col.key === 'sector_1' || col.key === 'sector_2' || col.key === 'sector_3') {
+      const idx = col.key === 'sector_1' ? 1 : col.key === 'sector_2' ? 2 : 3;
+      const time = row[`sector_${idx}`];
+      const overallFastest = row[`sector_${idx}_overall_fastest`];
+      const personalFastest = row[`sector_${idx}_personal_fastest`];
+      const sectorClass = this._sectorClass(overallFastest, personalFastest, time != null);
+      const displayTime = time != null ? this._formatSectorTime(time) : '--';
+      return html`
+        <div class="${classes.join(' ')}">
+          <span class="qt-sector ${sectorClass}">${displayTime}</span>
+        </div>
+      `;
+    }
+
+    if (col.key === 'last_lap') {
+      const lastLapTime = row.last_lap;
+      const isPersonalFastest = this._isLapTimeMatch(lastLapTime, row.current_segment_best_lap);
+      const lapClass = isPersonalFastest
+          ? 'personal-fastest'
+          : lastLapTime
+            ? 'timed'
+            : '';
+      return html`
+        <div class="${classes.join(' ')}">
+          <span class="qt-lap ${lapClass}">${lastLapTime || '--:--.---'}</span>
+        </div>
+      `;
+    }
+
+    if (col.key === 'q1_lap' || col.key === 'q2_lap' || col.key === 'q3_lap') {
+      const bestTime = row[col.key];
+      const positionKey = `${col.key}_position`;
+      const lapClass = row[positionKey] === 1
+        ? 'overall-fastest'
+        : bestTime
+          ? 'timed'
+          : '';
+      return html`
+        <div class="${classes.join(' ')}">
+          <span class="qt-lap ${lapClass}">${bestTime || '--:--.---'}</span>
+        </div>
+      `;
+    }
+
+    return html`<div class="${classes.join(' ')}">--</div>`;
+  }
+
+  _buildRows(positionDrivers, tyresDrivers, driverList, currentQPart) {
+    const tyreMap = new Map();
+    tyresDrivers.forEach((t) => {
+      const rn = String(t?.racing_number ?? '').trim();
+      if (rn) tyreMap.set(rn, t);
+    });
+
+    const driverListMap = new Map();
+    driverList.forEach((d) => {
+      const rn = String(d?.racing_number ?? '').trim();
+      const tla = String(d?.tla ?? '').trim();
+      if (rn) driverListMap.set(rn, d);
+      if (tla) driverListMap.set(tla, d);
+    });
+
+    const rows = positionDrivers.map((pos) => {
+      const rn = String(pos?.racing_number ?? '').trim();
+      const tla = String(pos?.tla ?? '').trim().toUpperCase();
+      const tyre = tyreMap.get(rn);
+      const dlEntry = driverListMap.get(rn) || driverListMap.get(tla);
+      const teamName = pos?.team || dlEntry?.team;
+      const teamLogo = this.config.show_team_logo !== false
+        ? getTeamLogoMeta(teamName, 24, this.config.team_logo_style)
+        : null;
+      const teamColor = this._normalizeColor(pos?.team_color || dlEntry?.team_color);
+
+      // Position: segment-specific based on current Q part
+      let position = null;
+      if (currentQPart === 3 && pos.q3_position != null) {
+        position = pos.q3_position;
+      } else if (currentQPart === 2 && pos.q2_position != null) {
+        position = pos.q2_position;
+      } else if (currentQPart === 1 && pos.q1_position != null) {
+        position = pos.q1_position;
+      } else {
+        const qPos = pos.q3_position ?? pos.q2_position ?? pos.q1_position;
+        position = qPos != null ? qPos : this._parsePosition(pos.current_position);
+      }
+
+      // Last lap: from laps dict
+      const lastLap = this._resolveLastLapTime(pos);
+
+      // Knocked out
+      const knockedOut = pos.q1_knocked_out === true || pos.q2_knocked_out === true;
+
+      // Status
+      const statusInfo = this._statusInfo(pos);
+
+      // Tyre
+      const compound = tyre?.compound || null;
+      const compoundKey = String(compound || '').toUpperCase();
+      const compoundShort = tyre?.compound_short || (compound ? compound[0] : null);
+      const compoundColor = tyre?.compound_color || COMPOUND_FALLBACK[compoundKey] || null;
+      const tyreAge = tyre?.stint_laps ?? null;
+      const currentSegmentBestLap = currentQPart === 3
+        ? (pos.q3_time ?? null)
+        : currentQPart === 2
+          ? (pos.q2_time ?? null)
+          : (pos.q1_time ?? null);
+
+      return {
+        rn,
+        tla: tla || '--',
+        team_color: teamColor,
+        team_logo: teamLogo,
+        position,
+        knocked_out: knockedOut,
+        status_label: statusInfo.label,
+        status_key: statusInfo.key,
+        compound_short: compoundShort,
+        compound_color: compoundColor,
+        tyre_age: tyreAge,
+        sector_1: pos.sector_1 ?? null,
+        sector_2: pos.sector_2 ?? null,
+        sector_3: pos.sector_3 ?? null,
+        sector_1_overall_fastest: pos.sector_1_overall_fastest ?? null,
+        sector_1_personal_fastest: pos.sector_1_personal_fastest ?? null,
+        sector_2_overall_fastest: pos.sector_2_overall_fastest ?? null,
+        sector_2_personal_fastest: pos.sector_2_personal_fastest ?? null,
+        sector_3_overall_fastest: pos.sector_3_overall_fastest ?? null,
+        sector_3_personal_fastest: pos.sector_3_personal_fastest ?? null,
+        last_lap: lastLap,
+        current_segment_best_lap: currentSegmentBestLap,
+        q1_lap: pos.q1_time ?? null,
+        q1_lap_position: pos.q1_position ?? null,
+        q2_lap: pos.q2_time ?? null,
+        q2_lap_position: pos.q2_position ?? null,
+        q3_lap: pos.q3_time ?? null,
+        q3_lap_position: pos.q3_position ?? null,
+      };
+    });
+
+    rows.sort((a, b) => {
+      if (a.position !== null && b.position !== null) return a.position - b.position;
+      if (a.position !== null) return -1;
+      if (b.position !== null) return 1;
+      return 0;
+    });
+
+    return rows;
+  }
+
+  _resolveDisplayQualifyingPart(sessionState, ...parts) {
+    for (const part of parts) {
+      const normalized = this._normalizeQualifyingPart(part);
+      if (normalized !== null) {
+        return normalized;
+      }
+    }
+    const inferred = this._inferQualifyingPartFromDrivers(parts.at(-1));
+    if (inferred !== null) {
+      return inferred;
+    }
+    const sessionLabel = String(sessionState?.state || '').trim().toLowerCase();
+    if (this._isQualifyingLikeLabel(sessionLabel)) {
+      return 1;
+    }
+    return null;
+  }
+
+  _isQualifyingLikeLabel(label) {
+    return label === 'qualifying' || label === 'sprint qualifying';
+  }
+
+  _normalizeQualifyingPart(value) {
+    if (value == null || value === '') return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    const part = Math.trunc(parsed);
+    if (part === 0) return 1;
+    return [1, 2, 3].includes(part) ? part : null;
+  }
+
+  _inferQualifyingPartFromDrivers(drivers) {
+    if (!Array.isArray(drivers) || drivers.length === 0) return null;
+    if (drivers.some((driver) => driver?.q3_time)) return 3;
+    if (drivers.some((driver) => driver?.q2_time)) return 2;
+    if (drivers.some((driver) => driver?.q1_time)) return 1;
+    return null;
+  }
+
+  _resolveLastLapTime(pos) {
+    const laps = pos?.laps;
+    if (!laps || typeof laps !== 'object') return null;
+    const completedLaps = Number(pos?.completed_laps);
+    if (Number.isFinite(completedLaps) && completedLaps > 0) {
+      const t = laps[String(Math.floor(completedLaps))];
+      if (typeof t === 'string' && t.trim()) return t.trim();
+    }
+    const entries = Object.entries(laps)
+      .map(([k, v]) => ({ lap: Number(k), time: v }))
+      .filter((e) => Number.isFinite(e.lap) && e.lap > 0 && typeof e.time === 'string' && e.time.trim())
+      .sort((a, b) => b.lap - a.lap);
+    return entries.length > 0 ? entries[0].time.trim() : null;
+  }
+
+  _isQualifyingSession(sessionState, sessionStatusState) {
+    const state = String(sessionState?.state || '').trim().toLowerCase();
+    if (this._isQualifyingLikeLabel(state)) {
+      return true;
+    }
+    const lastLabel = String(sessionState?.attributes?.last_label || '').trim().toLowerCase();
+    const sessionStatus = String(sessionStatusState?.state || '').trim().toLowerCase();
+    return this._isQualifyingLikeLabel(lastLabel) && sessionStatus === 'break';
+  }
+
+  _isOverallFastestLap(rowRn, lapTime, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
+    if (!rowRn || !fastestLapRn || rowRn !== fastestLapRn) return false;
+    if (!lapTime) return false;
+    if (this._isLapTimeMatch(lapTime, fastestLapTime)) return true;
+    const lapSecs = this._parseLapTimeSeconds(lapTime);
+    return lapSecs != null
+      && fastestLapTimeSecs != null
+      && Math.abs(lapSecs - fastestLapTimeSecs) < 0.001;
+  }
+
+  _isLapTimeMatch(left, right) {
+    if (!left || !right) return false;
+    if (String(left).trim() === String(right).trim()) return true;
+    const leftSecs = this._parseLapTimeSeconds(left);
+    const rightSecs = this._parseLapTimeSeconds(right);
+    return leftSecs != null
+      && rightSecs != null
+      && Math.abs(leftSecs - rightSecs) < 0.001;
+  }
+
+  _formatSectorTime(secs) {
+    if (secs == null || !Number.isFinite(secs)) return '--';
+    const totalMs = Math.round(secs * 1000);
+    const ms = totalMs % 1000;
+    const totalSec = Math.floor(totalMs / 1000);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    if (min > 0) {
+      return `${min}:${String(sec).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+    }
+    return `${sec}.${String(ms).padStart(3, '0')}`;
+  }
+
+  _sectorClass(overallFastest, personalFastest, hasTiming) {
+    if (overallFastest === true) return 'overall-fastest';
+    if (personalFastest === true) return 'personal-fastest';
+    if (hasTiming) return 'timed';
+    return '';
+  }
+
+  _statusInfo(pos) {
+    if (!pos) return { label: '', key: '' };
+    const retired = pos.retired === true;
+    const stopped = pos.stopped === true;
+    const inPit = pos.in_pit === true;
+    const pitOut = pos.pit_out === true;
+    const status = typeof pos.status === 'string' ? pos.status.toLowerCase() : '';
+    if (retired || status === 'out') return { label: 'OUT', key: 'retired' };
+    if (stopped) return { label: 'STOP', key: 'stopped' };
+    if (pitOut || status === 'pit_out') return { label: 'PIT', key: 'pit-out' };
+    if (inPit || status === 'in_pit') return { label: 'PIT', key: 'pit-in' };
+    return { label: '', key: '' };
+  }
+
+  _normalizeColor(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (text.startsWith('#') || text.startsWith('rgb')) return text;
+    if (/^[0-9a-fA-F]{6}$/.test(text)) return `#${text}`;
+    return text;
+  }
+
+  _parsePosition(value) {
+    if (value == null) return null;
+    const num = Number(value);
+    return Number.isFinite(num) && num > 0 ? Math.floor(num) : null;
+  }
+
+  _parseLapTimeSeconds(value) {
+    if (typeof value !== 'string') return null;
+    const text = value.trim();
+    if (!text) return null;
+    const sections = text.split(':');
+    const secPart = sections.pop();
+    if (!secPart || !secPart.includes('.')) return null;
+    const [secWhole, msPart] = secPart.split('.');
+    if (!/^\d+$/.test(secWhole) || !/^\d+$/.test(msPart)) return null;
+    let total = Number(secWhole);
+    total += Number(msPart.padEnd(3, '0').slice(0, 3)) / 1000;
+    let multiplier = 60;
+    for (let i = sections.length - 1; i >= 0; i -= 1) {
+      const unit = sections[i];
+      if (!/^\d+$/.test(unit)) return null;
+      total += Number(unit) * multiplier;
+      multiplier *= 60;
+    }
+    return Number.isFinite(total) ? total : null;
+  }
+}
+
+class F1QualifyingTimingCardEditor extends LitElement {
+  static properties = {
+    hass: {},
+    _config: {},
+    _activeTab: { state: true },
+  };
+
+  static styles = css`
+    .card-config {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--divider-color);
+      margin-bottom: 16px;
+    }
+
+    .tabs button {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary-text-color);
+      font-size: 14px;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+
+    .tabs button:hover {
+      color: var(--primary-color);
+    }
+
+    .tabs button.active {
+      color: var(--primary-color);
+      border-bottom: 2px solid var(--primary-color);
+      margin-bottom: -1px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--secondary-text-color);
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .helper {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      padding-left: 16px;
+      line-height: 1.4;
+    }
+
+    .warning {
+      font-size: 12px;
+      color: var(--error-color);
+      padding-left: 16px;
+    }
+
+    ha-textfield {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    ha-select {
+      width: 100%;
+    }
+  `;
+
+  constructor() {
+    super();
+    this._activeTab = 'sources';
+  }
+
+  setConfig(config) {
+    this._config = { ...config };
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    return html`
+      <div class="card-config">
+        <div class="tabs">
+          <button
+            class=${this._activeTab === 'sources' ? 'active' : ''}
+            @click=${() => { this._activeTab = 'sources'; }}
+          >
+            Data Sources
+          </button>
+          <button
+            class=${this._activeTab === 'display' ? 'active' : ''}
+            @click=${() => { this._activeTab = 'display'; }}
+          >
+            Display
+          </button>
+        </div>
+
+        ${this._activeTab === 'sources'
+          ? this._renderDataSourcesTab()
+          : this._renderDisplayTab()}
+      </div>
+    `;
+  }
+
+  _renderDataSourcesTab() {
+    return html`
+      <div class="section">
+        <div class="section-header">REQUIRED</div>
+        ${this._renderEntityPicker(
+          'positions_entity',
+          'Driver Positions Sensor',
+          'Provides qualifying positions, sector times, and lap data',
+          true,
+        )}
+        <div class="section-header">OPTIONAL</div>
+        ${this._renderEntityPicker(
+          'tyres_entity',
+          'Current Tyres Sensor',
+          'Provides tyre compound and stint age',
+          false,
+        )}
+        ${this._renderEntityPicker(
+          'drivers_entity',
+          'Driver List Sensor',
+          'Provides team logos',
+          false,
+        )}
+        ${this._renderEntityPicker(
+          'session_entity',
+          'Current Session Sensor',
+          'Scopes the card to the active qualifying or sprint qualifying session and shows the Q1 / Q2 / Q3 badge',
+          false,
+        )}
+        ${this._renderEntityPicker(
+          'session_status_entity',
+          'Session Status Sensor',
+          'Keeps the card visible during qualifying and sprint qualifying breaks between Q1, Q2, and Q3',
+          false,
+        )}
+      </div>
+    `;
+  }
+
+  _renderDisplayTab() {
+    return html`
+      <div class="section">
+        <ha-textfield
+          .label=${'Title'}
+          .value=${this._config.title || ''}
+          @input=${(e) => this._valueChanged('title', e.target.value)}
+        ></ha-textfield>
+
+        ${this._renderSwitch('show_header', 'Show header')}
+        ${this._renderSwitch('show_table_header', 'Show column headers')}
+        ${this._renderSwitch('show_team_logo', 'Show team logo')}
+
+        <ha-select
+          .label=${'Team logo style'}
+          .value=${this._config.team_logo_style || 'color'}
+          @selected=${(e) => this._valueChanged('team_logo_style', e.target.value)}
+          @closed=${(e) => e.stopPropagation()}
+        >
+          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
+          <mwc-list-item value="white">White</mwc-list-item>
+        </ha-select>
+      </div>
+    `;
+  }
+
+  _renderEntityPicker(name, label, helper, required) {
+    const value = this._config[name];
+    const showWarning = required && !value;
+    const schema = [{ name, label, required, selector: { entity: { domain: 'sensor' } } }];
+
+    return html`
+      <div class="field">
+        <ha-form
+          .hass=${this.hass}
+          .data=${this._config}
+          .schema=${schema}
+          .computeLabel=${() => label}
+          @value-changed=${this._formValueChanged}
+        ></ha-form>
+        <div class="helper">${helper}</div>
+        ${showWarning ? html`
+          <div class="warning">This sensor is required for the card to function</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  _renderSwitch(name, label, helper = null) {
+    const schema = [{ name, label, selector: { boolean: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _formValueChanged(ev) {
+    if (!this._config) return;
+    const value = ev.detail?.value || {};
+    const newConfig = { ...this._config, ...value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+
+  _valueChanged(name, value) {
+    if (!this._config) return;
+    const newConfig = { ...this._config, [name]: value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+}
+
+installSectionsAutoHeight(F1TyreStatisticsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 2,
+});
+
+installSectionsAutoHeight(F1PitStopOverviewCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 6,
+});
+
+installSectionsAutoHeight(F1ChampionshipPredictionDriversCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 5,
+});
+
+installSectionsAutoHeight(F1ChampionshipPredictionTeamsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 5,
+});
+
+installSectionsAutoHeight(F1InvestigationsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 1,
+});
+
+installSectionsAutoHeight(F1TrackLimitsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 1,
+});
+
+installSectionsAutoHeight(F1LiveSessionCard, {
+  columns: 12,
+  min_columns: 6,
+  max_columns: 12,
+  min_rows: 1,
+});
+
+installSectionsAutoHeight(F1RaceControlCard, {
+  columns: 12,
+  min_columns: 6,
+  max_columns: 12,
+  min_rows: 1,
+});
+
+installSectionsAutoHeight(F1QualifyingTimingCard, {
+  columns: 12,
+  min_columns: 6,
+  max_columns: 12,
+  min_rows: 10,
+});
+
 
 if (!customElements.get('f1-sensor-live-data-card')) {
   customElements.define('f1-sensor-live-data-card', F1TyreStatisticsCard);
@@ -8738,6 +10171,13 @@ if (!customElements.get('f1-race-control-card')) {
 if (!customElements.get('f1-race-control-card-editor')) {
   customElements.define('f1-race-control-card-editor', F1RaceControlCardEditor);
 }
+if (!customElements.get('f1-qualifying-timing-card')) {
+  customElements.define('f1-qualifying-timing-card', F1QualifyingTimingCard);
+}
+
+if (!customElements.get('f1-qualifying-timing-card-editor')) {
+  customElements.define('f1-qualifying-timing-card-editor', F1QualifyingTimingCardEditor);
+}
 
 window.customCards = window.customCards || [];
 window.customCards.push({
@@ -8808,6 +10248,14 @@ window.customCards.push({
   type: 'f1-race-control-card',
   name: 'F1 Race Control',
   description: 'Race control message banner with FIA styling',
+  configurable: true,
+  preview: true,
+});
+
+window.customCards.push({
+  type: 'f1-qualifying-timing-card',
+  name: 'F1 Qualifying Timing',
+  description: 'Live qualifying timing with sector times, tyre data, and best lap per driver',
   configurable: true,
   preview: true,
 });
