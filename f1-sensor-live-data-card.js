@@ -10040,6 +10040,1126 @@ class F1QualifyingTimingCardEditor extends LitElement {
 }
 
 // ============================================================================
+// F1 Practice Timing Card
+// ============================================================================
+
+class F1PracticeTimingCard extends LitElement {
+  static properties = {
+    hass: {},
+    config: {},
+  };
+
+  static styles = css`
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    :host {
+      --pt-bg: #0b0b0d;
+      --pt-bg-soft: #131315;
+      --pt-border: rgba(255, 255, 255, 0.08);
+      --pt-text: #f5f5f5;
+      --pt-muted: rgba(255, 255, 255, 0.55);
+      --pt-chip: rgba(255, 255, 255, 0.06);
+      --pt-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      display: block;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+    }
+
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+      overflow: hidden;
+    }
+
+    .pt-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
+        linear-gradient(160deg, var(--pt-bg) 0%, var(--pt-bg-soft) 60%, #0a0a0a 100%);
+      border: 1px solid var(--pt-border);
+      box-shadow: var(--pt-shadow);
+      overflow: hidden;
+      color: var(--pt-text);
+    }
+
+    .pt-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: clamp(8px, 1.4vw, 12px);
+    }
+
+    .pt-header {
+      text-align: center;
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(16px, 2.4vw, 20px);
+      font-weight: 700;
+      letter-spacing: clamp(0.03em, 0.06em, 0.08em);
+      text-transform: uppercase;
+      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      white-space: normal;
+      text-wrap: balance;
+      line-height: 1.1;
+      padding: 0 4px;
+    }
+
+    .pt-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .pt-table {
+      display: grid;
+      gap: 4px;
+      min-width: max-content;
+    }
+
+    .pt-row {
+      display: grid;
+      grid-template-columns: var(--pt-columns);
+      align-items: center;
+      column-gap: 0;
+      padding: 5px 4px;
+      border-radius: 10px;
+      background: var(--pt-chip);
+      font-size: clamp(10px, 1.6vw, 11px);
+      color: var(--pt-text);
+    }
+
+    .pt-row.header {
+      background: transparent;
+      padding: 4px 6px 2px;
+      font-size: clamp(9px, 1.4vw, 10px);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--pt-muted);
+    }
+
+    .pt-row.retired {
+      color: rgba(255, 255, 255, 0.45);
+    }
+
+    .pt-row.retired .pt-cell,
+    .pt-row.retired .pt-driver,
+    .pt-row.retired .pt-status {
+      color: rgba(255, 255, 255, 0.45) !important;
+    }
+
+    .pt-cell {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      padding: 0 2px;
+    }
+
+    .pt-cell.center {
+      justify-content: center;
+      text-align: center;
+    }
+
+    .pt-cell.compact {
+      padding-right: 0;
+    }
+
+    .pt-cell.group-start {
+      padding-left: 6px;
+      border-left: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .pt-driver {
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--driver-color, var(--pt-text));
+    }
+
+    .pt-driver-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .pt-team-logo {
+      width: 14px;
+      height: 14px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
+    }
+
+    .pt-status {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--pt-muted);
+      display: inline-flex;
+      align-items: center;
+      flex: 0 0 auto;
+    }
+
+    .pt-status.pit-in {
+      color: #f59e0b;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .pt-status.pit-out {
+      color: #38bdf8;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .pt-status.stopped {
+      color: #fb7185;
+    }
+
+    .pt-status.retired {
+      color: #a3a3a3;
+    }
+
+    .pt-tyre-circle {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid var(--compound-color, var(--pt-text));
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 9px;
+      line-height: 1;
+      color: var(--compound-color, var(--pt-text));
+    }
+
+    .pt-tyre-age {
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      color: var(--pt-muted);
+      min-width: 14px;
+      text-align: right;
+    }
+
+    .pt-lap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 5px;
+      border-radius: 5px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      min-width: 68px;
+      font-size: clamp(9px, 1.4vw, 11px);
+      background: var(--lap-bg, transparent);
+      color: var(--lap-text, var(--pt-muted));
+    }
+
+    .pt-lap.overall-fastest {
+      --lap-bg: rgba(139, 92, 246, 0.28);
+      --lap-text: #d8b4fe;
+    }
+
+    .pt-lap.personal-fastest {
+      --lap-bg: rgba(34, 197, 94, 0.22);
+      --lap-text: #86efac;
+    }
+
+    .pt-lap.timed {
+      --lap-bg: rgba(234, 179, 8, 0.14);
+      --lap-text: #fde047;
+    }
+
+    .pt-empty {
+      padding: 16px;
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: var(--pt-chip);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      color: var(--pt-muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 720px) {
+      .pt-card {
+        padding: 12px 10px 12px;
+      }
+
+      .pt-header {
+        font-size: 16px;
+        letter-spacing: 0.03em;
+      }
+
+      .pt-row {
+        font-size: 9px;
+        padding: 4px 4px;
+      }
+    }
+  `;
+
+  setConfig(config) {
+    this.config = {
+      title: 'Free Practice',
+      show_header: true,
+      show_table_header: true,
+      show_position: true,
+      show_team_logo: true,
+      show_status: true,
+      show_tyre: true,
+      show_tyre_age: true,
+      show_last_lap: true,
+      show_fastest_lap: true,
+      team_logo_style: 'color',
+      positions_entity: 'sensor.f1_driver_positions',
+      session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
+      drivers_entity: 'sensor.f1_driver_list',
+      tyres_entity: 'sensor.f1_current_tyres',
+      ...config,
+    };
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    ensureF1Fonts();
+  }
+
+  getCardSize() {
+    return 8;
+  }
+
+  getGridOptions() {
+    return {
+      columns: 12,
+      min_columns: 6,
+      max_columns: 12,
+      min_rows: 10,
+    };
+  }
+
+  static getStubConfig() {
+    return {
+      type: 'custom:f1-practice-timing-card',
+      positions_entity: '',
+      session_entity: 'sensor.f1_current_session',
+      title: 'Free Practice',
+    };
+  }
+
+  static getConfigElement() {
+    return document.createElement('f1-practice-timing-card-editor');
+  }
+
+  render() {
+    if (!this.hass || !this.config) return html``;
+
+    if (!this.config.positions_entity) {
+      return html`
+        <ha-card>
+          <div class="pt-card">
+            <div class="pt-empty">Select positions entity in the editor</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    if (!this.config.session_entity) {
+      return html`
+        <ha-card>
+          <div class="pt-card">
+            <div class="pt-empty">Select session entity in the editor</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const sessionState = getEntityStateWithFallback(this.hass, this.config.session_entity);
+    if (!sessionState) {
+      return html`
+        <ha-card>
+          <div class="pt-card">
+            <div class="pt-empty">Session entity not found</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const sessionStatusState = this.config.session_status_entity
+      ? getEntityStateWithFallback(this.hass, this.config.session_status_entity)
+      : null;
+    if (!this._isPracticeSession(sessionState, sessionStatusState)) {
+      return html`
+        <ha-card>
+          <div class="pt-card">
+            <div class="pt-empty">Available during Practice 1, Practice 2, and Practice 3 only</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
+    if (!positionsState) {
+      return html`
+        <ha-card>
+          <div class="pt-card">
+            <div class="pt-empty">Positions entity not found</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const positionDrivers = this._asDriversList(positionsState?.attributes?.drivers);
+
+    const tyresState = this.config.tyres_entity
+      ? getEntityStateWithFallback(this.hass, this.config.tyres_entity)
+      : null;
+    const tyresDrivers = this._asDriversList(tyresState?.attributes?.drivers);
+
+    const driversState = this.config.drivers_entity
+      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
+      : null;
+    const driverList = this._asDriversList(driversState?.attributes?.drivers);
+
+    const rows = this._buildRows(positionDrivers, tyresDrivers, driverList);
+    if (rows.length === 0) {
+      return html`
+        <ha-card>
+          <div class="pt-card">
+            <div class="pt-empty">No practice data</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const columns = this._columns();
+    const gridColumns = columns.map((col) => col.width).join(' ');
+    const title = this._buildTitle(sessionState);
+
+    return html`
+      <ha-card>
+        <div class="pt-card">
+          ${this.config.show_header !== false
+            ? html`
+              <div class="pt-header-row">
+                <div class="pt-header">${title}</div>
+              </div>
+            `
+            : null}
+          <div class="pt-scroll">
+            <div class="pt-table" style="--pt-columns: ${gridColumns};">
+              ${this.config.show_table_header !== false ? this._renderHeader(columns) : null}
+              ${rows.map((row) => this._renderRow(row, columns))}
+            </div>
+          </div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _columns() {
+    const columns = [];
+    if (this.config.show_position !== false) {
+      columns.push({ key: 'position', label: 'Pos', width: '34px', center: true, compact: true });
+    }
+    if (this.config.show_team_logo !== false) {
+      columns.push({ key: 'logo', label: '', width: '24px', compact: true, hideHeader: true });
+    }
+    columns.push({ key: 'driver', label: 'Driver', width: '84px', compact: true, hideHeader: true });
+    if (this.config.show_tyre !== false) {
+      columns.push({ key: 'tyre', label: 'Tyre', width: '32px', center: true, groupStart: true });
+    }
+    if (this.config.show_tyre_age !== false) {
+      columns.push({ key: 'tyre_age', label: 'Age', width: '30px', center: true });
+    }
+    if (this.config.show_last_lap !== false) {
+      columns.push({ key: 'last_lap', label: 'Last Lap', width: '90px', center: true, groupStart: true });
+    }
+    if (this.config.show_fastest_lap !== false) {
+      columns.push({ key: 'fastest_lap', label: 'Fastest Lap', width: '96px', center: true, groupStart: true });
+    }
+    return columns;
+  }
+
+  _renderHeader(columns) {
+    return html`
+      <div class="pt-row header">
+        ${columns.map((col) => {
+          const classes = ['pt-cell'];
+          if (col.center) classes.push('center');
+          if (col.compact) classes.push('compact');
+          if (col.groupStart) classes.push('group-start');
+          return html`<div class="${classes.join(' ')}">${col.hideHeader ? '' : col.label}</div>`;
+        })}
+      </div>
+    `;
+  }
+
+  _renderRow(row, columns) {
+    const rowClasses = ['pt-row'];
+    if (row.retired) rowClasses.push('retired');
+    return html`
+      <div class="${rowClasses.join(' ')}">
+        ${columns.map((col) => this._renderCell(row, col))}
+      </div>
+    `;
+  }
+
+  _renderCell(row, col) {
+    const classes = ['pt-cell'];
+    if (col.center) classes.push('center');
+    if (col.compact) classes.push('compact');
+    if (col.groupStart) classes.push('group-start');
+
+    if (col.key === 'position') {
+      return html`<div class="${classes.join(' ')}">${row.position != null ? row.position : '--'}</div>`;
+    }
+
+    if (col.key === 'logo') {
+      const logo = row.team_logo;
+      return html`
+        <div class="${classes.join(' ')}">
+          ${logo ? html`<img class="pt-team-logo" src="${logo.src}" data-fallback="${logo.fallback || ''}" loading="lazy" @error=${handleTeamLogoError} alt="" />` : null}
+        </div>
+      `;
+    }
+
+    if (col.key === 'driver') {
+      const style = row.team_color ? `--driver-color: ${row.team_color};` : '';
+      const statusClasses = ['pt-status'];
+      if (row.status_key) statusClasses.push(row.status_key);
+      return html`
+        <div class="${[...classes, 'pt-driver'].join(' ')}" style="${style}">
+          <span class="pt-driver-wrap">
+            <span>${row.tla || '--'}</span>
+            ${this.config.show_status !== false && row.status_label
+              ? html`<span class="${statusClasses.join(' ')}">${row.status_label}</span>`
+              : null}
+          </span>
+        </div>
+      `;
+    }
+
+    if (col.key === 'tyre') {
+      const style = row.compound_color ? `--compound-color: ${row.compound_color};` : '';
+      return html`
+        <div class="${classes.join(' ')}" style="${style}">
+          <div class="pt-tyre-circle">${row.compound_short || '-'}</div>
+        </div>
+      `;
+    }
+
+    if (col.key === 'tyre_age') {
+      return html`
+        <div class="${classes.join(' ')}">
+          <span class="pt-tyre-age">${row.tyre_age != null ? row.tyre_age : '-'}</span>
+        </div>
+      `;
+    }
+
+    if (col.key === 'last_lap') {
+      const lastLap = row.last_lap || '--:--.---';
+      const isPersonalFastest = this._isLapTimeMatch(row.last_lap, row.best_lap);
+      const lapClass = row.is_fastest && isPersonalFastest
+        ? 'overall-fastest'
+        : isPersonalFastest
+          ? 'personal-fastest'
+          : row.last_lap
+            ? 'timed'
+            : '';
+      return html`
+        <div class="${classes.join(' ')}">
+          <span class="pt-lap ${lapClass}">${lastLap}</span>
+        </div>
+      `;
+    }
+
+    if (col.key === 'fastest_lap') {
+      const bestLap = row.best_lap || '--:--.---';
+      const lapClass = row.is_fastest
+        ? 'overall-fastest'
+        : row.best_lap
+          ? 'personal-fastest'
+          : '';
+      return html`
+        <div class="${classes.join(' ')}">
+          <span class="pt-lap ${lapClass}">${bestLap}</span>
+        </div>
+      `;
+    }
+
+    return html`<div class="${classes.join(' ')}">--</div>`;
+  }
+
+  _buildRows(positionDrivers, tyresDrivers, driverList) {
+    const tyreMap = new Map();
+    tyresDrivers.forEach((driver) => {
+      const rn = String(driver?.racing_number ?? '').trim();
+      if (rn) tyreMap.set(rn, driver);
+    });
+
+    const driverListMap = new Map();
+    driverList.forEach((driver) => {
+      const rn = String(driver?.racing_number ?? '').trim();
+      const tla = String(driver?.tla ?? '').trim().toUpperCase();
+      if (rn) driverListMap.set(rn, driver);
+      if (tla) driverListMap.set(tla, driver);
+    });
+
+    const rows = positionDrivers.map((pos) => {
+      const rn = String(pos?.racing_number ?? '').trim();
+      const tla = String(pos?.tla ?? '').trim().toUpperCase();
+      const tyre = tyreMap.get(rn) || null;
+      const dlEntry = driverListMap.get(rn) || driverListMap.get(tla) || null;
+      const teamName = pos?.team || dlEntry?.team || dlEntry?.team_name || tyre?.team;
+      const teamLogo = this.config.show_team_logo !== false
+        ? getTeamLogoMeta(teamName, 24, this.config.team_logo_style)
+        : null;
+      const teamColor = this._normalizeColor(pos?.team_color || dlEntry?.team_color || tyre?.team_color);
+      const statusInfo = this._statusInfo(pos);
+      const compoundKey = this._normalizeCompoundKey(tyre?.compound || tyre?.compound_short);
+      const compoundShort = this._compoundDisplayName(compoundKey || tyre?.compound_short);
+      const compoundColor = this._normalizeColor(
+        tyre?.compound_color || COMPOUND_FALLBACK[compoundKey] || null,
+      );
+      const tyreAge = this._formatLaps(tyre?.stint_laps);
+      // Practice timing intentionally derives fastest laps from lap history because
+      // the integration only exposes top-level fastest_lap metadata during race sessions.
+      const lapSnapshot = this._buildLapSnapshot(pos);
+      const position = this._parsePosition(pos?.current_position ?? pos?.grid_position);
+
+      return {
+        rn,
+        tla: tla || '--',
+        position,
+        team_logo: teamLogo,
+        team_color: teamColor,
+        status_label: statusInfo.label,
+        status_key: statusInfo.key,
+        retired: statusInfo.retired === true,
+        compound_short: compoundShort || '-',
+        compound_color: compoundColor,
+        tyre_age: tyreAge,
+        last_lap: lapSnapshot.last_lap,
+        best_lap: lapSnapshot.best_lap,
+        best_lap_seconds: lapSnapshot.best_lap_seconds,
+        best_lap_lap: lapSnapshot.best_lap_lap,
+        is_fastest: false,
+      };
+    });
+
+    let overallFastest = null;
+    rows.forEach((row) => {
+      if (row.best_lap_seconds == null) return;
+      if (!overallFastest || row.best_lap_seconds < overallFastest.best_lap_seconds) {
+        overallFastest = row;
+        return;
+      }
+      if (row.best_lap_seconds > overallFastest.best_lap_seconds) return;
+      const rowLap = Number(row.best_lap_lap);
+      const bestLap = Number(overallFastest.best_lap_lap);
+      if (Number.isFinite(rowLap) && Number.isFinite(bestLap) && rowLap < bestLap) {
+        overallFastest = row;
+        return;
+      }
+      if (
+        Number.isFinite(rowLap)
+        && Number.isFinite(bestLap)
+        && rowLap === bestLap
+        && this._compareRacingNumber(row.rn, overallFastest.rn) < 0
+      ) {
+        overallFastest = row;
+      }
+    });
+
+    if (overallFastest) {
+      overallFastest.is_fastest = true;
+    }
+
+    rows.sort((a, b) => {
+      if (a.position !== null && b.position !== null) {
+        const diff = a.position - b.position;
+        if (diff !== 0) return diff;
+        return this._compareRacingNumber(a.rn, b.rn);
+      }
+      if (a.position !== null) return -1;
+      if (b.position !== null) return 1;
+      return this._compareRacingNumber(a.rn, b.rn);
+    });
+
+    return rows;
+  }
+
+  _buildTitle(sessionState) {
+    const baseTitle = String(this.config.title || 'Free Practice').trim() || 'Free Practice';
+    const practiceNumber = this._practiceSessionNumber(sessionState);
+    return practiceNumber > 0 ? `${baseTitle} ${practiceNumber}` : baseTitle;
+  }
+
+  _practiceSessionNumber(sessionState) {
+    const attrNumber = this._parsePositiveInt(sessionState?.attributes?.number);
+    if (attrNumber > 0) return attrNumber;
+
+    const labels = [
+      sessionState?.state,
+      sessionState?.attributes?.resolved_label,
+      sessionState?.attributes?.last_label,
+      sessionState?.attributes?.name,
+    ];
+    for (const value of labels) {
+      const match = String(value || '').match(/practice\s+(\d+)/i);
+      if (!match) continue;
+      const parsed = this._parsePositiveInt(match[1]);
+      if (parsed > 0) return parsed;
+    }
+    return 0;
+  }
+
+  _isPracticeSession(sessionState, sessionStatusState) {
+    const state = String(sessionState?.state || '').trim().toLowerCase();
+    if (this._isPracticeLikeLabel(state)) {
+      return true;
+    }
+    const lastLabel = String(sessionState?.attributes?.last_label || '').trim().toLowerCase();
+    const sessionStatus = String(sessionStatusState?.state || '').trim().toLowerCase();
+    return this._isPracticeLikeLabel(lastLabel) && (sessionStatus === 'live' || sessionStatus === 'suspended');
+  }
+
+  _isPracticeLikeLabel(label) {
+    return label === 'practice 1' || label === 'practice 2' || label === 'practice 3';
+  }
+
+  _asDriversList(value) {
+    if (Array.isArray(value)) return value;
+    if (!value || typeof value !== 'object') return [];
+    return Object.values(value).filter((entry) => entry && typeof entry === 'object');
+  }
+
+  _buildLapSnapshot(positionInfo) {
+    const lapEntries = this._normalizeLapEntries(positionInfo?.laps);
+    const completedLaps = Number(positionInfo?.completed_laps);
+    const lastLapEntry = this._resolveLastLapEntry(lapEntries, completedLaps);
+    const bestLapEntry = this._resolveBestLapEntry(lapEntries);
+
+    return {
+      last_lap: lastLapEntry?.time || null,
+      best_lap: bestLapEntry?.time || null,
+      best_lap_lap: bestLapEntry?.lap || null,
+      best_lap_seconds: bestLapEntry?.seconds || null,
+    };
+  }
+
+  _normalizeLapEntries(laps) {
+    if (!laps || typeof laps !== 'object') return [];
+    const map = new Map();
+    Object.entries(laps).forEach(([key, value]) => {
+      const lap = Number(key);
+      if (!Number.isFinite(lap) || lap <= 0) return;
+      if (typeof value !== 'string' || !value.trim()) return;
+      map.set(Math.floor(lap), value.trim());
+    });
+    return [...map.entries()]
+      .map(([lap, time]) => ({ lap, time }))
+      .sort((a, b) => a.lap - b.lap);
+  }
+
+  _resolveLastLapEntry(entries, completedLaps) {
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    if (Number.isFinite(completedLaps) && completedLaps > 0) {
+      const completedLap = Math.floor(completedLaps);
+      const fromCompleted = entries.find((entry) => entry.lap === completedLap);
+      if (fromCompleted) return fromCompleted;
+    }
+    return entries[entries.length - 1];
+  }
+
+  _resolveBestLapEntry(entries) {
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    let bestEntry = null;
+    let bestSeconds = null;
+    entries.forEach((entry) => {
+      const seconds = this._parseLapTimeSeconds(entry.time);
+      if (seconds === null) return;
+      if (bestSeconds === null || seconds < bestSeconds || (seconds === bestSeconds && entry.lap < bestEntry.lap)) {
+        bestEntry = { ...entry, seconds };
+        bestSeconds = seconds;
+      }
+    });
+    return bestEntry;
+  }
+
+  _parseLapTimeSeconds(value) {
+    if (typeof value !== 'string') return null;
+    const text = value.trim();
+    if (!text) return null;
+    const sections = text.split(':');
+    const secPart = sections.pop();
+    if (!secPart || !secPart.includes('.')) return null;
+    const [secWhole, msPart] = secPart.split('.');
+    if (!/^\d+$/.test(secWhole) || !/^\d+$/.test(msPart)) return null;
+
+    let total = Number(secWhole);
+    total += Number(msPart.padEnd(3, '0').slice(0, 3)) / 1000;
+
+    let multiplier = 60;
+    for (let i = sections.length - 1; i >= 0; i -= 1) {
+      const unit = sections[i];
+      if (!/^\d+$/.test(unit)) return null;
+      total += Number(unit) * multiplier;
+      multiplier *= 60;
+    }
+
+    return Number.isFinite(total) ? total : null;
+  }
+
+  _isLapTimeMatch(left, right) {
+    if (!left || !right) return false;
+    if (String(left).trim() === String(right).trim()) return true;
+    const leftSecs = this._parseLapTimeSeconds(left);
+    const rightSecs = this._parseLapTimeSeconds(right);
+    return leftSecs != null
+      && rightSecs != null
+      && Math.abs(leftSecs - rightSecs) < 0.001;
+  }
+
+  _statusInfo(info) {
+    if (!info || typeof info !== 'object') return { label: '', key: '', retired: false };
+    const retired = info.retired === true;
+    const stopped = info.stopped === true;
+    const inPit = info.in_pit === true;
+    const pitOut = info.pit_out === true;
+    const status = typeof info.status === 'string' ? info.status.toLowerCase() : '';
+
+    if (retired || status === 'retired' || status === 'out') {
+      return { label: 'OUT', key: 'retired', retired: true };
+    }
+    if (stopped || status === 'stopped') return { label: 'STOP', key: 'stopped', retired: false };
+    if (pitOut || status === 'pit_out') return { label: 'PIT', key: 'pit-out', retired: false };
+    if (inPit || status === 'in_pit' || status === 'pit') return { label: 'PIT', key: 'pit-in', retired: false };
+    if (status && status !== 'on_track') {
+      return { label: status.replace(/_/g, ' ').toUpperCase(), key: 'other', retired: false };
+    }
+    return { label: '', key: '', retired: false };
+  }
+
+  _parsePosition(value) {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const match = text.match(/\d+/);
+    if (!match) return null;
+    const num = Number(match[0]);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  _parsePositiveInt(value) {
+    const num = Number.parseInt(value, 10);
+    return Number.isFinite(num) && num > 0 ? num : 0;
+  }
+
+  _compareRacingNumber(a, b) {
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (Number.isFinite(aNum) && Number.isFinite(bNum)) return aNum - bNum;
+    return String(a).localeCompare(String(b));
+  }
+
+  _formatLaps(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    return Math.max(0, Math.round(num));
+  }
+
+  _normalizeCompoundKey(value) {
+    if (!value) return null;
+    const upper = String(value).trim().toUpperCase();
+    if (upper === 'S') return 'SOFT';
+    if (upper === 'M') return 'MEDIUM';
+    if (upper === 'H') return 'HARD';
+    if (upper === 'I' || upper === 'INTER') return 'INTERMEDIATE';
+    if (upper === 'W' || upper === 'FULL WET' || upper === 'FULLWET') return 'WET';
+    return upper;
+  }
+
+  _compoundDisplayName(value) {
+    if (!value) return null;
+    const upper = String(value).trim().toUpperCase();
+    if (upper === 'SOFT' || upper === 'S') return 'S';
+    if (upper === 'MEDIUM' || upper === 'M') return 'M';
+    if (upper === 'HARD' || upper === 'H') return 'H';
+    if (upper === 'INTERMEDIATE' || upper === 'I' || upper === 'INTER') return 'I';
+    if (upper === 'WET' || upper === 'W' || upper === 'FULL WET' || upper === 'FULLWET') return 'W';
+    return upper[0] || null;
+  }
+
+  _normalizeColor(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (text.startsWith('#') || text.startsWith('rgb')) return text;
+    if (/^[0-9a-fA-F]{6}$/.test(text)) return `#${text}`;
+    return text;
+  }
+}
+
+class F1PracticeTimingCardEditor extends LitElement {
+  static properties = {
+    hass: {},
+    _config: {},
+    _activeTab: { state: true },
+  };
+
+  static styles = css`
+    .card-config {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--divider-color);
+      margin-bottom: 16px;
+    }
+
+    .tabs button {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary-text-color);
+      font-size: 14px;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+
+    .tabs button:hover {
+      color: var(--primary-color);
+    }
+
+    .tabs button.active {
+      color: var(--primary-color);
+      border-bottom: 2px solid var(--primary-color);
+      margin-bottom: -1px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--secondary-text-color);
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .helper {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      padding-left: 16px;
+      line-height: 1.4;
+    }
+
+    .warning {
+      font-size: 12px;
+      color: var(--error-color);
+      padding-left: 16px;
+    }
+
+    ha-textfield {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    ha-select {
+      width: 100%;
+    }
+  `;
+
+  constructor() {
+    super();
+    this._activeTab = 'sources';
+  }
+
+  setConfig(config) {
+    this._config = { ...config };
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    return html`
+      <div class="card-config">
+        <div class="tabs">
+          <button
+            class=${this._activeTab === 'sources' ? 'active' : ''}
+            @click=${() => { this._activeTab = 'sources'; }}
+          >
+            Data Sources
+          </button>
+          <button
+            class=${this._activeTab === 'display' ? 'active' : ''}
+            @click=${() => { this._activeTab = 'display'; }}
+          >
+            Display
+          </button>
+        </div>
+
+        ${this._activeTab === 'sources'
+          ? this._renderDataSourcesTab()
+          : this._renderDisplayTab()}
+      </div>
+    `;
+  }
+
+  _renderDataSourcesTab() {
+    return html`
+      <div class="section">
+        <div class="section-header">REQUIRED</div>
+        ${this._renderEntityPicker(
+          'positions_entity',
+          'Driver Positions Sensor',
+          'Provides practice positions and lap history used for last lap and fastest lap',
+          true,
+        )}
+        ${this._renderEntityPicker(
+          'session_entity',
+          'Current Session Sensor',
+          'Scopes the card to Practice 1, Practice 2, and Practice 3',
+          true,
+        )}
+        <div class="section-header">OPTIONAL</div>
+        ${this._renderEntityPicker(
+          'session_status_entity',
+          'Session Status Sensor',
+          'Keeps the card visible during practice suspensions when current_session falls back to last_label.',
+          false,
+        )}
+        ${this._renderEntityPicker(
+          'drivers_entity',
+          'Driver List Sensor',
+          'Provides team metadata for logos and colors',
+          false,
+        )}
+        ${this._renderEntityPicker(
+          'tyres_entity',
+          'Current Tyres Sensor',
+          'Provides tyre compound and stint age',
+          false,
+        )}
+      </div>
+    `;
+  }
+
+  _renderDisplayTab() {
+    return html`
+      <div class="section">
+        <ha-textfield
+          .label=${'Title'}
+          .value=${this._config.title || ''}
+          @input=${(e) => this._valueChanged('title', e.target.value)}
+        ></ha-textfield>
+
+        ${this._renderSwitch('show_header', 'Show header')}
+        ${this._renderSwitch('show_table_header', 'Show column headers')}
+        ${this._renderSwitch('show_position', 'Show position')}
+        ${this._renderSwitch('show_team_logo', 'Show team logo')}
+        ${this._renderSwitch('show_status', 'Show inline status')}
+        ${this._renderSwitch('show_tyre', 'Show tyre')}
+        ${this._renderSwitch('show_tyre_age', 'Show tyre age')}
+        ${this._renderSwitch('show_last_lap', 'Show last lap')}
+        ${this._renderSwitch('show_fastest_lap', 'Show fastest lap')}
+
+        <ha-select
+          .label=${'Team logo style'}
+          .value=${this._config.team_logo_style || 'color'}
+          @selected=${(e) => this._valueChanged('team_logo_style', e.target.value)}
+          @closed=${(e) => e.stopPropagation()}
+        >
+          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
+          <mwc-list-item value="white">White</mwc-list-item>
+        </ha-select>
+      </div>
+    `;
+  }
+
+  _renderEntityPicker(name, label, helper, required) {
+    const value = this._config[name];
+    const showWarning = required && !value;
+    const schema = [{ name, label, required, selector: { entity: { domain: 'sensor' } } }];
+
+    return html`
+      <div class="field">
+        <ha-form
+          .hass=${this.hass}
+          .data=${this._config}
+          .schema=${schema}
+          .computeLabel=${() => label}
+          @value-changed=${this._formValueChanged}
+        ></ha-form>
+        <div class="helper">${helper}</div>
+        ${showWarning ? html`
+          <div class="warning">This sensor is required for the card to function</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  _renderSwitch(name, label, helper = null) {
+    const schema = [{ name, label, selector: { boolean: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _formValueChanged(ev) {
+    if (!this._config) return;
+    const value = ev.detail?.value || {};
+    const newConfig = { ...this._config, ...value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+
+  _valueChanged(name, value) {
+    if (!this._config) return;
+    const newConfig = { ...this._config, [name]: value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+}
+
+// ============================================================================
 // F1 Race Lap Card
 // ============================================================================
 
@@ -11238,6 +12358,13 @@ installSectionsAutoHeight(F1QualifyingTimingCard, {
   min_rows: 10,
 });
 
+installSectionsAutoHeight(F1PracticeTimingCard, {
+  columns: 12,
+  min_columns: 6,
+  max_columns: 12,
+  min_rows: 10,
+});
+
 installSectionsAutoHeight(F1RaceLapCard, {
   columns: 12,
   min_columns: 6,
@@ -11325,6 +12452,14 @@ if (!customElements.get('f1-qualifying-timing-card-editor')) {
   customElements.define('f1-qualifying-timing-card-editor', F1QualifyingTimingCardEditor);
 }
 
+if (!customElements.get('f1-practice-timing-card')) {
+  customElements.define('f1-practice-timing-card', F1PracticeTimingCard);
+}
+
+if (!customElements.get('f1-practice-timing-card-editor')) {
+  customElements.define('f1-practice-timing-card-editor', F1PracticeTimingCardEditor);
+}
+
 if (!customElements.get('f1-race-lap-card')) {
   customElements.define('f1-race-lap-card', F1RaceLapCard);
 }
@@ -11410,6 +12545,14 @@ window.customCards.push({
   type: 'f1-qualifying-timing-card',
   name: 'F1 Qualifying Timing',
   description: 'Live qualifying timing with sector times, tyre data, and best lap per driver',
+  configurable: true,
+  preview: true,
+});
+
+window.customCards.push({
+  type: 'f1-practice-timing-card',
+  name: 'F1 Free Practice Timing',
+  description: 'Practice-only timing table with tyre age, last lap, and fastest lap per driver',
   configurable: true,
   preview: true,
 });
