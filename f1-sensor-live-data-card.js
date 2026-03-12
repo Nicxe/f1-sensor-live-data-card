@@ -3643,7 +3643,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     }
 
     .cpd-header {
-      text-align: left;
+      text-align: center;
       font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
       font-size: clamp(16px, 2.4vw, 20px);
       font-weight: 700;
@@ -3656,12 +3656,13 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       line-height: 1.1;
       padding-right: 0;
       min-width: 0;
+      width: 100%;
     }
 
     .cpd-header-row {
       display: flex;
       flex-direction: column;
-      align-items: start;
+      align-items: center;
       gap: 8px;
       margin-bottom: clamp(8px, 1.4vw, 12px);
     }
@@ -3669,7 +3670,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     .cpd-header-badges {
       display: inline-flex;
       align-items: center;
-      justify-content: flex-start;
+      justify-content: center;
       flex-wrap: wrap;
       gap: 6px;
       max-width: 100%;
@@ -4200,7 +4201,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
 
     if (
       row.mask_points
-      && (col.key === 'current_points' || col.key === 'predicted_points' || col.key === 'delta')
+      && (col.key === 'position' || col.key === 'current_points' || col.key === 'predicted_points' || col.key === 'delta')
     ) {
       return html`<div class="${classes.join(' ')}">${row.spoiler_placeholder}</div>`;
     }
@@ -4662,7 +4663,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     }
 
     .cpt-header {
-      text-align: left;
+      text-align: center;
       font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
       font-size: clamp(16px, 2.4vw, 20px);
       font-weight: 700;
@@ -4675,12 +4676,13 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       line-height: 1.1;
       padding-right: 0;
       min-width: 0;
+      width: 100%;
     }
 
     .cpt-header-row {
       display: flex;
       flex-direction: column;
-      align-items: start;
+      align-items: center;
       gap: 8px;
       margin-bottom: clamp(8px, 1.4vw, 12px);
     }
@@ -4688,7 +4690,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     .cpt-header-badges {
       display: inline-flex;
       align-items: center;
-      justify-content: flex-start;
+      justify-content: center;
       flex-wrap: wrap;
       gap: 6px;
       max-width: 100%;
@@ -5188,7 +5190,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
 
     if (
       row.mask_points
-      && (col.key === 'current_points' || col.key === 'predicted_points' || col.key === 'delta')
+      && (col.key === 'position' || col.key === 'current_points' || col.key === 'predicted_points' || col.key === 'delta')
     ) {
       return html`<div class="${classes.join(' ')}">${row.spoiler_placeholder}</div>`;
     }
@@ -9130,6 +9132,10 @@ class F1RaceControlCard extends LitElement {
     hass: {},
     config: {},
     _currentMessage: { state: true },
+    _listMessages: { state: true },
+    _listLoading: { state: true },
+    _listError: { state: true },
+    _isClearing: { state: true },
   };
 
   static styles = css`
@@ -9285,26 +9291,291 @@ class F1RaceControlCard extends LitElement {
       flex-shrink: 0;
       animation: pulse 1.5s ease-in-out infinite;
     }
+
+    .rc-list-shell {
+      font-family: 'Formula1 Display', 'Titillium Web', Arial, sans-serif;
+      border-radius: var(--ha-card-border-radius, 12px);
+      background:
+        radial-gradient(circle at 10% 20%, rgba(255, 255, 255, 0.04), transparent 40%),
+        linear-gradient(160deg, var(--rc-bg) 0%, var(--rc-bg-soft) 100%);
+      border: 1px solid var(--rc-border);
+      box-shadow: var(--rc-shadow);
+      color: var(--rc-text);
+      overflow: hidden;
+    }
+
+    .rc-list-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent);
+    }
+
+    .rc-list-brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .rc-list-title-wrap {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .rc-list-title {
+      font-size: clamp(13px, 2vw, 16px);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--rc-text);
+      text-transform: uppercase;
+    }
+
+    .rc-list-count {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--rc-muted);
+    }
+
+    .rc-list-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .rc-live-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 54px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 59, 48, 0.45);
+      background: rgba(255, 59, 48, 0.14);
+      color: #ff8a84;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .rc-live-pill.saved {
+      border-color: rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--rc-muted);
+    }
+
+    .rc-clear-button {
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--rc-text);
+      border-radius: 10px;
+      padding: 7px 12px;
+      font: inherit;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+    }
+
+    .rc-clear-button:hover {
+      background: rgba(255, 59, 48, 0.12);
+      border-color: rgba(255, 59, 48, 0.25);
+    }
+
+    .rc-clear-button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    .rc-list-body {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .rc-list-empty {
+      padding: 18px 14px;
+      border-radius: 12px;
+      border: 1px dashed rgba(255, 255, 255, 0.1);
+      color: var(--rc-muted);
+      text-align: center;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .rc-list-row {
+      --rc-row-accent: rgba(255, 255, 255, 0.22);
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(74px, auto) 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 12px 14px 12px 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.02);
+      overflow: hidden;
+    }
+
+    .rc-list-row::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      border-radius: 999px;
+      background: var(--rc-row-accent);
+    }
+
+    .rc-list-row.tone-red {
+      --rc-row-accent: #ff3b30;
+      background: linear-gradient(135deg, rgba(255, 59, 48, 0.14), rgba(255, 59, 48, 0.04));
+    }
+
+    .rc-list-row.tone-yellow {
+      --rc-row-accent: #ffd60a;
+      background: linear-gradient(135deg, rgba(255, 214, 10, 0.12), rgba(255, 214, 10, 0.03));
+    }
+
+    .rc-list-row.tone-blue {
+      --rc-row-accent: #0a84ff;
+      background: linear-gradient(135deg, rgba(10, 132, 255, 0.12), rgba(10, 132, 255, 0.03));
+    }
+
+    .rc-list-row.tone-green {
+      --rc-row-accent: #34c759;
+      background: linear-gradient(135deg, rgba(52, 199, 89, 0.12), rgba(52, 199, 89, 0.03));
+    }
+
+    .rc-list-row.tone-orange {
+      --rc-row-accent: #ff9500;
+      background: linear-gradient(135deg, rgba(255, 149, 0, 0.12), rgba(255, 149, 0, 0.03));
+    }
+
+    .rc-list-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+      font-size: 10px;
+      color: var(--rc-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .rc-list-sequence {
+      font-weight: 700;
+    }
+
+    .rc-list-time {
+      color: var(--rc-red);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    .rc-list-content {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .rc-list-category {
+      color: var(--rc-row-accent);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .rc-list-message {
+      color: var(--rc-text);
+      font-size: 14px;
+      line-height: 1.35;
+      font-weight: 600;
+      word-break: break-word;
+    }
+
+    .rc-list-warning {
+      padding: 0 16px 10px;
+      color: #ffb4ab;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    @media (max-width: 600px) {
+      .rc-list-topbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .rc-list-controls {
+        justify-content: space-between;
+      }
+
+      .rc-list-row {
+        grid-template-columns: 1fr;
+      }
+
+      .rc-list-meta {
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+      }
+    }
   `;
 
   constructor() {
     super();
     this._currentMessage = null;
+    this._listMessages = [];
+    this._listLoading = false;
+    this._listError = null;
+    this._isClearing = false;
     this._historyQueue = [];
     this._historyIndex = 0;
     this._lastEventId = null;
     this._displayTimer = null;
     this._messageShownAt = 0;
+    this._listContextKey = null;
+    this._listEventUnsub = null;
+    this._listResetUnsub = null;
+    this._listLoadToken = 0;
   }
 
   connectedCallback() {
     super.connectedCallback();
     ensureF1Fonts();
+    const syncResult = this._syncRaceControlState();
+    if (syncResult && typeof syncResult.catch === 'function') {
+      syncResult.catch(() => {});
+    }
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     this._clearDisplayTimer();
+    this._unsubscribeListEvents();
   }
 
   _clearDisplayTimer() {
@@ -9316,7 +9587,10 @@ class F1RaceControlCard extends LitElement {
 
   willUpdate(changedProps) {
     if (changedProps.has('hass') || changedProps.has('config')) {
-      this._syncMessageState();
+      const syncResult = this._syncRaceControlState();
+      if (syncResult && typeof syncResult.catch === 'function') {
+        syncResult.catch(() => {});
+      }
     }
   }
 
@@ -9329,13 +9603,357 @@ class F1RaceControlCard extends LitElement {
     this._clearDisplayTimer();
   }
 
-  _syncMessageState() {
+  _resetListState() {
+    this._listMessages = [];
+    this._listLoading = false;
+    this._listError = null;
+    this._isClearing = false;
+    this._listContextKey = null;
+  }
+
+  _getDisplayMode() {
+    return this.config?.display_mode === 'list' ? 'list' : 'latest';
+  }
+
+  _normalizeListMaxHeight(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 600;
+    }
+    return Math.min(2000, Math.max(240, parsed));
+  }
+
+  _isListMode() {
+    return this._getDisplayMode() === 'list';
+  }
+
+  async _syncRaceControlState() {
+    const entityId = resolveEntityIdWithFallback(this.hass, this.config?.entity);
     const entity = getEntityStateWithFallback(this.hass, this.config?.entity);
-    if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
+
+    if (!this._isListMode()) {
+      this._unsubscribeListEvents();
+      this._resetListState();
+      this._syncLatestMessageState(entity);
+      return;
+    }
+
+    this._clearDisplayTimer();
+    this._currentMessage = null;
+    this._historyQueue = [];
+    this._historyIndex = 0;
+    this._lastEventId = null;
+    this._messageShownAt = 0;
+
+    if (!entityId || !entity) {
+      this._unsubscribeListEvents();
+      this._resetListState();
+      return;
+    }
+
+    const contextKey = `${entityId}|list`;
+    if (this._listContextKey !== contextKey) {
+      this._unsubscribeListEvents();
+      this._listContextKey = contextKey;
+      this._listMessages = [];
+      this._listLoading = true;
+      this._listError = null;
+      this._subscribeListEvents(entityId, contextKey);
+      await this._loadRaceControlLog(entity, entityId, contextKey);
+    }
+
+    this._syncCurrentEntityIntoList(entity);
+  }
+
+  _syncLatestMessageState(entity = null) {
+    const entityState = entity || getEntityStateWithFallback(this.hass, this.config?.entity);
+    if (!entityState || entityState.state === 'unavailable' || entityState.state === 'unknown') {
       this._resetMessageState();
       return;
     }
-    this._checkForNewMessage(entity);
+    this._checkForNewMessage(entityState);
+  }
+
+  _unsubscribeListEvents() {
+    this._callUnsubscribe(this._listEventUnsub);
+    this._callUnsubscribe(this._listResetUnsub);
+    this._listEventUnsub = null;
+    this._listResetUnsub = null;
+  }
+
+  _callUnsubscribe(unsub) {
+    if (typeof unsub !== 'function') return;
+    try {
+      const result = unsub();
+      if (result && typeof result.catch === 'function') {
+        result.catch(() => {});
+      }
+    } catch (_err) {
+      // Ignore stale websocket subscriptions during dashboard teardown.
+    }
+  }
+
+  async _subscribeListEvents(entityId, contextKey) {
+    const connection = this.hass?.connection;
+    if (!connection || typeof connection.subscribeEvents !== 'function') {
+      return;
+    }
+
+    try {
+      const eventUnsub = await connection.subscribeEvents(
+        (event) => {
+          if (this._listContextKey !== contextKey) return;
+          this._handleRaceControlListEvent(event, entityId);
+        },
+        'f1_sensor_race_control_event'
+      );
+      if (this._listContextKey !== contextKey) {
+        this._callUnsubscribe(eventUnsub);
+      } else {
+        this._listEventUnsub = eventUnsub;
+      }
+    } catch (_err) {
+      // Websocket subscription is optional; list mode still works with the initial load.
+    }
+
+    try {
+      const resetUnsub = await connection.subscribeEvents(
+        (event) => {
+          if (this._listContextKey !== contextKey) return;
+          this._handleRaceControlResetEvent(event, entityId);
+        },
+        'f1_sensor_race_control_log_reset_event'
+      );
+      if (this._listContextKey !== contextKey) {
+        this._callUnsubscribe(resetUnsub);
+      } else {
+        this._listResetUnsub = resetUnsub;
+      }
+    } catch (_err) {
+      // Ignore missing reset subscription support and rely on optimistic UI updates.
+    }
+  }
+
+  async _callWS(message) {
+    if (typeof this.hass?.callWS === 'function') {
+      return this.hass.callWS(message);
+    }
+    if (this.hass?.connection?.sendMessagePromise) {
+      return this.hass.connection.sendMessagePromise(message);
+    }
+    throw new Error('Home Assistant websocket API is unavailable');
+  }
+
+  async _loadRaceControlLog(entity, entityId, contextKey) {
+    const loadToken = ++this._listLoadToken;
+    this._listLoading = true;
+    this._listError = null;
+
+    try {
+      const response = await this._callWS({
+        type: 'f1_sensor/race_control_log/get',
+        entity_id: entityId,
+      });
+      if (this._listContextKey !== contextKey || loadToken !== this._listLoadToken) {
+        return;
+      }
+      const items = Array.isArray(response?.items) ? response.items : [];
+      const normalized = items
+        .map((item, index) => this._normalizeListItem(item, index))
+        .filter(Boolean);
+      this._listMessages = this._sortListItems([...normalized, ...this._listMessages]);
+      this._listLoading = false;
+    } catch (_err) {
+      if (this._listContextKey !== contextKey || loadToken !== this._listLoadToken) {
+        return;
+      }
+      const fallbackItems = this._buildHistoryQueue(entity)
+        .slice()
+        .reverse()
+        .map((item, index) => this._normalizeListItem(item, index))
+        .filter(Boolean);
+      this._listMessages = this._sortListItems(fallbackItems);
+      this._listLoading = false;
+      this._listError = fallbackItems.length > 0
+        ? 'Showing recent messages only'
+        : 'Full saved history is unavailable';
+    }
+  }
+
+  _handleRaceControlListEvent(event, entityId) {
+    const data = event?.data || {};
+    const targetEntityId = data.entity_id || null;
+    if (targetEntityId && targetEntityId !== entityId) {
+      return;
+    }
+    const source = data.log_item || data.message;
+    const normalized = this._normalizeListItem(source);
+    if (!normalized) return;
+    this._listMessages = this._sortListItems([normalized, ...this._listMessages]);
+    this._listLoading = false;
+    this._listError = null;
+  }
+
+  _handleRaceControlResetEvent(event, entityId) {
+    const data = event?.data || {};
+    if (data.entity_id && data.entity_id !== entityId) {
+      return;
+    }
+    this._listMessages = [];
+    this._listLoading = false;
+    this._listError = null;
+  }
+
+  _syncCurrentEntityIntoList(entity) {
+    if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
+      this._listMessages = [];
+      this._listLoading = false;
+      this._listError = null;
+      return;
+    }
+
+    const attributes = entity.attributes || {};
+    const normalized = this._normalizeListItem({
+      event_id: attributes.event_id,
+      utc: attributes.utc,
+      received_at: attributes.received_at,
+      category: attributes.category,
+      flag: attributes.flag,
+      scope: attributes.scope,
+      sector: attributes.sector,
+      car_number: attributes.car_number,
+      message: attributes.message || entity.state,
+      sequence: attributes.sequence,
+    });
+
+    if (!normalized) {
+      return;
+    }
+
+    this._listMessages = this._sortListItems([normalized, ...this._listMessages]);
+    this._listLoading = false;
+    this._listError = null;
+  }
+
+  _normalizeListItem(item, fallbackIndex = 0) {
+    if (!item || typeof item !== 'object') return null;
+    const utc = item.utc || item.Utc || item.utc_ts || item.received_at || null;
+    const category = item.category || item.Category || item.CategoryType || null;
+    const flag = item.flag || item.Flag || null;
+    const scope = item.scope || item.Scope || null;
+    const sector = item.sector || item.Sector || item.TrackSegment || null;
+    const carNumber = item.car_number || item.CarNumber || item.Number || item.Car || item.Driver || null;
+    const message = item.message || item.Message || item.Text || '';
+    const parsedTime = this._parseIncidentTime(utc || item.received_at || null);
+    const sequenceValue = Number.parseInt(item.sequence, 10);
+    const sequence = Number.isFinite(sequenceValue) ? sequenceValue : null;
+    const id = item.event_id
+      || item.eventId
+      || [utc || '', category || '', flag || '', message || '', fallbackIndex].join('|');
+
+    return {
+      id,
+      event_id: item.event_id || id,
+      utc,
+      received_at: item.received_at || null,
+      category,
+      flag,
+      scope,
+      sector,
+      car_number: carNumber,
+      message,
+      sequence,
+      _parsedTime: parsedTime,
+    };
+  }
+
+  _sortListItems(items) {
+    const unique = [];
+    const seen = new Set();
+
+    for (const item of items) {
+      if (!item || !item.id) continue;
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      unique.push(item);
+    }
+
+    unique.sort((a, b) => {
+      const seqA = Number.isFinite(a.sequence) ? a.sequence : null;
+      const seqB = Number.isFinite(b.sequence) ? b.sequence : null;
+      if (seqA !== null || seqB !== null) {
+        return (seqB ?? -1) - (seqA ?? -1);
+      }
+      const timeA = Number.isFinite(a._parsedTime) ? a._parsedTime : null;
+      const timeB = Number.isFinite(b._parsedTime) ? b._parsedTime : null;
+      if (timeA !== null || timeB !== null) {
+        return (timeB ?? -Infinity) - (timeA ?? -Infinity);
+      }
+      return 0;
+    });
+
+    return unique.map((item) => {
+      const normalized = { ...item };
+      delete normalized._parsedTime;
+      return normalized;
+    });
+  }
+
+  _getVisibleListMessages() {
+    return this._listMessages.filter((item) => !this._shouldHideMessage(item));
+  }
+
+  _formatListTime(value) {
+    if (!value) return '--:--:--';
+    const parsed = Date.parse(String(value).includes('Z') || /[+-]\d{2}:\d{2}$/.test(String(value))
+      ? String(value)
+      : `${String(value)}Z`);
+    if (Number.isNaN(parsed)) return '--:--:--';
+    return new Date(parsed).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+  }
+
+  _getListToneClass(item) {
+    const flag = String(item?.flag || '').toUpperCase();
+    const category = String(item?.category || '').toUpperCase();
+    if (flag.includes('RED')) return 'tone-red';
+    if (flag.includes('YELLOW')) return 'tone-yellow';
+    if (flag === 'BLUE') return 'tone-blue';
+    if (flag === 'GREEN' || flag === 'CLEAR') return 'tone-green';
+    if (category === 'VSC' || category.includes('SAFETY')) return 'tone-orange';
+    return 'tone-neutral';
+  }
+
+  _getListCategoryLabel(item) {
+    const flag = String(item?.flag || '').trim();
+    const category = String(item?.category || '').trim();
+    if (flag) return flag;
+    if (category) return category;
+    return 'Race Control';
+  }
+
+  async _handleClearList(ev) {
+    ev?.stopPropagation?.();
+    if (this._isClearing) return;
+    const entityId = resolveEntityIdWithFallback(this.hass, this.config?.entity);
+    if (!entityId || typeof this.hass?.callService !== 'function') return;
+
+    this._isClearing = true;
+    try {
+      await this.hass.callService('f1_sensor', 'clear_race_control_log', {
+        entity_id: entityId,
+      });
+      this._listMessages = [];
+      this._listError = null;
+    } catch (_err) {
+      this._listError = 'Could not clear saved messages';
+    } finally {
+      this._isClearing = false;
+    }
   }
 
   _checkForNewMessage(entity = null) {
@@ -9432,6 +10050,9 @@ class F1RaceControlCard extends LitElement {
   }
 
   getCardSize() {
+    if (this._isListMode()) {
+      return Math.max(3, Math.ceil(this._normalizeListMaxHeight(this.config?.list_max_height) / 120));
+    }
     return 1;
   }
 
@@ -9554,6 +10175,14 @@ class F1RaceControlCard extends LitElement {
     }
 
     const currentEntity = getEntityStateWithFallback(this.hass, this.config.entity);
+    if (this._isListMode()) {
+      return this._renderListMode(currentEntity);
+    }
+
+    return this._renderLatestMode(currentEntity);
+  }
+
+  _renderLatestMode(currentEntity) {
     if (!currentEntity || currentEntity.state === 'unavailable' || currentEntity.state === 'unknown') {
       const showLogo = this.config.show_fia_logo;
       return html`
@@ -9600,6 +10229,88 @@ class F1RaceControlCard extends LitElement {
             ` : null}
           </div>
 
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _renderListMode(currentEntity) {
+    if (!currentEntity) {
+      const showLogo = this.config.show_fia_logo;
+      return html`
+        <ha-card>
+          <div class="rc-card rc-unavailable">
+            ${showLogo ? html`<img class="rc-fia-logo" src="https://www.fia.com/sites/all/themes/penceo_theme/images/fia-footer-logo.png" alt="FIA" />` : null}
+            <span class="rc-unavailable-text">No session data</span>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    const totalCount = this._listMessages.length;
+    const visibleMessages = this._getVisibleListMessages();
+    const visibleCount = visibleMessages.length;
+    const showLogo = this.config.show_fia_logo;
+    const live = currentEntity.state !== 'unavailable' && currentEntity.state !== 'unknown';
+    const statusLabel = live ? 'Live' : 'Saved';
+    const countLabel = totalCount === visibleCount
+      ? `${totalCount} ${totalCount === 1 ? 'message' : 'messages'}`
+      : `${visibleCount} of ${totalCount} messages`;
+    const maxHeight = this._normalizeListMaxHeight(this.config?.list_max_height);
+    const bodyStyle = maxHeight > 0 ? `max-height: ${maxHeight}px;` : '';
+
+    let emptyText = 'No saved race control messages yet';
+    if (this._listLoading) {
+      emptyText = 'Loading saved race control messages';
+    } else if (totalCount > 0 && visibleCount === 0) {
+      emptyText = 'No visible race control messages';
+    }
+
+    return html`
+      <ha-card>
+        <div class="rc-list-shell">
+          <div class="rc-list-topbar">
+            <div class="rc-list-brand">
+              ${showLogo ? html`<img class="rc-fia-logo" src="https://www.fia.com/sites/all/themes/penceo_theme/images/fia-footer-logo.png" alt="FIA" />` : null}
+              <div class="rc-list-title-wrap">
+                <span class="rc-list-title">Race Control</span>
+                <span class="rc-list-count">${countLabel}</span>
+              </div>
+            </div>
+            <div class="rc-list-controls">
+              <span class="rc-live-pill ${live ? '' : 'saved'}">${statusLabel}</span>
+              ${this.config.show_clear_button !== false ? html`
+                <button
+                  class="rc-clear-button"
+                  ?disabled=${this._isClearing}
+                  @click=${this._handleClearList}
+                >
+                  ${this._isClearing ? 'Clearing' : 'Clear'}
+                </button>
+              ` : null}
+            </div>
+          </div>
+
+          ${this._listError ? html`
+            <div class="rc-list-warning">${this._listError}</div>
+          ` : null}
+
+          <div class="rc-list-body" style=${bodyStyle}>
+            ${visibleCount > 0 ? visibleMessages.map((item) => html`
+              <div class="rc-list-row ${this._getListToneClass(item)}">
+                <div class="rc-list-meta">
+                  ${item.sequence ? html`<span class="rc-list-sequence">#${item.sequence}</span>` : null}
+                  <span class="rc-list-time">${this._formatListTime(item.utc || item.received_at)}</span>
+                </div>
+                <div class="rc-list-content">
+                  <span class="rc-list-category">${this._getListCategoryLabel(item)}</span>
+                  <span class="rc-list-message">${this._formatMessage(item.message)}</span>
+                </div>
+              </div>
+            `) : html`
+              <div class="rc-list-empty">${emptyText}</div>
+            `}
+          </div>
         </div>
       </ha-card>
     `;
@@ -9725,12 +10436,38 @@ class F1RaceControlCardEditor extends LitElement {
   }
 
   setConfig(config) {
-    this._config = {
+    this._config = this._normalizeConfig({
+      display_mode: 'latest',
       show_fia_logo: true,
       hide_blue_flags: false,
       min_display_time: 0,
+      list_max_height: 600,
+      show_clear_button: true,
       ...config,
-    };
+    });
+  }
+
+  _normalizeConfig(config) {
+    if (!config || typeof config !== 'object') {
+      return config;
+    }
+
+    const normalized = { ...config };
+    const displayMode = normalized.display_mode === 'list' ? 'list' : 'latest';
+    normalized.display_mode = displayMode;
+
+    if (displayMode !== 'list') {
+      return normalized;
+    }
+
+    const gridOptions = normalized.grid_options && typeof normalized.grid_options === 'object'
+      ? { ...normalized.grid_options }
+      : {};
+
+    gridOptions.columns = gridOptions.columns ?? 'full';
+    gridOptions.rows = 'auto';
+    normalized.grid_options = gridOptions;
+    return normalized;
   }
 
   render() {
@@ -9778,22 +10515,50 @@ class F1RaceControlCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${this._renderSelect(
+          'display_mode',
+          'Display mode',
+          [
+            { value: 'latest', label: 'Latest banner' },
+            { value: 'list', label: 'Saved message list' },
+          ]
+        )}
+        <div class="helper">Choose between the current compact banner and a full saved session list</div>
+
         ${this._renderSwitch('show_fia_logo', 'Show FIA logo')}
         ${this._renderSwitch(
           'hide_blue_flags',
           'Hide blue flag messages',
-          'Remove blue flag notices from the banner and queue'
+          'Remove blue flag notices from the banner or list without deleting them from saved history'
         )}
 
-        <ha-textfield
-          .label=${'Min display time per message (seconds)'}
-          .value=${String(this._config.min_display_time || 0)}
-          type="number"
-          min="0"
-          max="30"
-          @input=${(e) => this._valueChanged('min_display_time', parseInt(e.target.value) || 0)}
-        ></ha-textfield>
-        <div class="helper">Set to 0 to disable minimum display time</div>
+        ${this._config.display_mode === 'list' ? html`
+          <ha-textfield
+            .label=${'List max height (px)'}
+            .value=${String(this._config.list_max_height || 600)}
+            type="number"
+            min="240"
+            max="2000"
+            @input=${(e) => this._valueChanged('list_max_height', parseInt(e.target.value, 10) || 600)}
+          ></ha-textfield>
+          <div class="helper">Controls how tall the saved message list can grow before it scrolls</div>
+
+          ${this._renderSwitch(
+            'show_clear_button',
+            'Show clear button',
+            'Lets users clear the saved log for the current session directly from the card'
+          )}
+        ` : html`
+          <ha-textfield
+            .label=${'Min display time per message (seconds)'}
+            .value=${String(this._config.min_display_time || 0)}
+            type="number"
+            min="0"
+            max="30"
+            @input=${(e) => this._valueChanged('min_display_time', parseInt(e.target.value, 10) || 0)}
+          ></ha-textfield>
+          <div class="helper">Set to 0 to disable minimum display time</div>
+        `}
       </div>
     `;
   }
@@ -9834,17 +10599,41 @@ class F1RaceControlCardEditor extends LitElement {
     `;
   }
 
+  _renderSelect(name, label, options) {
+    const schema = [
+      {
+        name,
+        label,
+        selector: {
+          select: {
+            mode: 'dropdown',
+            options,
+          },
+        },
+      },
+    ];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+    `;
+  }
+
   _formValueChanged(ev) {
     if (!this._config) return;
     const value = ev.detail?.value || {};
-    const newConfig = { ...this._config, ...value };
+    const newConfig = this._normalizeConfig({ ...this._config, ...value });
     this._config = newConfig;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
   }
 
   _valueChanged(name, value) {
     if (!this._config) return;
-    const newConfig = { ...this._config, [name]: value };
+    const newConfig = this._normalizeConfig({ ...this._config, [name]: value });
     this._config = newConfig;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
   }
