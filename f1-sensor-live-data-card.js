@@ -250,6 +250,31 @@ const getEntityStateWithFallback = (hass, entityId) => {
   return hass.states?.[resolvedId] || null;
 };
 
+const asEntityList = (value) => {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return [];
+  return Object.values(value).filter((entry) => entry && typeof entry === 'object');
+};
+
+const hasCollectionEntries = (value) => {
+  if (Array.isArray(value)) return value.length > 0;
+  if (!value || typeof value !== 'object') return false;
+  return Object.keys(value).length > 0;
+};
+
+const isRaceLikeLabel = (value) => String(value || '').trim().toLowerCase() === 'race';
+
+const isRaceSessionActive = (sessionState, sessionStatusState) => {
+  const status = String(sessionStatusState?.state || '').trim().toLowerCase();
+  if (status !== 'live' && status !== 'suspended') {
+    return false;
+  }
+
+  return isRaceLikeLabel(sessionState?.state) || isRaceLikeLabel(sessionState?.attributes?.last_label);
+};
+
+const isNoSpoilerModeActive = (entityState) => String(entityState?.state || '').trim().toLowerCase() === 'on';
+
 const measureRenderedCardHeight = (host) => {
   const card = host?.renderRoot?.querySelector?.('ha-card');
   const content = card?.firstElementChild;
@@ -3618,18 +3643,81 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     }
 
     .cpd-header {
-      text-align: center;
+      text-align: left;
       font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
       font-size: clamp(16px, 2.4vw, 20px);
       font-weight: 700;
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
-      margin-bottom: clamp(8px, 1.4vw, 12px);
+      margin: 0;
       text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
-      padding: 0 4px;
+      padding-right: 0;
+      min-width: 0;
+    }
+
+    .cpd-header-row {
+      display: flex;
+      flex-direction: column;
+      align-items: start;
+      gap: 8px;
+      margin-bottom: clamp(8px, 1.4vw, 12px);
+    }
+
+    .cpd-header-badges {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-width: 100%;
+    }
+
+    .cpd-mode-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px 10px 4px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--ts-text);
+    }
+
+    .cpd-mode-pill.current {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--ts-text);
+    }
+
+    .cpd-mode-pill.live {
+      background: rgba(239, 68, 68, 0.16);
+      color: #fca5a5;
+      border-color: rgba(248, 113, 113, 0.28);
+    }
+
+    .cpd-mode-pill.live-current {
+      background: rgba(59, 130, 246, 0.16);
+      color: #bfdbfe;
+      border-color: rgba(96, 165, 250, 0.28);
+    }
+
+    .cpd-mode-pill.legacy {
+      background: rgba(245, 158, 11, 0.16);
+      color: #fcd34d;
+      border-color: rgba(251, 191, 36, 0.24);
+    }
+
+    .cpd-mode-pill.masked {
+      background: rgba(250, 204, 21, 0.16);
+      color: #fde68a;
+      border-color: rgba(250, 204, 21, 0.26);
     }
 
     .cpd-table {
@@ -3680,6 +3768,15 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       border-left: 1px solid rgba(255, 255, 255, 0.12);
     }
 
+    .cpd-cell.points-primary {
+      font-weight: 700;
+      color: var(--ts-text);
+    }
+
+    .cpd-cell.points-secondary {
+      color: var(--ts-muted);
+    }
+
     .cpd-team-logo {
       width: 14px;
       height: 14px;
@@ -3687,10 +3784,21 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
     }
 
-    .cpd-tla {
+    .cpd-driver {
       font-weight: 700;
-      letter-spacing: 0.08em;
       color: var(--driver-color, var(--ts-text));
+    }
+
+    .cpd-driver.compact {
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .cpd-driver.full {
+      letter-spacing: 0.01em;
+      text-transform: none;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-weight: 600;
     }
 
     .cpd-delta.positive {
@@ -3709,6 +3817,30 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       display: inline-flex;
       align-items: center;
       gap: 4px;
+    }
+
+    .cpd-delta-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-width: 52px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
+    .cpd-delta-pill.positive {
+      background: rgba(52, 211, 153, 0.14);
+      border-color: rgba(52, 211, 153, 0.22);
+    }
+
+    .cpd-delta-pill.negative {
+      background: rgba(248, 113, 113, 0.14);
+      border-color: rgba(248, 113, 113, 0.22);
     }
 
     .cpd-pos-arrow {
@@ -3745,6 +3877,15 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
         letter-spacing: 0.03em;
       }
 
+      .cpd-header-row {
+        gap: 8px;
+      }
+
+      .cpd-mode-pill {
+        font-size: 8px;
+        padding: 5px 8px 4px;
+      }
+
       .cpd-row {
         font-size: 9px;
         padding: 5px 6px;
@@ -3754,13 +3895,19 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
 
   setConfig(config) {
     this.config = {
-      title: 'Championship Prediction Drivers',
+      title: 'Championship Standings Drivers',
+      current_entity: 'sensor.f1_driver_standings',
       entity: 'sensor.f1_championship_prediction_drivers',
       drivers_entity: 'sensor.f1_driver_list',
+      session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
+      no_spoiler_entity: 'switch.f1_no_spoiler_mode',
       show_header: true,
+      show_mode_badge: true,
       show_table_header: true,
       show_position: true,
       show_tla: true,
+      show_full_name: false,
       show_team_logo: true,
       team_logo_style: 'color',
       show_predicted_points: true,
@@ -3792,9 +3939,11 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-championship-prediction-drivers-card',
-      entity: '',
-      drivers_entity: '',
-      title: 'Championship Prediction Drivers',
+      current_entity: 'sensor.f1_driver_standings',
+      entity: 'sensor.f1_championship_prediction_drivers',
+      drivers_entity: 'sensor.f1_driver_list',
+      no_spoiler_entity: 'switch.f1_no_spoiler_mode',
+      title: 'Championship Standings Drivers',
     };
   }
 
@@ -3805,76 +3954,100 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
   render() {
     if (!this.hass || !this.config) return html``;
 
-    if (!this.config.entity) {
-      return html`
-        <ha-card>
-          <div class="cpd-card">
-            ${this.config.show_header
-              ? html`<div class="cpd-header">${this.config.title || 'Championship Prediction Drivers'}</div>`
-              : null}
-            <div class="cpd-empty">Select entities in the editor</div>
-          </div>
-        </ha-card>
-      `;
+    if (!this.config.current_entity && !this.config.entity) {
+      return this._renderEmpty('Select entities in the editor');
     }
 
-    const predictionState = getEntityStateWithFallback(this.hass, this.config.entity);
-    if (!predictionState) {
-      return html`
-        <ha-card>
-          <div class="cpd-card">
-            ${this.config.show_header
-              ? html`<div class="cpd-header">${this.config.title || 'Championship Prediction Drivers'}</div>`
-              : null}
-            <div class="cpd-empty">Entity not found</div>
-          </div>
-        </ha-card>
-      `;
-    }
-
-    const predictions = predictionState?.attributes?.drivers;
-    if (!predictions || typeof predictions !== 'object') {
-      return html`
-        <ha-card>
-          <div class="cpd-card">
-            ${this.config.show_header
-              ? html`<div class="cpd-header">${this.config.title || 'Championship Prediction Drivers'}</div>`
-              : null}
-            <div class="cpd-empty">No prediction data</div>
-          </div>
-        </ha-card>
-      `;
-    }
-
+    const currentState = this.config.current_entity
+      ? getEntityStateWithFallback(this.hass, this.config.current_entity)
+      : null;
+    const predictionState = this.config.entity
+      ? getEntityStateWithFallback(this.hass, this.config.entity)
+      : null;
+    const sessionState = this.config.session_entity
+      ? getEntityStateWithFallback(this.hass, this.config.session_entity)
+      : null;
+    const sessionStatusState = this.config.session_status_entity
+      ? getEntityStateWithFallback(this.hass, this.config.session_status_entity)
+      : null;
+    const noSpoilerState = this.config.no_spoiler_entity
+      ? getEntityStateWithFallback(this.hass, this.config.no_spoiler_entity)
+      : null;
     const driverListState = this.config.drivers_entity
       ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
       : null;
-    const driverList = Array.isArray(driverListState?.attributes?.drivers)
-      ? driverListState.attributes.drivers
-      : [];
+    const driverList = asEntityList(driverListState?.attributes?.drivers);
     const driverMap = this._buildDriverMap(driverList);
-    const rows = this._applyTopLimit(this._buildRows(predictions, driverMap));
-    const columns = this._columns();
+
+    const standings = Array.isArray(currentState?.attributes?.driver_standings)
+      ? currentState.attributes.driver_standings
+      : [];
+    const predictions = hasCollectionEntries(predictionState?.attributes?.drivers)
+      ? predictionState.attributes.drivers
+      : null;
+
+    const hasCurrentData = standings.length > 0;
+    const hasPredictionData = hasCollectionEntries(predictions);
+    const useLiveRaceBase = hasCurrentData
+      && hasPredictionData
+      && isRaceSessionActive(sessionState, sessionStatusState);
+    const showProjection = useLiveRaceBase
+      && this.config.show_predicted_points !== false;
+    const spoilerBlocked = isNoSpoilerModeActive(noSpoilerState);
+
+    let rows = [];
+    let columns = [];
+    let mode = 'current';
+    let emptyMessage = 'No standings data';
+
+    if (hasCurrentData) {
+      const predictionLookup = this._buildPredictionLookup(predictions, driverMap);
+      rows = this._applyTopLimit(
+        this._buildCurrentRows(
+          standings,
+          driverMap,
+          predictionLookup,
+          useLiveRaceBase,
+          showProjection,
+          spoilerBlocked,
+        ),
+      );
+      columns = this._columns(showProjection);
+      mode = showProjection ? 'live' : (useLiveRaceBase ? 'live-current' : 'current');
+      this._actionEntityId = this.config.current_entity || this.config.entity;
+    } else if (hasPredictionData) {
+      rows = this._applyTopLimit(this._buildLegacyRows(predictions, driverMap, spoilerBlocked));
+      columns = this._legacyColumns();
+      mode = 'legacy';
+      emptyMessage = 'No prediction data';
+      this._actionEntityId = this.config.entity || this.config.current_entity;
+    } else {
+      this._actionEntityId = this.config.current_entity || this.config.entity;
+      if (this.config.current_entity && !currentState) {
+        return this._renderEmpty('Current standings entity not found', mode, spoilerBlocked);
+      }
+      if (this.config.entity && !predictionState && !currentState) {
+        return this._renderEmpty('Prediction entity not found', mode, spoilerBlocked);
+      }
+      return this._renderEmpty('No standings data', mode, spoilerBlocked);
+    }
+
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
-      return html`
-        <ha-card>
-          <div class="cpd-card">
-            ${this.config.show_header
-              ? html`<div class="cpd-header">${this.config.title || 'Championship Prediction Drivers'}</div>`
-              : null}
-            <div class="cpd-empty">No prediction data</div>
-          </div>
-        </ha-card>
-      `;
+      return this._renderEmpty(emptyMessage, mode, spoilerBlocked);
     }
 
     return html`
       <ha-card @click=${this._handleCardAction}>
         <div class="cpd-card">
           ${this.config.show_header
-            ? html`<div class="cpd-header">${this.config.title || 'Championship Prediction Drivers'}</div>`
+            ? html`
+              <div class="cpd-header-row">
+                <div class="cpd-header">${this.config.title || 'Championship Standings Drivers'}</div>
+                ${this._renderHeaderBadges(mode, spoilerBlocked)}
+              </div>
+            `
             : null}
           <div class="cpd-table" style="--cpd-columns: ${gridColumns};">
             ${this.config.show_table_header ? this._renderHeader(columns) : null}
@@ -3885,25 +4058,115 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     `;
   }
 
-  _columns() {
+  _renderEmpty(message, mode = 'current', spoilerBlocked = false) {
+    return html`
+      <ha-card>
+        <div class="cpd-card">
+          ${this.config.show_header
+            ? html`
+              <div class="cpd-header-row">
+                <div class="cpd-header">${this.config.title || 'Championship Standings Drivers'}</div>
+                ${this._renderHeaderBadges(mode, spoilerBlocked)}
+              </div>
+            `
+            : null}
+          <div class="cpd-empty">${message}</div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _modeLabel(mode) {
+    if (mode === 'live') return 'LIVE PROJECTION';
+    if (mode === 'live-current') return 'LIVE CURRENT';
+    if (mode === 'legacy') return 'PREDICTION ONLY';
+    return 'CURRENT';
+  }
+
+  _renderHeaderBadges(mode, spoilerBlocked) {
+    if (this.config.show_mode_badge === false) return null;
+    return html`
+      <div class="cpd-header-badges">
+        <div class="cpd-mode-pill ${mode}">${this._modeLabel(mode)}</div>
+        ${spoilerBlocked
+          ? html`<div class="cpd-mode-pill masked">NO SPOILER</div>`
+          : null}
+      </div>
+    `;
+  }
+
+  _columns(showProjection) {
     const cols = [];
     if (this.config.show_position !== false) {
-      cols.push({ key: 'position', label: 'POS', width: '0.16fr', numeric: true, hideHeader: true });
+      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
     }
     if (this.config.show_team_logo !== false) {
       cols.push({ key: 'logo', label: 'LOGO', width: '0.16fr', hideHeader: true });
     }
     if (this.config.show_tla !== false) {
-      cols.push({ key: 'tla', label: 'DRIVER', width: '0.62fr' });
-    }
-    if (this.config.show_predicted_points !== false) {
-      cols.push({ key: 'predicted_points', label: 'PRED', width: '0.44fr', numeric: true, groupStart: true });
+      cols.push({
+        key: 'tla',
+        label: 'DRIVER',
+        width: this._driverColumnWidth(showProjection),
+      });
     }
     if (this.config.show_current_points !== false) {
-      cols.push({ key: 'current_points', label: 'CUR', width: '0.44fr', numeric: true });
+      cols.push({
+        key: 'current_points',
+        label: 'PTS',
+        width: showProjection ? '0.38fr' : '0.44fr',
+        numeric: true,
+        groupStart: true,
+        emphasis: 'primary',
+      });
+    }
+    if (showProjection) {
+      cols.push({
+        key: 'predicted_points',
+        label: 'PRED',
+        width: '0.42fr',
+        numeric: true,
+        emphasis: 'secondary',
+      });
+      if (this.config.show_delta !== false) {
+        cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
+      }
+    }
+    return cols;
+  }
+
+  _legacyColumns() {
+    const cols = [];
+    if (this.config.show_position !== false) {
+      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
+    }
+    if (this.config.show_team_logo !== false) {
+      cols.push({ key: 'logo', label: 'LOGO', width: '0.16fr', hideHeader: true });
+    }
+    if (this.config.show_tla !== false) {
+      cols.push({ key: 'tla', label: 'DRIVER', width: this._driverColumnWidth(true) });
+    }
+    if (this.config.show_predicted_points !== false) {
+      cols.push({
+        key: 'predicted_points',
+        label: 'PRED',
+        width: '0.42fr',
+        numeric: true,
+        groupStart: true,
+        emphasis: 'primary',
+      });
+    }
+    if (this.config.show_current_points !== false) {
+      cols.push({
+        key: 'current_points',
+        label: 'CUR',
+        width: '0.38fr',
+        numeric: true,
+        emphasis: 'secondary',
+      });
     }
     if (this.config.show_delta !== false) {
-      cols.push({ key: 'delta', label: 'Δ', width: '0.34fr', numeric: true });
+      cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
     }
     return cols;
   }
@@ -3932,6 +4195,15 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     const classes = ['cpd-cell'];
     if (col.numeric) classes.push('numeric');
     if (col.groupStart) classes.push('group-start');
+    if (col.emphasis === 'primary') classes.push('points-primary');
+    if (col.emphasis === 'secondary') classes.push('points-secondary');
+
+    if (
+      row.mask_points
+      && (col.key === 'current_points' || col.key === 'predicted_points' || col.key === 'delta')
+    ) {
+      return html`<div class="${classes.join(' ')}">${row.spoiler_placeholder}</div>`;
+    }
 
     if (col.key === 'logo') {
       return html`
@@ -3952,9 +4224,10 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
 
     if (col.key === 'tla') {
       const style = row.team_color ? `--driver-color: ${row.team_color};` : '';
+      const driverClass = row.use_full_name ? 'full' : 'compact';
       return html`
-        <div class="${classes.join(' ')} cpd-tla" style="${style}">
-          ${row.display_tla || '--'}
+        <div class="${classes.join(' ')} cpd-driver ${driverClass}" style="${style}">
+          ${row.display_driver || '--'}
         </div>
       `;
     }
@@ -3964,7 +4237,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       const positionMove = this._getPositionMovement(row.current_position, row.predicted_position);
       return html`
         <div class="${classes.join(' ')} cpd-delta ${deltaClass}">
-          <span class="cpd-delta-wrap">
+          <span class="cpd-delta-pill ${deltaClass}">
             <span>${row.delta_display}</span>
             ${positionMove ? html`
               <span class="cpd-pos-arrow ${positionMove.className}" title="${positionMove.title}">
@@ -3977,13 +4250,67 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     }
 
     let value = '--';
-    if (col.key === 'position') value = row.predicted_position ?? '--';
+    if (col.key === 'position') value = row.display_position ?? '--';
     if (col.key === 'predicted_points') value = row.predicted_points_display;
     if (col.key === 'current_points') value = row.current_points_display;
     return html`<div class="${classes.join(' ')}">${value}</div>`;
   }
 
-  _buildRows(predictions, driverMap) {
+  _buildCurrentRows(standings, driverMap, predictionLookup, useLiveRaceBase, showProjection, spoilerBlocked) {
+    const rows = [];
+    standings.forEach((standing) => {
+      if (!standing || typeof standing !== 'object') return;
+      const driver = standing?.Driver || {};
+      const constructors = Array.isArray(standing?.Constructors) ? standing.Constructors : [];
+      const constructor = constructors[0] || standing?.Constructor || {};
+      const rn = String(driver?.permanentNumber ?? '').trim();
+      const tla = this._normalizeTla(driver?.code);
+      const identity = (rn && driverMap.get(rn)) || (tla ? this._findDriverByTla(driverMap, tla) : null) || {};
+      const standingsPosition = this._parsePosition(standing?.position ?? standing?.positionText);
+      const standingsPoints = this._toNumber(standing?.points);
+      const prediction = useLiveRaceBase ? this._findPredictionEntry(predictionLookup, rn, tla) : null;
+      const liveCurrentPosition = prediction?.current_position ?? null;
+      const liveCurrentPoints = prediction?.current_points ?? null;
+      const currentPosition = Number.isFinite(liveCurrentPosition) ? liveCurrentPosition : standingsPosition;
+      const currentPoints = Number.isFinite(liveCurrentPoints) ? liveCurrentPoints : standingsPoints;
+      const predictedPosition = showProjection ? prediction?.predicted_position ?? null : null;
+      const predictedPoints = showProjection ? prediction?.predicted_points ?? null : null;
+      const delta = Number.isFinite(predictedPoints) && Number.isFinite(currentPoints)
+        ? predictedPoints - currentPoints
+        : null;
+      const teamName = identity?.team || constructor?.name || prediction?.team_name || null;
+      const teamColor = this._normalizeColor(identity?.team_color || prediction?.team_color);
+      const displayTla = tla || this._normalizeTla(identity?.tla) || (rn ? `#${rn}` : '--');
+      const fullName = this._formatDriverName(driver, identity, rn, displayTla);
+      const useFullName = this.config.show_full_name === true && fullName !== displayTla;
+      const displayDriver = useFullName ? fullName : displayTla;
+
+      rows.push({
+        rn,
+        display_position: currentPosition,
+        predicted_position: predictedPosition,
+        current_position: currentPosition,
+        display_tla: displayTla,
+        display_driver: displayDriver,
+        identity_sort: displayDriver,
+        use_full_name: useFullName,
+        team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style),
+        team_color: teamColor,
+        predicted_points: predictedPoints,
+        current_points: currentPoints,
+        delta,
+        mask_points: spoilerBlocked,
+        spoiler_placeholder: this._spoilerPlaceholder(),
+        predicted_points_display: this._formatPoints(predictedPoints),
+        current_points_display: this._formatPoints(currentPoints),
+        delta_display: this._formatDelta(delta),
+      });
+    });
+
+    return this._sortDriverRows(rows, { spoilerBlocked, showProjection });
+  }
+
+  _buildLegacyRows(predictions, driverMap, spoilerBlocked) {
     const rows = [];
     Object.entries(predictions || {}).forEach(([key, entry]) => {
       if (!entry || typeof entry !== 'object') return;
@@ -4000,46 +4327,66 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       const tla = this._normalizeTla(entry?.Tla || identity?.tla);
       const teamName = entry?.TeamName || identity?.team || null;
       const teamColor = this._normalizeColor(entry?.TeamColor || identity?.team_color);
+      const displayTla = tla || (rn ? `#${rn}` : '--');
+      const fullName = this._formatDriverName(entry, identity, rn, displayTla);
+      const useFullName = this.config.show_full_name === true && fullName !== displayTla;
+      const displayDriver = useFullName ? fullName : displayTla;
 
       rows.push({
         rn,
+        display_position: predictedPosition,
         predicted_position: predictedPosition,
         current_position: currentPosition,
-        display_tla: tla || (rn ? `#${rn}` : '--'),
+        display_tla: displayTla,
+        display_driver: displayDriver,
+        identity_sort: displayDriver,
+        use_full_name: useFullName,
         team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style),
         team_color: teamColor,
         predicted_points: predictedPoints,
         current_points: currentPoints,
         delta,
+        mask_points: spoilerBlocked,
+        spoiler_placeholder: this._spoilerPlaceholder(),
         predicted_points_display: this._formatPoints(predictedPoints),
         current_points_display: this._formatPoints(currentPoints),
         delta_display: this._formatDelta(delta),
       });
     });
 
-    rows.sort((a, b) => {
-      if (a.predicted_position !== null && b.predicted_position !== null) {
-        const diff = a.predicted_position - b.predicted_position;
-        if (diff !== 0) return diff;
-      } else if (a.predicted_position !== null) {
-        return -1;
-      } else if (b.predicted_position !== null) {
-        return 1;
-      }
+    return this._sortDriverRows(rows, {
+      spoilerBlocked,
+      showProjection: this.config.show_predicted_points !== false,
+    });
+  }
 
-      if (a.current_position !== null && b.current_position !== null) {
-        const diff = a.current_position - b.current_position;
-        if (diff !== 0) return diff;
-      } else if (a.current_position !== null) {
-        return -1;
-      } else if (b.current_position !== null) {
-        return 1;
-      }
+  _buildPredictionLookup(predictions, driverMap) {
+    const lookup = {
+      byRn: new Map(),
+      byTla: new Map(),
+    };
 
-      return this._compareRacingNumber(a.rn, b.rn);
+    Object.entries(predictions || {}).forEach(([key, entry]) => {
+      if (!entry || typeof entry !== 'object') return;
+      const rn = String(entry?.RacingNumber ?? key).trim();
+      const identity = (rn && driverMap.get(rn)) || {};
+      const tla = this._normalizeTla(entry?.Tla || identity?.tla);
+      const parsed = {
+        rn,
+        tla,
+        team_name: entry?.TeamName || identity?.team || null,
+        team_color: this._normalizeColor(entry?.TeamColor || identity?.team_color),
+        predicted_position: this._parsePosition(entry?.PredictedPosition),
+        current_position: this._parsePosition(entry?.CurrentPosition),
+        predicted_points: this._toNumber(entry?.PredictedPoints),
+        current_points: this._toNumber(entry?.CurrentPoints),
+      };
+
+      if (rn) lookup.byRn.set(rn, parsed);
+      if (tla && !lookup.byTla.has(tla)) lookup.byTla.set(tla, parsed);
     });
 
-    return rows;
+    return lookup;
   }
 
   _applyTopLimit(rows) {
@@ -4056,11 +4403,63 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       if (!rn) return;
       map.set(rn, {
         tla: driver?.tla,
+        name: this._normalizeDriverName(
+          driver?.full_name,
+          driver?.name,
+          driver?.broadcast_name,
+          [driver?.given_name, driver?.family_name].filter(Boolean).join(' '),
+        ),
         team: driver?.team || driver?.team_name,
         team_color: driver?.team_color,
       });
     });
     return map;
+  }
+
+  _findDriverByTla(driverMap, tla) {
+    if (!tla) return null;
+    for (const entry of driverMap.values()) {
+      if (this._normalizeTla(entry?.tla) === tla) return entry;
+    }
+    return null;
+  }
+
+  _driverColumnWidth(showProjection) {
+    if (this.config.show_full_name === true) {
+      return showProjection ? '1.02fr' : '1.18fr';
+    }
+    return showProjection ? '0.62fr' : '0.78fr';
+  }
+
+  _normalizeDriverName(...values) {
+    for (const value of values) {
+      const text = String(value || '').replace(/\s+/g, ' ').trim();
+      if (text) return text;
+    }
+    return null;
+  }
+
+  _formatDriverName(driver, identity, rn, fallback) {
+    const explicitName = this._normalizeDriverName(
+      [driver?.givenName, driver?.familyName].filter(Boolean).join(' '),
+      identity?.name,
+      driver?.FullName,
+      driver?.full_name,
+      driver?.name,
+      driver?.BroadcastName,
+      driver?.broadcast_name,
+      driver?.familyName,
+      driver?.givenName,
+    );
+    if (explicitName) return explicitName;
+    if (rn) return `#${rn}`;
+    return fallback || '--';
+  }
+
+  _findPredictionEntry(lookup, rn, tla) {
+    if (rn && lookup?.byRn?.has(rn)) return lookup.byRn.get(rn);
+    if (tla && lookup?.byTla?.has(tla)) return lookup.byTla.get(tla);
+    return null;
   }
 
   _parseTopLimit(value) {
@@ -4097,6 +4496,64 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     const sign = value < 0 ? '-' : '+';
     const abs = Math.abs(value);
     return `${sign}${this._formatPoints(abs)}`;
+  }
+
+  _spoilerPlaceholder() {
+    const value = String(this.config?.spoiler_placeholder || 'HIDE').trim().toUpperCase();
+    return value || 'HIDE';
+  }
+
+  _sortDriverRows(rows, { spoilerBlocked, showProjection }) {
+    rows.sort((a, b) => {
+      if (spoilerBlocked) {
+        return this._compareDriverIdentity(a, b);
+      }
+
+      const primaryPointsDiff = showProjection
+        ? this._comparePointsDescending(a.predicted_points, b.predicted_points)
+        : this._comparePointsDescending(a.current_points, b.current_points);
+      if (primaryPointsDiff !== 0) return primaryPointsDiff;
+
+      const positionDiff = showProjection
+        ? this._comparePositionAscending(a.predicted_position, b.predicted_position)
+        : this._comparePositionAscending(a.current_position, b.current_position);
+      if (positionDiff !== 0) return positionDiff;
+
+      const fallbackPointsDiff = showProjection
+        ? this._comparePointsDescending(a.current_points, b.current_points)
+        : this._comparePointsDescending(a.predicted_points, b.predicted_points);
+      if (fallbackPointsDiff !== 0) return fallbackPointsDiff;
+
+      return this._compareDriverIdentity(a, b);
+    });
+
+    return rows;
+  }
+
+  _compareDriverIdentity(a, b) {
+    const labelDiff = String(a.identity_sort || '').localeCompare(String(b.identity_sort || ''));
+    if (labelDiff !== 0) return labelDiff;
+    return this._compareRacingNumber(a.rn, b.rn);
+  }
+
+  _comparePointsDescending(a, b) {
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      const diff = b - a;
+      return Math.abs(diff) < 0.0001 ? 0 : diff;
+    }
+    if (Number.isFinite(a)) return -1;
+    if (Number.isFinite(b)) return 1;
+    return 0;
+  }
+
+  _comparePositionAscending(a, b) {
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      const diff = a - b;
+      return diff === 0 ? 0 : diff;
+    }
+    if (Number.isFinite(a)) return -1;
+    if (Number.isFinite(b)) return 1;
+    return 0;
   }
 
   _getPositionMovement(currentPosition, predictedPosition) {
@@ -4142,7 +4599,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       this.dispatchEvent(new CustomEvent('hass-more-info', {
         bubbles: true,
         composed: true,
-        detail: { entityId: this.config.entity },
+        detail: { entityId: this._actionEntityId || this.config.current_entity || this.config.entity },
       }));
     }
   }
@@ -4205,18 +4662,81 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     }
 
     .cpt-header {
-      text-align: center;
+      text-align: left;
       font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
       font-size: clamp(16px, 2.4vw, 20px);
       font-weight: 700;
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
-      margin-bottom: clamp(8px, 1.4vw, 12px);
+      margin: 0;
       text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
-      padding: 0 4px;
+      padding-right: 0;
+      min-width: 0;
+    }
+
+    .cpt-header-row {
+      display: flex;
+      flex-direction: column;
+      align-items: start;
+      gap: 8px;
+      margin-bottom: clamp(8px, 1.4vw, 12px);
+    }
+
+    .cpt-header-badges {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-width: 100%;
+    }
+
+    .cpt-mode-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px 10px 4px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--ts-text);
+    }
+
+    .cpt-mode-pill.current {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--ts-text);
+    }
+
+    .cpt-mode-pill.live {
+      background: rgba(239, 68, 68, 0.16);
+      color: #fca5a5;
+      border-color: rgba(248, 113, 113, 0.28);
+    }
+
+    .cpt-mode-pill.live-current {
+      background: rgba(59, 130, 246, 0.16);
+      color: #bfdbfe;
+      border-color: rgba(96, 165, 250, 0.28);
+    }
+
+    .cpt-mode-pill.legacy {
+      background: rgba(245, 158, 11, 0.16);
+      color: #fcd34d;
+      border-color: rgba(251, 191, 36, 0.24);
+    }
+
+    .cpt-mode-pill.masked {
+      background: rgba(250, 204, 21, 0.16);
+      color: #fde68a;
+      border-color: rgba(250, 204, 21, 0.26);
     }
 
     .cpt-table {
@@ -4267,6 +4787,15 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       border-left: 1px solid rgba(255, 255, 255, 0.12);
     }
 
+    .cpt-cell.points-primary {
+      font-weight: 700;
+      color: var(--ts-text);
+    }
+
+    .cpt-cell.points-secondary {
+      color: var(--ts-muted);
+    }
+
     .cpt-team-logo {
       width: 16px;
       height: 16px;
@@ -4291,10 +4820,28 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       color: var(--ts-muted);
     }
 
-    .cpt-delta-wrap {
+    .cpt-delta-pill {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 4px;
+      min-width: 52px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
+    .cpt-delta-pill.positive {
+      background: rgba(52, 211, 153, 0.14);
+      border-color: rgba(52, 211, 153, 0.22);
+    }
+
+    .cpt-delta-pill.negative {
+      background: rgba(248, 113, 113, 0.14);
+      border-color: rgba(248, 113, 113, 0.22);
     }
 
     .cpt-pos-arrow {
@@ -4331,6 +4878,15 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
         letter-spacing: 0.03em;
       }
 
+      .cpt-header-row {
+        gap: 8px;
+      }
+
+      .cpt-mode-pill {
+        font-size: 8px;
+        padding: 5px 8px 4px;
+      }
+
       .cpt-row {
         font-size: 9px;
         padding: 5px 6px;
@@ -4340,9 +4896,14 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
 
   setConfig(config) {
     this.config = {
-      title: 'Championship Prediction Teams',
+      title: 'Championship Standings Teams',
+      current_entity: 'sensor.f1_constructor_standings',
       entity: 'sensor.f1_championship_prediction_teams',
+      session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
+      no_spoiler_entity: 'switch.f1_no_spoiler_mode',
       show_header: true,
+      show_mode_badge: true,
       show_table_header: true,
       show_position: true,
       show_team_name: true,
@@ -4377,8 +4938,10 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
   static getStubConfig() {
     return {
       type: 'custom:f1-championship-prediction-teams-card',
-      entity: '',
-      title: 'Championship Prediction Teams',
+      current_entity: 'sensor.f1_constructor_standings',
+      entity: 'sensor.f1_championship_prediction_teams',
+      no_spoiler_entity: 'switch.f1_no_spoiler_mode',
+      title: 'Championship Standings Teams',
     };
   }
 
@@ -4389,69 +4952,94 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
   render() {
     if (!this.hass || !this.config) return html``;
 
-    if (!this.config.entity) {
-      return html`
-        <ha-card>
-          <div class="cpt-card">
-            ${this.config.show_header
-              ? html`<div class="cpt-header">${this.config.title || 'Championship Prediction Teams'}</div>`
-              : null}
-            <div class="cpt-empty">Select entities in the editor</div>
-          </div>
-        </ha-card>
-      `;
+    if (!this.config.current_entity && !this.config.entity) {
+      return this._renderEmpty('Select entities in the editor');
     }
 
-    const predictionState = getEntityStateWithFallback(this.hass, this.config.entity);
-    if (!predictionState) {
-      return html`
-        <ha-card>
-          <div class="cpt-card">
-            ${this.config.show_header
-              ? html`<div class="cpt-header">${this.config.title || 'Championship Prediction Teams'}</div>`
-              : null}
-            <div class="cpt-empty">Entity not found</div>
-          </div>
-        </ha-card>
-      `;
+    const currentState = this.config.current_entity
+      ? getEntityStateWithFallback(this.hass, this.config.current_entity)
+      : null;
+    const predictionState = this.config.entity
+      ? getEntityStateWithFallback(this.hass, this.config.entity)
+      : null;
+    const sessionState = this.config.session_entity
+      ? getEntityStateWithFallback(this.hass, this.config.session_entity)
+      : null;
+    const sessionStatusState = this.config.session_status_entity
+      ? getEntityStateWithFallback(this.hass, this.config.session_status_entity)
+      : null;
+    const noSpoilerState = this.config.no_spoiler_entity
+      ? getEntityStateWithFallback(this.hass, this.config.no_spoiler_entity)
+      : null;
+
+    const standings = Array.isArray(currentState?.attributes?.constructor_standings)
+      ? currentState.attributes.constructor_standings
+      : [];
+    const predictions = hasCollectionEntries(predictionState?.attributes?.teams)
+      ? predictionState.attributes.teams
+      : null;
+
+    const hasCurrentData = standings.length > 0;
+    const hasPredictionData = hasCollectionEntries(predictions);
+    const useLiveRaceBase = hasCurrentData
+      && hasPredictionData
+      && isRaceSessionActive(sessionState, sessionStatusState);
+    const showProjection = useLiveRaceBase
+      && this.config.show_predicted_points !== false;
+    const spoilerBlocked = isNoSpoilerModeActive(noSpoilerState);
+
+    let rows = [];
+    let columns = [];
+    let mode = 'current';
+    let emptyMessage = 'No standings data';
+
+    if (hasCurrentData) {
+      const predictionLookup = this._buildPredictionLookup(predictions);
+      rows = this._applyTopLimit(
+        this._buildCurrentRows(
+          standings,
+          predictionLookup,
+          useLiveRaceBase,
+          showProjection,
+          spoilerBlocked,
+        ),
+      );
+      columns = this._columns(showProjection);
+      mode = showProjection ? 'live' : (useLiveRaceBase ? 'live-current' : 'current');
+      this._actionEntityId = this.config.current_entity || this.config.entity;
+    } else if (hasPredictionData) {
+      rows = this._applyTopLimit(this._buildLegacyRows(predictions, spoilerBlocked));
+      columns = this._legacyColumns();
+      mode = 'legacy';
+      emptyMessage = 'No prediction data';
+      this._actionEntityId = this.config.entity || this.config.current_entity;
+    } else {
+      this._actionEntityId = this.config.current_entity || this.config.entity;
+      if (this.config.current_entity && !currentState) {
+        return this._renderEmpty('Current standings entity not found', mode, spoilerBlocked);
+      }
+      if (this.config.entity && !predictionState && !currentState) {
+        return this._renderEmpty('Prediction entity not found', mode, spoilerBlocked);
+      }
+      return this._renderEmpty('No standings data', mode, spoilerBlocked);
     }
 
-    const predictions = predictionState?.attributes?.teams;
-    if (!predictions || typeof predictions !== 'object') {
-      return html`
-        <ha-card>
-          <div class="cpt-card">
-            ${this.config.show_header
-              ? html`<div class="cpt-header">${this.config.title || 'Championship Prediction Teams'}</div>`
-              : null}
-            <div class="cpt-empty">No prediction data</div>
-          </div>
-        </ha-card>
-      `;
-    }
-
-    const rows = this._applyTopLimit(this._buildRows(predictions));
-    const columns = this._columns();
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
-      return html`
-        <ha-card>
-          <div class="cpt-card">
-            ${this.config.show_header
-              ? html`<div class="cpt-header">${this.config.title || 'Championship Prediction Teams'}</div>`
-              : null}
-            <div class="cpt-empty">No prediction data</div>
-          </div>
-        </ha-card>
-      `;
+      return this._renderEmpty(emptyMessage, mode, spoilerBlocked);
     }
 
     return html`
       <ha-card @click=${this._handleCardAction}>
         <div class="cpt-card">
           ${this.config.show_header
-            ? html`<div class="cpt-header">${this.config.title || 'Championship Prediction Teams'}</div>`
+            ? html`
+              <div class="cpt-header-row">
+                <div class="cpt-header">${this.config.title || 'Championship Standings Teams'}</div>
+                ${this._renderHeaderBadges(mode, spoilerBlocked)}
+              </div>
+            `
             : null}
           <div class="cpt-table" style="--cpt-columns: ${gridColumns};">
             ${this.config.show_table_header ? this._renderHeader(columns) : null}
@@ -4462,10 +5050,83 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     `;
   }
 
-  _columns() {
+  _renderEmpty(message, mode = 'current', spoilerBlocked = false) {
+    return html`
+      <ha-card>
+        <div class="cpt-card">
+          ${this.config.show_header
+            ? html`
+              <div class="cpt-header-row">
+                <div class="cpt-header">${this.config.title || 'Championship Standings Teams'}</div>
+                ${this._renderHeaderBadges(mode, spoilerBlocked)}
+              </div>
+            `
+            : null}
+          <div class="cpt-empty">${message}</div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _modeLabel(mode) {
+    if (mode === 'live') return 'LIVE PROJECTION';
+    if (mode === 'live-current') return 'LIVE CURRENT';
+    if (mode === 'legacy') return 'PREDICTION ONLY';
+    return 'CURRENT';
+  }
+
+  _renderHeaderBadges(mode, spoilerBlocked) {
+    if (this.config.show_mode_badge === false) return null;
+    return html`
+      <div class="cpt-header-badges">
+        <div class="cpt-mode-pill ${mode}">${this._modeLabel(mode)}</div>
+        ${spoilerBlocked
+          ? html`<div class="cpt-mode-pill masked">NO SPOILER</div>`
+          : null}
+      </div>
+    `;
+  }
+
+  _columns(showProjection) {
     const cols = [];
     if (this.config.show_position !== false) {
-      cols.push({ key: 'position', label: 'POS', width: '0.16fr', numeric: true, hideHeader: true });
+      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
+    }
+    if (this.config.show_team_logo !== false) {
+      cols.push({ key: 'logo', label: 'LOGO', width: '0.18fr', hideHeader: true });
+    }
+    if (this.config.show_team_name !== false) {
+      cols.push({ key: 'team_name', label: 'TEAM', width: showProjection ? '0.72fr' : '0.86fr' });
+    }
+    if (this.config.show_current_points !== false) {
+      cols.push({
+        key: 'current_points',
+        label: 'PTS',
+        width: showProjection ? '0.38fr' : '0.44fr',
+        numeric: true,
+        groupStart: true,
+        emphasis: 'primary',
+      });
+    }
+    if (showProjection) {
+      cols.push({
+        key: 'predicted_points',
+        label: 'PRED',
+        width: '0.42fr',
+        numeric: true,
+        emphasis: 'secondary',
+      });
+      if (this.config.show_delta !== false) {
+        cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
+      }
+    }
+    return cols;
+  }
+
+  _legacyColumns() {
+    const cols = [];
+    if (this.config.show_position !== false) {
+      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
     }
     if (this.config.show_team_logo !== false) {
       cols.push({ key: 'logo', label: 'LOGO', width: '0.18fr', hideHeader: true });
@@ -4474,13 +5135,26 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       cols.push({ key: 'team_name', label: 'TEAM', width: '0.72fr' });
     }
     if (this.config.show_predicted_points !== false) {
-      cols.push({ key: 'predicted_points', label: 'PRED', width: '0.44fr', numeric: true, groupStart: true });
+      cols.push({
+        key: 'predicted_points',
+        label: 'PRED',
+        width: '0.42fr',
+        numeric: true,
+        groupStart: true,
+        emphasis: 'primary',
+      });
     }
     if (this.config.show_current_points !== false) {
-      cols.push({ key: 'current_points', label: 'CUR', width: '0.44fr', numeric: true });
+      cols.push({
+        key: 'current_points',
+        label: 'CUR',
+        width: '0.38fr',
+        numeric: true,
+        emphasis: 'secondary',
+      });
     }
     if (this.config.show_delta !== false) {
-      cols.push({ key: 'delta', label: 'Δ', width: '0.34fr', numeric: true });
+      cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
     }
     return cols;
   }
@@ -4509,6 +5183,15 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     const classes = ['cpt-cell'];
     if (col.numeric) classes.push('numeric');
     if (col.groupStart) classes.push('group-start');
+    if (col.emphasis === 'primary') classes.push('points-primary');
+    if (col.emphasis === 'secondary') classes.push('points-secondary');
+
+    if (
+      row.mask_points
+      && (col.key === 'current_points' || col.key === 'predicted_points' || col.key === 'delta')
+    ) {
+      return html`<div class="${classes.join(' ')}">${row.spoiler_placeholder}</div>`;
+    }
 
     if (col.key === 'logo') {
       return html`
@@ -4536,7 +5219,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       const positionMove = this._getPositionMovement(row.current_position, row.predicted_position);
       return html`
         <div class="${classes.join(' ')} cpt-delta ${deltaClass}">
-          <span class="cpt-delta-wrap">
+          <span class="cpt-delta-pill ${deltaClass}">
             <span>${row.delta_display}</span>
             ${positionMove ? html`
               <span class="cpt-pos-arrow ${positionMove.className}" title="${positionMove.title}">
@@ -4549,19 +5232,61 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     }
 
     let value = '--';
-    if (col.key === 'position') value = row.predicted_position ?? '--';
+    if (col.key === 'position') value = row.display_position ?? '--';
     if (col.key === 'predicted_points') value = row.predicted_points_display;
     if (col.key === 'current_points') value = row.current_points_display;
     return html`<div class="${classes.join(' ')}">${value}</div>`;
   }
 
-  _buildRows(predictions) {
+  _buildCurrentRows(standings, predictionLookup, useLiveRaceBase, showProjection, spoilerBlocked) {
+    const rows = [];
+    standings.forEach((standing) => {
+      if (!standing || typeof standing !== 'object') return;
+      const constructor = standing?.Constructor || {};
+      const displayTeamName = String(constructor?.name || constructor?.constructorId || '').trim() || '--';
+      const standingsPosition = this._parsePosition(standing?.position ?? standing?.positionText);
+      const standingsPoints = this._toNumber(standing?.points);
+      const prediction = useLiveRaceBase
+        ? this._findPredictionEntry(predictionLookup, constructor?.name, constructor?.constructorId)
+        : null;
+      const liveCurrentPosition = prediction?.current_position ?? null;
+      const liveCurrentPoints = prediction?.current_points ?? null;
+      const currentPosition = Number.isFinite(liveCurrentPosition) ? liveCurrentPosition : standingsPosition;
+      const currentPoints = Number.isFinite(liveCurrentPoints) ? liveCurrentPoints : standingsPoints;
+      const predictedPosition = showProjection ? prediction?.predicted_position ?? null : null;
+      const predictedPoints = showProjection ? prediction?.predicted_points ?? null : null;
+      const delta = Number.isFinite(predictedPoints) && Number.isFinite(currentPoints)
+        ? predictedPoints - currentPoints
+        : null;
+
+      rows.push({
+        team_key: String(constructor?.constructorId || displayTeamName).trim(),
+        display_team_name: displayTeamName,
+        display_position: currentPosition,
+        predicted_position: predictedPosition,
+        current_position: currentPosition,
+        team_logo: getTeamLogoMeta(displayTeamName, 28, this.config.team_logo_style),
+        predicted_points: predictedPoints,
+        current_points: currentPoints,
+        delta,
+        mask_points: spoilerBlocked,
+        spoiler_placeholder: this._spoilerPlaceholder(),
+        predicted_points_display: this._formatPoints(predictedPoints),
+        current_points_display: this._formatPoints(currentPoints),
+        delta_display: this._formatDelta(delta),
+      });
+    });
+
+    return this._sortTeamRows(rows, { spoilerBlocked, showProjection });
+  }
+
+  _buildLegacyRows(predictions, spoilerBlocked) {
     const rows = [];
     Object.entries(predictions || {}).forEach(([key, entry]) => {
       if (!entry || typeof entry !== 'object') return;
       const teamKey = String(entry?.TeamKey ?? key).trim();
       const teamName = String(entry?.TeamName ?? '').trim();
-      const displayTeamName = teamName || teamKey || '--';
+      const displayTeamName = teamName || normalizeTeamName(teamKey) || teamKey || '--';
       const predictedPosition = this._parsePosition(entry?.PredictedPosition);
       const currentPosition = this._parsePosition(entry?.CurrentPosition);
       const predictedPoints = this._toNumber(entry?.PredictedPoints);
@@ -4573,41 +5298,45 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       rows.push({
         team_key: teamKey,
         display_team_name: displayTeamName,
+        display_position: predictedPosition,
         predicted_position: predictedPosition,
         current_position: currentPosition,
         team_logo: getTeamLogoMeta(displayTeamName, 28, this.config.team_logo_style),
         predicted_points: predictedPoints,
         current_points: currentPoints,
         delta,
+        mask_points: spoilerBlocked,
+        spoiler_placeholder: this._spoilerPlaceholder(),
         predicted_points_display: this._formatPoints(predictedPoints),
         current_points_display: this._formatPoints(currentPoints),
         delta_display: this._formatDelta(delta),
       });
     });
 
-    rows.sort((a, b) => {
-      if (a.predicted_position !== null && b.predicted_position !== null) {
-        const diff = a.predicted_position - b.predicted_position;
-        if (diff !== 0) return diff;
-      } else if (a.predicted_position !== null) {
-        return -1;
-      } else if (b.predicted_position !== null) {
-        return 1;
-      }
-
-      if (a.current_position !== null && b.current_position !== null) {
-        const diff = a.current_position - b.current_position;
-        if (diff !== 0) return diff;
-      } else if (a.current_position !== null) {
-        return -1;
-      } else if (b.current_position !== null) {
-        return 1;
-      }
-
-      return a.display_team_name.localeCompare(b.display_team_name);
+    return this._sortTeamRows(rows, {
+      spoilerBlocked,
+      showProjection: this.config.show_predicted_points !== false,
     });
+  }
 
-    return rows;
+  _buildPredictionLookup(predictions) {
+    const lookup = new Map();
+    Object.entries(predictions || {}).forEach(([key, entry]) => {
+      if (!entry || typeof entry !== 'object') return;
+      const parsed = {
+        team_key: String(entry?.TeamKey ?? key).trim(),
+        team_name: String(entry?.TeamName ?? '').trim() || normalizeTeamName(entry?.TeamKey ?? key) || null,
+        predicted_position: this._parsePosition(entry?.PredictedPosition),
+        current_position: this._parsePosition(entry?.CurrentPosition),
+        predicted_points: this._toNumber(entry?.PredictedPoints),
+        current_points: this._toNumber(entry?.CurrentPoints),
+      };
+
+      this._teamMatchKeys(entry?.TeamName, entry?.TeamKey).forEach((matchKey) => {
+        if (!lookup.has(matchKey)) lookup.set(matchKey, parsed);
+      });
+    });
+    return lookup;
   }
 
   _applyTopLimit(rows) {
@@ -4621,6 +5350,32 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     const parsed = Number.parseInt(value, 10);
     if (!Number.isFinite(parsed) || parsed < 0) return 0;
     return parsed;
+  }
+
+  _findPredictionEntry(lookup, ...values) {
+    const keys = this._teamMatchKeys(...values);
+    for (const key of keys) {
+      if (lookup?.has?.(key)) return lookup.get(key);
+    }
+    return null;
+  }
+
+  _teamMatchKeys(...values) {
+    const keys = [];
+    values.forEach((value) => {
+      if (!value) return;
+      const text = String(value).trim();
+      if (!text) return;
+      const normalized = normalizeTeamName(text);
+      const lower = text.toLowerCase();
+      const stripped = lower.replace(/[^a-z0-9]/g, '');
+      [normalized ? normalized.toLowerCase() : null, lower, stripped || null].forEach((candidate) => {
+        if (candidate && !keys.includes(candidate)) {
+          keys.push(candidate);
+        }
+      });
+    });
+    return keys;
   }
 
   _parsePosition(value) {
@@ -4653,6 +5408,64 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     return `${sign}${this._formatPoints(abs)}`;
   }
 
+  _spoilerPlaceholder() {
+    const value = String(this.config?.spoiler_placeholder || 'HIDE').trim().toUpperCase();
+    return value || 'HIDE';
+  }
+
+  _sortTeamRows(rows, { spoilerBlocked, showProjection }) {
+    rows.sort((a, b) => {
+      if (spoilerBlocked) {
+        return this._compareTeamIdentity(a, b);
+      }
+
+      const primaryPointsDiff = showProjection
+        ? this._comparePointsDescending(a.predicted_points, b.predicted_points)
+        : this._comparePointsDescending(a.current_points, b.current_points);
+      if (primaryPointsDiff !== 0) return primaryPointsDiff;
+
+      const positionDiff = showProjection
+        ? this._comparePositionAscending(a.predicted_position, b.predicted_position)
+        : this._comparePositionAscending(a.current_position, b.current_position);
+      if (positionDiff !== 0) return positionDiff;
+
+      const fallbackPointsDiff = showProjection
+        ? this._comparePointsDescending(a.current_points, b.current_points)
+        : this._comparePointsDescending(a.predicted_points, b.predicted_points);
+      if (fallbackPointsDiff !== 0) return fallbackPointsDiff;
+
+      return this._compareTeamIdentity(a, b);
+    });
+
+    return rows;
+  }
+
+  _compareTeamIdentity(a, b) {
+    const nameDiff = String(a.display_team_name || '').localeCompare(String(b.display_team_name || ''));
+    if (nameDiff !== 0) return nameDiff;
+    return String(a.team_key || '').localeCompare(String(b.team_key || ''));
+  }
+
+  _comparePointsDescending(a, b) {
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      const diff = b - a;
+      return Math.abs(diff) < 0.0001 ? 0 : diff;
+    }
+    if (Number.isFinite(a)) return -1;
+    if (Number.isFinite(b)) return 1;
+    return 0;
+  }
+
+  _comparePositionAscending(a, b) {
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      const diff = a - b;
+      return diff === 0 ? 0 : diff;
+    }
+    if (Number.isFinite(a)) return -1;
+    if (Number.isFinite(b)) return 1;
+    return 0;
+  }
+
   _getPositionMovement(currentPosition, predictedPosition) {
     if (!Number.isFinite(currentPosition) || !Number.isFinite(predictedPosition)) {
       return null;
@@ -4675,7 +5488,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       this.dispatchEvent(new CustomEvent('hass-more-info', {
         bubbles: true,
         composed: true,
-        detail: { entityId: this.config.entity },
+        detail: { entityId: this._actionEntityId || this.config.current_entity || this.config.entity },
       }));
     }
   }
@@ -4790,11 +5603,19 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      title: 'Championship Prediction Drivers',
+      title: 'Championship Standings Drivers',
+      current_entity: 'sensor.f1_driver_standings',
+      entity: 'sensor.f1_championship_prediction_drivers',
+      drivers_entity: 'sensor.f1_driver_list',
+      session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
+      no_spoiler_entity: 'switch.f1_no_spoiler_mode',
       show_header: true,
+      show_mode_badge: true,
       show_table_header: true,
       show_position: true,
       show_tla: true,
+      show_full_name: false,
       show_team_logo: true,
       team_logo_style: 'color',
       show_predicted_points: true,
@@ -4835,21 +5656,49 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
   _renderDataSourcesTab() {
     return html`
       <div class="section">
-        <div class="section-header">REQUIRED SENSORS</div>
+        <div class="section-header">STANDINGS SOURCE</div>
         ${this._renderEntityPicker(
-          'entity',
-          'Drivers Prediction Sensor',
-          'Provides live championship prediction for drivers',
+          'current_entity',
+          'Current Standings Sensor',
+          'Provides the current championship standings shown as the base result view',
           true,
           'sensor'
         )}
       </div>
       <div class="section">
-        <div class="section-header">OPTIONAL SENSORS</div>
+        <div class="section-header">LIVE RACE SOURCES</div>
+        ${this._renderEntityPicker(
+          'entity',
+          'Prediction Sensor (live race)',
+          'Adds live projected points during an active Race session when available',
+          false,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'session_entity',
+          'Current Session Sensor',
+          'Used to confirm that the current session is a Race before projections are shown',
+          false,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'session_status_entity',
+          'Session Status Sensor',
+          'Used together with the session sensor to confirm live race status',
+          false,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'no_spoiler_entity',
+          'No Spoiler Switch',
+          'Masks points and delta columns when the integration no-spoiler mode is active',
+          false,
+          'switch'
+        )}
         ${this._renderEntityPicker(
           'drivers_entity',
           'Driver List Sensor',
-          'Provides TLA, team names, and team colors when prediction feed is missing identity details',
+          'Provides TLA, team names, and team colors to match prediction data during live race',
           false,
           'sensor'
         )}
@@ -4867,9 +5716,15 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
         ></ha-textfield>
 
         ${this._renderSwitch('show_header', 'Show header')}
+        ${this._renderSwitch('show_mode_badge', 'Show status badge')}
         ${this._renderSwitch('show_table_header', 'Show table header')}
         ${this._renderSwitch('show_position', 'Show position')}
-        ${this._renderSwitch('show_tla', 'Show driver code')}
+        ${this._renderSwitch('show_tla', 'Show driver column')}
+        ${this._renderSwitch(
+          'show_full_name',
+          'Use full driver name',
+          'Shows full driver names instead of TLA when the driver column is visible'
+        )}
         ${this._renderSwitch('show_team_logo', 'Show team logo')}
 
         <ha-select
@@ -4882,9 +5737,17 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
           <mwc-list-item value="white">White</mwc-list-item>
         </ha-select>
 
-        ${this._renderSwitch('show_predicted_points', 'Show predicted points')}
+        ${this._renderSwitch(
+          'show_predicted_points',
+          'Show live projection during race',
+          'Only shown when an active Race session is confirmed and prediction data exists; live current points still follow replay/race timing when available'
+        )}
         ${this._renderSwitch('show_current_points', 'Show current points')}
-        ${this._renderSwitch('show_delta', 'Show points delta')}
+        ${this._renderSwitch(
+          'show_delta',
+          'Show points delta',
+          'Shown only when live projection is visible'
+        )}
 
         <ha-textfield
           .label=${'Top entries to show'}
@@ -5059,8 +5922,14 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      title: 'Championship Prediction Teams',
+      title: 'Championship Standings Teams',
+      current_entity: 'sensor.f1_constructor_standings',
+      entity: 'sensor.f1_championship_prediction_teams',
+      session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
+      no_spoiler_entity: 'switch.f1_no_spoiler_mode',
       show_header: true,
+      show_mode_badge: true,
       show_table_header: true,
       show_position: true,
       show_team_name: true,
@@ -5104,13 +5973,44 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
   _renderDataSourcesTab() {
     return html`
       <div class="section">
-        <div class="section-header">REQUIRED SENSORS</div>
+        <div class="section-header">STANDINGS SOURCE</div>
         ${this._renderEntityPicker(
-          'entity',
-          'Teams Prediction Sensor',
-          'Provides live championship prediction for constructors',
+          'current_entity',
+          'Current Standings Sensor',
+          'Provides the current championship standings shown as the base result view',
           true,
           'sensor'
+        )}
+      </div>
+      <div class="section">
+        <div class="section-header">LIVE RACE SOURCES</div>
+        ${this._renderEntityPicker(
+          'entity',
+          'Prediction Sensor (live race)',
+          'Adds live projected points during an active Race session when available',
+          false,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'session_entity',
+          'Current Session Sensor',
+          'Used to confirm that the current session is a Race before projections are shown',
+          false,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'session_status_entity',
+          'Session Status Sensor',
+          'Used together with the session sensor to confirm live race status',
+          false,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'no_spoiler_entity',
+          'No Spoiler Switch',
+          'Masks points and delta columns when the integration no-spoiler mode is active',
+          false,
+          'switch'
         )}
       </div>
     `;
@@ -5126,6 +6026,7 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
         ></ha-textfield>
 
         ${this._renderSwitch('show_header', 'Show header')}
+        ${this._renderSwitch('show_mode_badge', 'Show status badge')}
         ${this._renderSwitch('show_table_header', 'Show table header')}
         ${this._renderSwitch('show_position', 'Show position')}
         ${this._renderSwitch('show_team_name', 'Show team name')}
@@ -5141,9 +6042,17 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
           <mwc-list-item value="white">White</mwc-list-item>
         </ha-select>
 
-        ${this._renderSwitch('show_predicted_points', 'Show predicted points')}
+        ${this._renderSwitch(
+          'show_predicted_points',
+          'Show live projection during race',
+          'Only shown when an active Race session is confirmed and prediction data exists; live current points still follow replay/race timing when available'
+        )}
         ${this._renderSwitch('show_current_points', 'Show current points')}
-        ${this._renderSwitch('show_delta', 'Show points delta')}
+        ${this._renderSwitch(
+          'show_delta',
+          'Show points delta',
+          'Shown only when live projection is visible'
+        )}
 
         <ha-textfield
           .label=${'Top entries to show'}
@@ -12495,16 +13404,16 @@ window.customCards.push({
 
 window.customCards.push({
   type: 'f1-championship-prediction-drivers-card',
-  name: 'F1 Championship Prediction Drivers',
-  description: 'Live predicted championship standings for drivers',
+  name: 'F1 Championship Standings Drivers',
+  description: 'Current driver championship standings with live race projection overlay',
   configurable: true,
   preview: true,
 });
 
 window.customCards.push({
   type: 'f1-championship-prediction-teams-card',
-  name: 'F1 Championship Prediction Teams',
-  description: 'Live predicted championship standings for constructors',
+  name: 'F1 Championship Standings Teams',
+  description: 'Current constructor championship standings with live race projection overlay',
   configurable: true,
   preview: true,
 });
