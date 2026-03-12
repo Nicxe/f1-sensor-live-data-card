@@ -8182,6 +8182,14 @@ class F1LiveSessionCard extends LitElement {
     const remainingEntity = getEntityStateWithFallback(this.hass, remainingId);
     const elapsedEntity = getEntityStateWithFallback(this.hass, elapsedId);
     const isValid = (e) => e && e.state !== 'unavailable' && e.state !== 'unknown' && e.state;
+    const readClockRunning = (...entities) => {
+      for (const entity of entities) {
+        if (!entity || typeof entity !== 'object') continue;
+        const value = entity.attributes?.clock_running;
+        if (typeof value === 'boolean') return value;
+      }
+      return null;
+    };
 
     const parseHMS = (s) => {
       if (!s) return null;
@@ -8200,9 +8208,10 @@ class F1LiveSessionCard extends LitElement {
 
     const remainingRaw = isValid(remainingEntity) ? remainingEntity.state : null;
     const elapsedRaw = isValid(elapsedEntity) ? elapsedEntity.state : null;
+    const clockRunning = readClockRunning(remainingEntity, elapsedEntity);
 
     // Update snapshot whenever HA pushes new state values
-    const snapshotKey = `${remainingRaw}|${elapsedRaw}`;
+    const snapshotKey = `${remainingRaw}|${elapsedRaw}|${clockRunning}`;
     if (snapshotKey !== this._clockSnapshotKey && (remainingRaw || elapsedRaw)) {
       this._clockSnapshotKey = snapshotKey;
       this._clockSnapshot = {
@@ -8216,6 +8225,13 @@ class F1LiveSessionCard extends LitElement {
       return {
         remaining: formatHMS(parseHMS(remainingRaw)) ?? remainingRaw,
         elapsed: formatHMS(parseHMS(elapsedRaw)) ?? elapsedRaw,
+      };
+    }
+
+    if (clockRunning === false) {
+      return {
+        remaining: formatHMS(this._clockSnapshot.remainingS) ?? remainingRaw,
+        elapsed: formatHMS(this._clockSnapshot.elapsedS) ?? elapsedRaw,
       };
     }
 
@@ -10073,18 +10089,18 @@ class F1QualifyingTimingCard extends LitElement {
     }
 
     .qt-sector.overall-fastest {
-      --sector-bg: rgba(139, 92, 246, 0.28);
-      --sector-text: #d8b4fe;
+      --sector-bg: var(--f1-timing-overall-fastest-bg, rgba(139, 92, 246, 0.28));
+      --sector-text: var(--f1-timing-overall-fastest-text, #d8b4fe);
     }
 
     .qt-sector.personal-fastest {
-      --sector-bg: rgba(34, 197, 94, 0.22);
-      --sector-text: #86efac;
+      --sector-bg: var(--f1-timing-personal-fastest-bg, rgba(34, 197, 94, 0.22));
+      --sector-text: var(--f1-timing-personal-fastest-text, #86efac);
     }
 
     .qt-sector.timed {
-      --sector-bg: rgba(234, 179, 8, 0.18);
-      --sector-text: #fde047;
+      --sector-bg: var(--f1-timing-timed-bg, rgba(234, 179, 8, 0.18));
+      --sector-text: var(--f1-timing-timed-text, #fde047);
     }
 
     .qt-lap {
@@ -10102,18 +10118,24 @@ class F1QualifyingTimingCard extends LitElement {
     }
 
     .qt-lap.overall-fastest {
-      --lap-bg: rgba(139, 92, 246, 0.28);
-      --lap-text: #d8b4fe;
+      --lap-bg: var(--f1-timing-overall-fastest-bg, rgba(139, 92, 246, 0.28));
+      --lap-text: var(--f1-timing-overall-fastest-text, #d8b4fe);
     }
 
     .qt-lap.personal-fastest {
-      --lap-bg: rgba(34, 197, 94, 0.22);
-      --lap-text: #86efac;
+      --lap-bg: var(--f1-timing-personal-fastest-bg, rgba(34, 197, 94, 0.22));
+      --lap-text: var(--f1-timing-personal-fastest-text, #86efac);
     }
 
     .qt-lap.timed {
-      --lap-bg: rgba(234, 179, 8, 0.14);
-      --lap-text: #fde047;
+      --lap-bg: var(--f1-timing-timed-bg, rgba(234, 179, 8, 0.14));
+      --lap-text: var(--f1-timing-timed-text, #fde047);
+    }
+
+    .timing-indicator {
+      font-size: 0.75em;
+      margin-right: 2px;
+      opacity: 0.9;
     }
 
     .qt-empty {
@@ -10149,6 +10171,7 @@ class F1QualifyingTimingCard extends LitElement {
       show_header: true,
       show_table_header: true,
       show_team_logo: true,
+      show_timing_indicators: false,
       team_logo_style: 'color',
       positions_entity: 'sensor.f1_driver_positions',
       tyres_entity: 'sensor.f1_current_tyres',
@@ -10190,6 +10213,29 @@ class F1QualifyingTimingCard extends LitElement {
 
   static getConfigElement() {
     return document.createElement('f1-qualifying-timing-card-editor');
+  }
+
+  _timingColorStyles() {
+    const styles = [];
+    const map = [
+      ['color_overall_fastest', 'overall-fastest'],
+      ['color_personal_fastest', 'personal-fastest'],
+      ['color_timed', 'timed'],
+    ];
+    for (const [key, token] of map) {
+      const c = this.config[key];
+      if (!c) continue;
+      styles.push(`--f1-timing-${token}-text: ${c}`);
+      styles.push(`--f1-timing-${token}-bg: color-mix(in srgb, ${c} 25%, transparent)`);
+    }
+    return styles.join('; ');
+  }
+
+  _timingIndicator(stateClass) {
+    if (!this.config.show_timing_indicators) return null;
+    if (stateClass === 'overall-fastest') return html`<span class="timing-indicator" aria-hidden="true">◆</span>`;
+    if (stateClass === 'personal-fastest') return html`<span class="timing-indicator" aria-hidden="true">●</span>`;
+    return null;
   }
 
   render() {
@@ -10276,9 +10322,11 @@ class F1QualifyingTimingCard extends LitElement {
     const columns = this._columns();
     const gridColumns = columns.map((col) => col.width).join(' ');
 
+    const colorOverrides = this._timingColorStyles();
+
     return html`
       <ha-card>
-        <div class="qt-card">
+        <div class="qt-card" style="${colorOverrides}">
           ${this.config.show_header !== false
             ? html`
               <div class="qt-header-row">
@@ -10410,9 +10458,10 @@ class F1QualifyingTimingCard extends LitElement {
       const personalFastest = row[`sector_${idx}_personal_fastest`];
       const sectorClass = this._sectorClass(overallFastest, personalFastest, time != null);
       const displayTime = time != null ? this._formatSectorTime(time) : '--';
+      const indicator = this._timingIndicator(sectorClass);
       return html`
         <div class="${classes.join(' ')}">
-          <span class="qt-sector ${sectorClass}">${displayTime}</span>
+          <span class="qt-sector ${sectorClass}">${indicator}${displayTime}</span>
         </div>
       `;
     }
@@ -10425,9 +10474,10 @@ class F1QualifyingTimingCard extends LitElement {
           : lastLapTime
             ? 'timed'
             : '';
+      const lapIndicator = this._timingIndicator(lapClass);
       return html`
         <div class="${classes.join(' ')}">
-          <span class="qt-lap ${lapClass}">${lastLapTime || '--:--.---'}</span>
+          <span class="qt-lap ${lapClass}">${lapIndicator}${lastLapTime || '--:--.---'}</span>
         </div>
       `;
     }
@@ -10440,9 +10490,10 @@ class F1QualifyingTimingCard extends LitElement {
         : bestTime
           ? 'timed'
           : '';
+      const qIndicator = this._timingIndicator(lapClass);
       return html`
         <div class="${classes.join(' ')}">
-          <span class="qt-lap ${lapClass}">${bestTime || '--:--.---'}</span>
+          <span class="qt-lap ${lapClass}">${qIndicator}${bestTime || '--:--.---'}</span>
         </div>
       `;
     }
@@ -10892,6 +10943,27 @@ class F1QualifyingTimingCardEditor extends LitElement {
           <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
           <mwc-list-item value="white">White</mwc-list-item>
         </ha-select>
+
+        <div class="section-header">ACCESSIBILITY</div>
+        ${this._renderSwitch('show_timing_indicators', 'Show timing indicators', 'Adds ◆ and ● symbols next to overall fastest and personal best times')}
+        <ha-textfield
+          .label=${'Overall fastest color'}
+          .value=${this._config.color_overall_fastest || ''}
+          @input=${(e) => this._valueChanged('color_overall_fastest', e.target.value || undefined)}
+        ></ha-textfield>
+        <div class="helper">Default: purple. Enter a CSS color, e.g. #0096FF</div>
+        <ha-textfield
+          .label=${'Personal best color'}
+          .value=${this._config.color_personal_fastest || ''}
+          @input=${(e) => this._valueChanged('color_personal_fastest', e.target.value || undefined)}
+        ></ha-textfield>
+        <div class="helper">Default: green. Enter a CSS color, e.g. #00BFFF</div>
+        <ha-textfield
+          .label=${'Timed color'}
+          .value=${this._config.color_timed || ''}
+          @input=${(e) => this._valueChanged('color_timed', e.target.value || undefined)}
+        ></ha-textfield>
+        <div class="helper">Default: yellow. Enter a CSS color, e.g. #FFD700</div>
       </div>
     `;
   }
@@ -11178,18 +11250,24 @@ class F1PracticeTimingCard extends LitElement {
     }
 
     .pt-lap.overall-fastest {
-      --lap-bg: rgba(139, 92, 246, 0.28);
-      --lap-text: #d8b4fe;
+      --lap-bg: var(--f1-timing-overall-fastest-bg, rgba(139, 92, 246, 0.28));
+      --lap-text: var(--f1-timing-overall-fastest-text, #d8b4fe);
     }
 
     .pt-lap.personal-fastest {
-      --lap-bg: rgba(34, 197, 94, 0.22);
-      --lap-text: #86efac;
+      --lap-bg: var(--f1-timing-personal-fastest-bg, rgba(34, 197, 94, 0.22));
+      --lap-text: var(--f1-timing-personal-fastest-text, #86efac);
     }
 
     .pt-lap.timed {
-      --lap-bg: rgba(234, 179, 8, 0.14);
-      --lap-text: #fde047;
+      --lap-bg: var(--f1-timing-timed-bg, rgba(234, 179, 8, 0.14));
+      --lap-text: var(--f1-timing-timed-text, #fde047);
+    }
+
+    .timing-indicator {
+      font-size: 0.75em;
+      margin-right: 2px;
+      opacity: 0.9;
     }
 
     .pt-empty {
@@ -11231,6 +11309,7 @@ class F1PracticeTimingCard extends LitElement {
       show_tyre_age: true,
       show_last_lap: true,
       show_fastest_lap: true,
+      show_timing_indicators: false,
       team_logo_style: 'color',
       positions_entity: 'sensor.f1_driver_positions',
       session_entity: 'sensor.f1_current_session',
@@ -11270,6 +11349,29 @@ class F1PracticeTimingCard extends LitElement {
 
   static getConfigElement() {
     return document.createElement('f1-practice-timing-card-editor');
+  }
+
+  _timingColorStyles() {
+    const styles = [];
+    const map = [
+      ['color_overall_fastest', 'overall-fastest'],
+      ['color_personal_fastest', 'personal-fastest'],
+      ['color_timed', 'timed'],
+    ];
+    for (const [key, token] of map) {
+      const c = this.config[key];
+      if (!c) continue;
+      styles.push(`--f1-timing-${token}-text: ${c}`);
+      styles.push(`--f1-timing-${token}-bg: color-mix(in srgb, ${c} 25%, transparent)`);
+    }
+    return styles.join('; ');
+  }
+
+  _timingIndicator(stateClass) {
+    if (!this.config.show_timing_indicators) return null;
+    if (stateClass === 'overall-fastest') return html`<span class="timing-indicator" aria-hidden="true">◆</span>`;
+    if (stateClass === 'personal-fastest') return html`<span class="timing-indicator" aria-hidden="true">●</span>`;
+    return null;
   }
 
   render() {
@@ -11356,10 +11458,11 @@ class F1PracticeTimingCard extends LitElement {
     const columns = this._columns();
     const gridColumns = columns.map((col) => col.width).join(' ');
     const title = this._buildTitle(sessionState);
+    const colorOverrides = this._timingColorStyles();
 
     return html`
       <ha-card>
-        <div class="pt-card">
+        <div class="pt-card" style="${colorOverrides}">
           ${this.config.show_header !== false
             ? html`
               <div class="pt-header-row">
@@ -11488,9 +11591,10 @@ class F1PracticeTimingCard extends LitElement {
           : row.last_lap
             ? 'timed'
             : '';
+      const indicator = this._timingIndicator(lapClass);
       return html`
         <div class="${classes.join(' ')}">
-          <span class="pt-lap ${lapClass}">${lastLap}</span>
+          <span class="pt-lap ${lapClass}">${indicator}${lastLap}</span>
         </div>
       `;
     }
@@ -11502,9 +11606,10 @@ class F1PracticeTimingCard extends LitElement {
         : row.best_lap
           ? 'personal-fastest'
           : '';
+      const indicator = this._timingIndicator(lapClass);
       return html`
         <div class="${classes.join(' ')}">
-          <span class="pt-lap ${lapClass}">${bestLap}</span>
+          <span class="pt-lap ${lapClass}">${indicator}${bestLap}</span>
         </div>
       `;
     }
@@ -12012,6 +12117,27 @@ class F1PracticeTimingCardEditor extends LitElement {
           <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
           <mwc-list-item value="white">White</mwc-list-item>
         </ha-select>
+
+        <div class="section-header">ACCESSIBILITY</div>
+        ${this._renderSwitch('show_timing_indicators', 'Show timing indicators', 'Adds ◆ and ● symbols next to overall fastest and personal best times')}
+        <ha-textfield
+          .label=${'Overall fastest color'}
+          .value=${this._config.color_overall_fastest || ''}
+          @input=${(e) => this._valueChanged('color_overall_fastest', e.target.value || undefined)}
+        ></ha-textfield>
+        <div class="helper">Default: purple. Enter a CSS color, e.g. #0096FF</div>
+        <ha-textfield
+          .label=${'Personal best color'}
+          .value=${this._config.color_personal_fastest || ''}
+          @input=${(e) => this._valueChanged('color_personal_fastest', e.target.value || undefined)}
+        ></ha-textfield>
+        <div class="helper">Default: green. Enter a CSS color, e.g. #00BFFF</div>
+        <ha-textfield
+          .label=${'Timed color'}
+          .value=${this._config.color_timed || ''}
+          @input=${(e) => this._valueChanged('color_timed', e.target.value || undefined)}
+        ></ha-textfield>
+        <div class="helper">Default: yellow. Enter a CSS color, e.g. #FFD700</div>
       </div>
     `;
   }
@@ -12298,18 +12424,24 @@ class F1RaceLapCard extends LitElement {
     }
 
     .rl-lap.overall-fastest {
-      --lap-bg: rgba(139, 92, 246, 0.28);
-      --lap-text: #d8b4fe;
+      --lap-bg: var(--f1-timing-overall-fastest-bg, rgba(139, 92, 246, 0.28));
+      --lap-text: var(--f1-timing-overall-fastest-text, #d8b4fe);
     }
 
     .rl-lap.personal-fastest {
-      --lap-bg: rgba(34, 197, 94, 0.22);
-      --lap-text: #86efac;
+      --lap-bg: var(--f1-timing-personal-fastest-bg, rgba(34, 197, 94, 0.22));
+      --lap-text: var(--f1-timing-personal-fastest-text, #86efac);
     }
 
     .rl-lap.timed {
-      --lap-bg: rgba(234, 179, 8, 0.14);
-      --lap-text: #fde047;
+      --lap-bg: var(--f1-timing-timed-bg, rgba(234, 179, 8, 0.14));
+      --lap-text: var(--f1-timing-timed-text, #fde047);
+    }
+
+    .timing-indicator {
+      font-size: 0.75em;
+      margin-right: 2px;
+      opacity: 0.9;
     }
 
     .rl-empty {
@@ -12352,6 +12484,7 @@ class F1RaceLapCard extends LitElement {
       show_pit_count: true,
       show_last_lap: true,
       show_fastest_lap: true,
+      show_timing_indicators: false,
       team_logo_style: 'color',
       positions_entity: 'sensor.f1_driver_positions',
       lap_count_entity: 'sensor.f1_race_lap_count',
@@ -12362,6 +12495,29 @@ class F1RaceLapCard extends LitElement {
       pitstops_entity: 'sensor.f1_pitstops',
       ...config,
     };
+  }
+
+  _timingColorStyles() {
+    const styles = [];
+    const map = [
+      ['color_overall_fastest', 'overall-fastest'],
+      ['color_personal_fastest', 'personal-fastest'],
+      ['color_timed', 'timed'],
+    ];
+    for (const [key, token] of map) {
+      const c = this.config[key];
+      if (!c) continue;
+      styles.push(`--f1-timing-${token}-text: ${c}`);
+      styles.push(`--f1-timing-${token}-bg: color-mix(in srgb, ${c} 25%, transparent)`);
+    }
+    return styles.join('; ');
+  }
+
+  _timingIndicator(stateClass) {
+    if (!this.config.show_timing_indicators) return null;
+    if (stateClass === 'overall-fastest') return html`<span class="timing-indicator" aria-hidden="true">◆</span>`;
+    if (stateClass === 'personal-fastest') return html`<span class="timing-indicator" aria-hidden="true">●</span>`;
+    return null;
   }
 
   connectedCallback() {
@@ -12490,10 +12646,11 @@ class F1RaceLapCard extends LitElement {
     const columns = this._columns();
     const gridColumns = columns.map((col) => col.width).join(' ');
     const title = this._buildTitle(lapCountState, positionsState);
+    const colorOverrides = this._timingColorStyles();
 
     return html`
       <ha-card>
-        <div class="rl-card">
+        <div class="rl-card" style="${colorOverrides}">
           ${this.config.show_header !== false
             ? html`
               <div class="rl-header-row">
@@ -12629,9 +12786,10 @@ class F1RaceLapCard extends LitElement {
           : row.last_lap
             ? 'timed'
             : '';
+      const indicator = this._timingIndicator(lapClass);
       return html`
         <div class="${classes.join(' ')}">
-          <span class="rl-lap ${lapClass}">${lastLap}</span>
+          <span class="rl-lap ${lapClass}">${indicator}${lastLap}</span>
         </div>
       `;
     }
@@ -12643,9 +12801,10 @@ class F1RaceLapCard extends LitElement {
         : row.best_lap
           ? 'personal-fastest'
           : '';
+      const indicator = this._timingIndicator(lapClass);
       return html`
         <div class="${classes.join(' ')}">
-          <span class="rl-lap ${lapClass}">${bestLap}</span>
+          <span class="rl-lap ${lapClass}">${indicator}${bestLap}</span>
         </div>
       `;
     }
@@ -13148,6 +13307,27 @@ class F1RaceLapCardEditor extends LitElement {
           <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
           <mwc-list-item value="white">White</mwc-list-item>
         </ha-select>
+
+        <div class="section-header">ACCESSIBILITY</div>
+        ${this._renderSwitch('show_timing_indicators', 'Show timing indicators', 'Adds ◆ and ● symbols next to overall fastest and personal best times')}
+        <ha-textfield
+          .label=${'Overall fastest color'}
+          .value=${this._config.color_overall_fastest || ''}
+          @input=${(e) => this._valueChanged('color_overall_fastest', e.target.value || undefined)}
+        ></ha-textfield>
+        <div class="helper">Default: purple. Enter a CSS color, e.g. #0096FF</div>
+        <ha-textfield
+          .label=${'Personal best color'}
+          .value=${this._config.color_personal_fastest || ''}
+          @input=${(e) => this._valueChanged('color_personal_fastest', e.target.value || undefined)}
+        ></ha-textfield>
+        <div class="helper">Default: green. Enter a CSS color, e.g. #00BFFF</div>
+        <ha-textfield
+          .label=${'Timed color'}
+          .value=${this._config.color_timed || ''}
+          @input=${(e) => this._valueChanged('color_timed', e.target.value || undefined)}
+        ></ha-textfield>
+        <div class="helper">Default: yellow. Enter a CSS color, e.g. #FFD700</div>
       </div>
     `;
   }
