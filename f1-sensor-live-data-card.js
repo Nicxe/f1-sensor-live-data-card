@@ -177,13 +177,6 @@ const getTeamLogoMeta = (team, size = 28, style = 'color') => {
   return { src: whiteUrl, fallback: null };
 };
 
-const getSelectValue = (event) => {
-  if (event?.detail?.value !== undefined) return event.detail.value;
-  if (event?.currentTarget?.value !== undefined) return event.currentTarget.value;
-  if (event?.target?.value !== undefined) return event.target.value;
-  return '';
-};
-
 const handleTeamLogoError = (ev) => {
   const img = ev.target;
   if (!img || !img.dataset) return;
@@ -193,6 +186,34 @@ const handleTeamLogoError = (ev) => {
     return;
   }
   img.style.display = 'none';
+};
+
+const renderEditorSelect = (editor, name, label, options, helper = null) => {
+  const schema = [{
+    name,
+    label,
+    selector: {
+      select: {
+        mode: 'dropdown',
+        options,
+      },
+    },
+  }];
+  const data = {
+    ...editor._config,
+    [name]: editor._config?.[name] ?? options[0]?.value ?? '',
+  };
+
+  return html`
+    <ha-form
+      .hass=${editor.hass}
+      .data=${data}
+      .schema=${schema}
+      .computeLabel=${() => label}
+      @value-changed=${(ev) => editor._formValueChanged(ev)}
+    ></ha-form>
+    ${helper ? html`<div class="helper">${helper}</div>` : ''}
+  `;
 };
 const DELTA_PILL = {
   HARD: 'linear-gradient(135deg, #6b1b6b, #32133e)',
@@ -267,6 +288,79 @@ const hasCollectionEntries = (value) => {
   if (Array.isArray(value)) return value.length > 0;
   if (!value || typeof value !== 'object') return false;
   return Object.keys(value).length > 0;
+};
+
+const normalizeDriverDisplayText = (value) => {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return text || null;
+};
+
+const normalizeDriverCode = (value) => {
+  const text = normalizeDriverDisplayText(value);
+  return text ? text.toUpperCase() : null;
+};
+
+const resolveDriverFullNameFromSource = (source) => {
+  if (!source || typeof source !== 'object') return null;
+
+  const direct = [
+    source.full_name,
+    source.driver_name,
+    source.fullName,
+    source.broadcast_name,
+    source.name,
+  ]
+    .map(normalizeDriverDisplayText)
+    .find(Boolean);
+  if (direct) return direct;
+
+  const first = normalizeDriverDisplayText(
+    source.first_name ?? source.firstName ?? source.given_name ?? source.givenName,
+  );
+  const last = normalizeDriverDisplayText(
+    source.last_name ?? source.lastName ?? source.family_name ?? source.familyName,
+  );
+  if (first || last) {
+    return [first, last].filter(Boolean).join(' ');
+  }
+
+  return null;
+};
+
+const resolveDriverDisplay = (sources, showFullName = false, fallback = '--') => {
+  const candidates = Array.isArray(sources) ? sources : [sources];
+  let tla = null;
+  let fullName = null;
+
+  for (const source of candidates) {
+    if (!tla) {
+      tla = normalizeDriverCode(source?.tla ?? source?.driver_tla ?? source?.code ?? source?.Tla);
+    }
+    if (!fullName) {
+      fullName = resolveDriverFullNameFromSource(source);
+    }
+    if (tla && fullName) break;
+  }
+
+  const canUseFullName = Boolean(
+    fullName && (!tla || normalizeDriverCode(fullName) !== tla),
+  );
+
+  if (showFullName && canUseFullName) {
+    return {
+      label: fullName,
+      tla,
+      full_name: fullName,
+      use_full_name: true,
+    };
+  }
+
+  return {
+    label: tla || fullName || fallback,
+    tla,
+    full_name: fullName,
+    use_full_name: false,
+  };
 };
 
 const isRaceLikeLabel = (value) => String(value || '').trim().toLowerCase() === 'race';
@@ -671,10 +765,12 @@ class F1TyreStatisticsCard extends LitElement {
       justify-content: space-between;
       align-items: center;
       gap: 8px;
-      padding: 6px 8px;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
       background: var(--ts-chip);
-      font-size: clamp(9px, 2.2cqw, 12px);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--ts-muted);
       animation: fadeSlideIn 0.2s ease-out backwards;
     }
@@ -700,8 +796,8 @@ class F1TyreStatisticsCard extends LitElement {
     }
 
     .ts-team-logo {
-      width: 16px;
-      height: 16px;
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
       object-fit: contain;
       filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
     }
@@ -820,6 +916,7 @@ class F1TyreStatisticsCard extends LitElement {
       show_delta: true,
       show_tyre_image: true,
       show_compound_name: true,
+      show_full_name: false,
       show_team_logo: false,
       team_logo_style: 'color',
       drivers_entity: 'sensor.f1_driver_list',
@@ -1119,13 +1216,14 @@ class F1TyreStatisticsCard extends LitElement {
 
   _driverLabel(entry) {
     if (!entry) return '--';
-    const tla = entry?.driver_tla;
-    if (tla) return String(tla).toUpperCase();
-    const name = entry?.driver_name;
-    if (name) return String(name);
+    const resolved = resolveDriverDisplay(
+      [entry],
+      this.config.show_full_name === true,
+      null,
+    );
+    if (resolved.label) return resolved.label;
     const rn = entry?.racing_number;
-    if (rn) return `#${rn}`;
-    return '--';
+    return rn ? `#${rn}` : '--';
   }
 
   _formatDelta(value) {
@@ -1259,6 +1357,10 @@ class F1PitStopOverviewCard extends LitElement {
 
     .ps-card {
       position: relative;
+      display: flex;
+      flex-direction: column;
+      --f1-live-table-stack-gap: 4px;
+      --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
@@ -1287,21 +1389,29 @@ class F1PitStopOverviewCard extends LitElement {
 
     .ps-table {
       display: grid;
-      gap: 6px;
+      gap: var(--f1-live-table-stack-gap, 4px);
+      min-width: max-content;
+      width: max-content;
     }
 
     .ps-row {
       display: grid;
       grid-template-columns: var(--ps-columns);
       align-items: center;
-      column-gap: 4px;
-      padding: 6px 8px;
+      column-gap: 0;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
       background: var(--ts-chip);
-      font-size: clamp(10px, 1.6vw, 11px);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--ts-text);
       animation: fadeSlideIn 0.3s ease-out backwards;
       transition: background 0.2s ease, border-left 0.2s ease;
+    }
+
+    .ps-row:not(.header) {
+      height: var(--f1-live-table-row-height, 34px);
     }
 
     .ps-row.pit-active {
@@ -1328,7 +1438,7 @@ class F1PitStopOverviewCard extends LitElement {
     .ps-row.header {
       background: transparent;
       padding: 4px 6px 2px;
-      font-size: clamp(9px, 1.4vw, 10px);
+      font-size: var(--f1-table-header-font-size, clamp(9px, 1.4vw, 10px));
       text-transform: uppercase;
       letter-spacing: 0.12em;
       color: var(--ts-muted);
@@ -1341,6 +1451,7 @@ class F1PitStopOverviewCard extends LitElement {
       min-width: 0;
       display: flex;
       align-items: center;
+      padding: 0 2px;
     }
 
     .ps-cell.center {
@@ -1363,7 +1474,15 @@ class F1PitStopOverviewCard extends LitElement {
     .ps-tla {
       font-weight: 700;
       letter-spacing: 0.08em;
+      text-transform: uppercase;
       color: var(--driver-color, var(--ts-text));
+    }
+
+    .ps-tla.full-name {
+      letter-spacing: 0.01em;
+      text-transform: none;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-weight: 600;
     }
 
     .ps-tla-wrap {
@@ -1371,19 +1490,18 @@ class F1PitStopOverviewCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
-      flex-wrap: wrap;
-      row-gap: 2px;
+      flex-wrap: nowrap;
     }
 
     .ps-team-logo {
-      width: 16px;
-      height: 16px;
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
       object-fit: contain;
       filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
     }
 
     .ps-status {
-      font-size: 10px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--ts-muted);
@@ -1393,7 +1511,7 @@ class F1PitStopOverviewCard extends LitElement {
       margin-left: 4px;
       font-weight: 600;
       display: inline-block;
-      max-width: 54px;
+      max-width: 72px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -1402,7 +1520,13 @@ class F1PitStopOverviewCard extends LitElement {
     .ps-table[data-layout='medium'] .ps-status-inline,
     .ps-table[data-layout='narrow'] .ps-status-inline {
       max-width: none;
-      white-space: normal;
+      white-space: nowrap;
+    }
+
+    .ps-table[data-layout='medium'],
+    .ps-table[data-layout='narrow'] {
+      min-width: 0;
+      width: 100%;
     }
 
     .ps-status.pit-in {
@@ -1456,7 +1580,7 @@ class F1PitStopOverviewCard extends LitElement {
     }
 
     .ps-tyre-laps {
-      font-size: 9px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 600;
       color: var(--ts-text);
       min-width: 2ch;
@@ -1502,6 +1626,7 @@ class F1PitStopOverviewCard extends LitElement {
       show_header: true,
       show_table_header: true,
       show_tla: true,
+      show_full_name: false,
       show_team_logo: false,
       team_logo_style: 'color',
       show_status: true,
@@ -1628,6 +1753,9 @@ class F1PitStopOverviewCard extends LitElement {
   _columns(rows, layoutMode = 'wide') {
     const compactLayout = layoutMode === 'narrow';
     const mediumLayout = layoutMode === 'medium';
+    const driverWidth = this.config.show_full_name === true
+      ? (compactLayout ? 'minmax(138px, 1.45fr)' : 'minmax(118px, 1.15fr)')
+      : (compactLayout ? 'minmax(114px, 1.22fr)' : 'minmax(100px, 0.98fr)');
     const cols = [];
     const hasLane = Array.isArray(rows)
       ? rows.some((row) => Number.isFinite(row.pit_lane_time_num))
@@ -1637,7 +1765,7 @@ class F1PitStopOverviewCard extends LitElement {
       : false;
     let pitGroupStarted = false;
     if (this.config.show_tla !== false) {
-      cols.push({ key: 'tla', label: 'TLA', width: compactLayout ? 'minmax(92px, 1fr)' : '0.8fr' });
+      cols.push({ key: 'tla', label: 'DRIVER', width: driverWidth });
     }
     if (this.config.show_tyre !== false) {
       cols.push({ key: 'tyre', label: 'TYRES', width: compactLayout ? '0.38fr' : '0.3fr' });
@@ -1726,6 +1854,7 @@ class F1PitStopOverviewCard extends LitElement {
 
   _renderCell(row, col) {
     let value = row[col.key] ?? '--';
+    if (col.key === 'tla') value = row.display_driver || row.tla || '--';
     if (col.key === 'status' && (row[col.key] === '' || row[col.key] == null)) value = '';
     if (col.key === 'tyre' && (row[col.key] === 'UNKNOWN' || row[col.key] === '?' || row[col.key] === null)) {
       value = '-';
@@ -1733,6 +1862,7 @@ class F1PitStopOverviewCard extends LitElement {
     const classes = ['ps-cell'];
     if (col.numeric) classes.push('numeric');
     if (col.key === 'tla') classes.push('ps-tla');
+    if (col.key === 'tla') classes.push(row.use_full_name ? 'full-name' : 'code');
     if (col.key === 'tyre') classes.push('ps-tyre', 'tyre-col');
     if (col.key === 'tyre_laps') classes.push('center');
     if (col.groupStart) classes.push('group-start');
@@ -1852,6 +1982,10 @@ class F1PitStopOverviewCard extends LitElement {
       );
       const teamName = driver?.team || driver?.team_name || tyre?.team || pos?.team || pit?.team;
       const teamLogo = getTeamLogoMeta(teamName, 28, this.config.team_logo_style);
+      const driverDisplay = resolveDriverDisplay(
+        [driver, tyre, pos, pit],
+        this.config.show_full_name === true,
+      );
 
       const pitCount = Number.isFinite(Number(pit?.count))
         ? Number(pit.count)
@@ -1873,7 +2007,9 @@ class F1PitStopOverviewCard extends LitElement {
       return {
         rn,
         position,
-        tla: driver?.tla || tyre?.tla || pit?.tla || '--',
+        tla: driverDisplay.tla || driver?.tla || tyre?.tla || pit?.tla || '--',
+        display_driver: driverDisplay.label,
+        use_full_name: driverDisplay.use_full_name,
         status: statusInfo?.label || '',
         status_key: statusInfo?.key || '',
         retired: statusInfo?.retired === true,
@@ -2109,7 +2245,7 @@ class F1TyreStatisticsCardEditor extends LitElement {
       padding: 4px 0;
     }
 
-    ha-select {
+    ha-form {
       width: 100%;
     }
   `;
@@ -2190,18 +2326,13 @@ class F1TyreStatisticsCardEditor extends LitElement {
         ${this._renderSwitch('show_best_times', 'Show top times')}
         ${this._renderSwitch('show_stats', 'Show stats')}
         ${this._renderSwitch('show_delta', 'Show delta')}
+        ${this._renderSwitch('show_full_name', 'Use full driver name', 'Shows full driver names instead of TLA in top times')}
         ${this._renderSwitch('show_team_logo', 'Show team logos')}
 
-        <ha-select
-          .label=${'Team logo style'}
-          .value=${this._config.team_logo_style || 'color'}
-          @selected=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @change=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @closed=${(e) => e.stopPropagation()}
-        >
-          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
-          <mwc-list-item value="white">White</mwc-list-item>
-        </ha-select>
+        ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
+          { value: 'color', label: 'Color (fallback to white)' },
+          { value: 'white', label: 'White' },
+        ])}
       </div>
     `;
   }
@@ -2352,7 +2483,7 @@ class F1PitStopOverviewCardEditor extends LitElement {
       padding: 4px 0;
     }
 
-    ha-select {
+    ha-form {
       width: 100%;
     }
   `;
@@ -2444,18 +2575,17 @@ class F1PitStopOverviewCardEditor extends LitElement {
         ${this._renderSwitch('show_header', 'Show header')}
         ${this._renderSwitch('show_table_header', 'Show table header')}
         ${this._renderSwitch('show_tla', 'Show TLA', 'Driver codes like VER, HAM')}
+        ${this._renderSwitch(
+          'show_full_name',
+          'Use full driver name',
+          'Shows full driver names instead of TLA when the driver column is visible'
+        )}
         ${this._renderSwitch('show_team_logo', 'Show team logos')}
 
-        <ha-select
-          .label=${'Team logo style'}
-          .value=${this._config.team_logo_style || 'color'}
-          @selected=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @change=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @closed=${(e) => e.stopPropagation()}
-        >
-          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
-          <mwc-list-item value="white">White</mwc-list-item>
-        </ha-select>
+        ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
+          { value: 'color', label: 'Color (fallback to white)' },
+          { value: 'white', label: 'White' },
+        ])}
 
         ${this._renderSwitch('show_status', 'Show status')}
         ${this._renderSwitch('show_tyre', 'Show tyre')}
@@ -2574,6 +2704,8 @@ class F1DriverLapTimesCard extends LitElement {
       position: relative;
       display: flex;
       flex-direction: column;
+      --f1-live-table-stack-gap: 4px;
+      --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
@@ -2602,7 +2734,7 @@ class F1DriverLapTimesCard extends LitElement {
 
     .dl-table {
       display: grid;
-      gap: 6px;
+      gap: var(--f1-live-table-stack-gap, 4px);
       min-width: max-content;
       width: max-content;
     }
@@ -2617,13 +2749,19 @@ class F1DriverLapTimesCard extends LitElement {
       grid-template-columns: var(--dl-columns);
       align-items: center;
       column-gap: 0px;
-      padding: 6px 4px;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
       background: var(--ts-chip);
-      font-size: clamp(10px, 1.6vw, 11px);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--ts-text);
       animation: fadeSlideIn 0.25s ease-out backwards;
       transition: background 0.2s ease, border-left 0.2s ease;
+    }
+
+    .dl-row:not(.header) {
+      height: var(--f1-live-table-row-height, 34px);
     }
 
     .dl-row.fastest-lap {
@@ -2644,7 +2782,7 @@ class F1DriverLapTimesCard extends LitElement {
     .dl-row.header {
       background: transparent;
       padding: 4px 6px 2px;
-      font-size: clamp(9px, 1.4vw, 10px);
+      font-size: var(--f1-table-header-font-size, clamp(9px, 1.4vw, 10px));
       text-transform: uppercase;
       letter-spacing: 0.12em;
       color: var(--ts-muted);
@@ -2732,7 +2870,15 @@ class F1DriverLapTimesCard extends LitElement {
     .dl-tla {
       font-weight: 700;
       letter-spacing: 0.08em;
+      text-transform: uppercase;
       color: var(--driver-color, var(--ts-text));
+    }
+
+    .dl-tla.full-name {
+      letter-spacing: 0.01em;
+      text-transform: none;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-weight: 600;
     }
 
     .dl-tla-wrap {
@@ -2740,12 +2886,11 @@ class F1DriverLapTimesCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
-      flex-wrap: wrap;
-      row-gap: 2px;
+      flex-wrap: nowrap;
     }
 
     .dl-status {
-      font-size: 10px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--ts-muted);
@@ -2755,7 +2900,7 @@ class F1DriverLapTimesCard extends LitElement {
       margin-left: 2px;
       font-weight: 600;
       display: inline-block;
-      max-width: 54px;
+      max-width: 76px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -2780,8 +2925,8 @@ class F1DriverLapTimesCard extends LitElement {
     }
 
     .dl-team-logo {
-      width: 14px;
-      height: 14px;
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
       object-fit: contain;
       filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
     }
@@ -2821,7 +2966,7 @@ class F1DriverLapTimesCard extends LitElement {
     .dl-card[data-layout='medium'] .dl-status-inline,
     .dl-card[data-layout='narrow'] .dl-status-inline {
       max-width: none;
-      white-space: normal;
+      white-space: nowrap;
     }
   `;
 
@@ -2833,6 +2978,7 @@ class F1DriverLapTimesCard extends LitElement {
       show_position: true,
       show_team_logo: true,
       show_tla: true,
+      show_full_name: false,
       show_status: true,
       show_last_lap: true,
       show_best_lap: true,
@@ -2981,6 +3127,9 @@ class F1DriverLapTimesCard extends LitElement {
   _columns(lapNumbers = [], layoutMode = 'wide') {
     const compactLayout = layoutMode !== 'wide';
     const narrowLayout = layoutMode === 'narrow';
+    const driverWidth = this.config.show_full_name === true
+      ? (compactLayout ? 'minmax(146px, 1.52fr)' : 'minmax(126px, 1.18fr)')
+      : (compactLayout ? 'minmax(124px, 1.32fr)' : 'minmax(110px, 1.02fr)');
     const visibleLapNumbers = narrowLayout
       ? []
       : compactLayout
@@ -3004,7 +3153,7 @@ class F1DriverLapTimesCard extends LitElement {
       cols.push({
         key: 'tla',
         label: 'Driver',
-        width: compactLayout ? 'minmax(72px, 1fr)' : '74px',
+        width: driverWidth,
         compact: true,
       });
     }
@@ -3075,6 +3224,7 @@ class F1DriverLapTimesCard extends LitElement {
     if (col.groupStart) classes.push('group-start');
     if (col.compact) classes.push('compact');
     if (col.key === 'tla') classes.push('dl-tla');
+    if (col.key === 'tla') classes.push(row.use_full_name ? 'full-name' : 'code');
     if (col.type === 'lap') classes.push('lap-column');
 
     let style = '';
@@ -3104,7 +3254,7 @@ class F1DriverLapTimesCard extends LitElement {
     if (col.key === 'position') value = row.position ?? '--';
     if (col.key === 'last_lap') value = row.last_lap || '--:--.---';
     if (col.key === 'best_lap') value = row.best_lap || '--:--.---';
-    if (col.key === 'tla') value = row.tla || '--';
+    if (col.key === 'tla') value = row.display_driver || row.tla || '--';
     if (col.type === 'lap') {
       const lapTime = row.laps_by_number?.[col.lap] || '--';
       value = lapTime;
@@ -3152,7 +3302,11 @@ class F1DriverLapTimesCard extends LitElement {
       const teamName = driver?.team || driver?.team_name || pos?.team;
       const teamLogo = getTeamLogoMeta(teamName, 24, this.config.team_logo_style);
       const teamColor = this._normalizeColor(driver?.team_color || pos?.team_color);
-      const tlaValue = driver?.tla || pos?.tla || '--';
+      const driverDisplay = resolveDriverDisplay(
+        [driver, pos],
+        this.config.show_full_name === true,
+      );
+      const tlaValue = driverDisplay.tla || driver?.tla || pos?.tla || '--';
       const tlaKey = String(tlaValue || '').trim().toUpperCase();
 
       const position = this._parsePosition(
@@ -3167,6 +3321,8 @@ class F1DriverLapTimesCard extends LitElement {
         rn,
         position,
         tla: tlaValue,
+        display_driver: driverDisplay.label,
+        use_full_name: driverDisplay.use_full_name,
         status: statusInfo?.label || '',
         status_key: statusInfo?.key || '',
         retired: statusInfo?.retired === true,
@@ -3269,8 +3425,8 @@ class F1DriverLapTimesCard extends LitElement {
     const cardPadding = 28;
     const headerHeight = this.config?.show_header === false ? 0 : 44;
     const tableHeaderHeight = this.config?.show_table_header === false ? 0 : 26;
-    const rowHeight = 32;
-    const rowGap = 6;
+    const rowHeight = 34;
+    const rowGap = 4;
     const totalHeight = cardPadding
       + headerHeight
       + tableHeaderHeight
@@ -3646,7 +3802,7 @@ class F1DriverLapTimesCardEditor extends LitElement {
       padding: 4px 0;
     }
 
-    ha-select {
+    ha-form {
       width: 100%;
     }
   `;
@@ -3723,18 +3879,17 @@ class F1DriverLapTimesCardEditor extends LitElement {
         ${this._renderSwitch('show_position', 'Show position')}
         ${this._renderSwitch('show_team_logo', 'Show team logo')}
 
-        <ha-select
-          .label=${'Team logo style'}
-          .value=${this._config.team_logo_style || 'color'}
-          @selected=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @change=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @closed=${(e) => e.stopPropagation()}
-        >
-          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
-          <mwc-list-item value="white">White</mwc-list-item>
-        </ha-select>
+        ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
+          { value: 'color', label: 'Color (fallback to white)' },
+          { value: 'white', label: 'White' },
+        ])}
 
         ${this._renderSwitch('show_tla', 'Show TLA', 'Driver codes like VER, HAM')}
+        ${this._renderSwitch(
+          'show_full_name',
+          'Use full driver name',
+          'Shows full driver names instead of TLA when the driver column is visible'
+        )}
         ${this._renderSwitch('show_status', 'Show status')}
         ${this._renderSwitch('show_last_lap', 'Show last lap time')}
         ${this._renderSwitch('show_best_lap', 'Show best lap time')}
@@ -3918,7 +4073,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       padding: 5px 10px 4px;
       border-radius: 999px;
       border: 1px solid rgba(255, 255, 255, 0.12);
-      font-size: 9px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 700;
       letter-spacing: 0.14em;
       text-transform: uppercase;
@@ -3966,10 +4121,12 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       grid-template-columns: var(--cpd-columns);
       align-items: center;
       column-gap: 4px;
-      padding: 6px 8px;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
       background: var(--ts-chip);
-      font-size: clamp(10px, 1.6vw, 11px);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--ts-text);
       animation: fadeSlideIn 0.25s ease-out backwards;
       transition: background 0.2s ease;
@@ -3978,7 +4135,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     .cpd-row.header {
       background: transparent;
       padding: 4px 6px 2px;
-      font-size: clamp(9px, 1.4vw, 10px);
+      font-size: var(--f1-table-header-font-size, clamp(9px, 1.4vw, 10px));
       text-transform: uppercase;
       letter-spacing: 0.12em;
       color: var(--ts-muted);
@@ -4014,10 +4171,30 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     }
 
     .cpd-team-logo {
-      width: 14px;
-      height: 14px;
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
       object-fit: contain;
       filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
+    }
+
+    .cpd-driver-image {
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
+      object-fit: contain;
+      filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
+    }
+
+    .cpd-driver-image.headshot {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      object-fit: cover;
+      object-position: center top;
+      filter: none;
+      background: rgba(255, 255, 255, 0.05);
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.12),
+        0 3px 8px rgba(0, 0, 0, 0.35);
     }
 
     .cpd-driver {
@@ -4151,6 +4328,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       show_tla: true,
       show_full_name: false,
       show_team_logo: true,
+      driver_image_type: 'team_logo',
       team_logo_style: 'color',
       show_predicted_points: true,
       show_current_points: true,
@@ -4460,11 +4638,11 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     if (col.key === 'logo') {
       return html`
         <div class="${classes.join(' ')}">
-          ${row.team_logo ? html`
+          ${row.driver_media ? html`
             <img
-              class="cpd-team-logo"
-              src="${row.team_logo.src}"
-              data-fallback="${row.team_logo.fallback || ''}"
+              class="cpd-driver-image ${row.driver_media.kind === 'headshot' ? 'headshot' : 'team-logo'}"
+              src="${row.driver_media.src}"
+              data-fallback="${row.driver_media.fallback || ''}"
               loading="lazy"
               @error=${handleTeamLogoError}
               alt=""
@@ -4546,6 +4724,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
         display_driver: displayDriver,
         identity_sort: displayDriver,
         use_full_name: useFullName,
+        driver_media: this._resolveDriverMedia(identity, teamName),
         team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style),
         team_color: teamColor,
         predicted_points: predictedPoints,
@@ -4593,6 +4772,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
         display_driver: displayDriver,
         identity_sort: displayDriver,
         use_full_name: useFullName,
+        driver_media: this._resolveDriverMedia(identity, teamName),
         team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style),
         team_color: teamColor,
         predicted_points: predictedPoints,
@@ -4661,6 +4841,8 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
           driver?.broadcast_name,
           [driver?.given_name, driver?.family_name].filter(Boolean).join(' '),
         ),
+        headshot_small: this._normalizeMediaUrl(driver?.headshot_small),
+        headshot_large: this._normalizeMediaUrl(driver?.headshot_large),
         team: driver?.team || driver?.team_name,
         team_color: driver?.team_color,
       });
@@ -4676,6 +4858,24 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     return null;
   }
 
+  _resolveDriverMedia(identity, teamName) {
+    const imageType = this.config?.driver_image_type === 'headshot' ? 'headshot' : 'team_logo';
+    const teamLogo = getTeamLogoMeta(teamName, 24, this.config.team_logo_style);
+
+    if (imageType === 'headshot') {
+      const headshot = this._normalizeMediaUrl(identity?.headshot_large, identity?.headshot_small);
+      if (headshot) {
+        return {
+          src: headshot,
+          fallback: teamLogo?.src || teamLogo?.fallback || '',
+          kind: 'headshot',
+        };
+      }
+    }
+
+    return teamLogo ? { ...teamLogo, kind: 'team-logo' } : null;
+  }
+
   _driverColumnWidth(showProjection) {
     if (this.config.show_full_name === true) {
       return showProjection ? '1.02fr' : '1.18fr';
@@ -4686,6 +4886,14 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
   _normalizeDriverName(...values) {
     for (const value of values) {
       const text = String(value || '').replace(/\s+/g, ' ').trim();
+      if (text) return text;
+    }
+    return null;
+  }
+
+  _normalizeMediaUrl(...values) {
+    for (const value of values) {
+      const text = String(value || '').trim();
       if (text) return text;
     }
     return null;
@@ -4955,7 +5163,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       padding: 5px 10px 4px;
       border-radius: 999px;
       border: 1px solid rgba(255, 255, 255, 0.12);
-      font-size: 9px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 700;
       letter-spacing: 0.14em;
       text-transform: uppercase;
@@ -5003,10 +5211,12 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       grid-template-columns: var(--cpt-columns);
       align-items: center;
       column-gap: 4px;
-      padding: 6px 8px;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
       background: var(--ts-chip);
-      font-size: clamp(10px, 1.6vw, 11px);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--ts-text);
       animation: fadeSlideIn 0.25s ease-out backwards;
       transition: background 0.2s ease;
@@ -5015,7 +5225,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     .cpt-row.header {
       background: transparent;
       padding: 4px 6px 2px;
-      font-size: clamp(9px, 1.4vw, 10px);
+      font-size: var(--f1-table-header-font-size, clamp(9px, 1.4vw, 10px));
       text-transform: uppercase;
       letter-spacing: 0.12em;
       color: var(--ts-muted);
@@ -5051,8 +5261,8 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     }
 
     .cpt-team-logo {
-      width: 16px;
-      height: 16px;
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
       object-fit: contain;
       filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
     }
@@ -5861,7 +6071,7 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
       padding: 4px 0;
     }
 
-    ha-select {
+    ha-form {
       width: 100%;
     }
   `;
@@ -5887,6 +6097,7 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
       show_tla: true,
       show_full_name: false,
       show_team_logo: true,
+      driver_image_type: 'team_logo',
       team_logo_style: 'color',
       show_predicted_points: true,
       show_current_points: true,
@@ -5995,18 +6206,30 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
           'Use full driver name',
           'Shows full driver names instead of TLA when the driver column is visible'
         )}
-        ${this._renderSwitch('show_team_logo', 'Show team logo')}
+        ${this._renderSwitch('show_team_logo', 'Show driver image')}
 
-        <ha-select
-          .label=${'Team logo style'}
-          .value=${this._config.team_logo_style || 'color'}
-          @selected=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @change=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @closed=${(e) => e.stopPropagation()}
-        >
-          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
-          <mwc-list-item value="white">White</mwc-list-item>
-        </ha-select>
+        ${this._config.show_team_logo !== false ? html`
+          ${this._renderSelect(
+            'driver_image_type',
+            'Driver image type',
+            [
+              { value: 'team_logo', label: 'Team logo' },
+              { value: 'headshot', label: 'Driver headshot' },
+            ],
+          )}
+          <div class="helper">Headshots come from the driver list sensor and fall back to team logo if unavailable</div>
+        ` : null}
+
+        ${this._config.show_team_logo !== false && (this._config.driver_image_type || 'team_logo') === 'team_logo' ? html`
+          ${this._renderSelect(
+            'team_logo_style',
+            'Team logo style',
+            [
+              { value: 'color', label: 'Color (fallback to white)' },
+              { value: 'white', label: 'White' },
+            ],
+          )}
+        ` : null}
 
         ${this._renderSwitch(
           'show_predicted_points',
@@ -6056,6 +6279,29 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
 
   _renderSwitch(name, label, helper = null) {
     const schema = [{ name, label, selector: { boolean: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _renderSelect(name, label, options, helper = null) {
+    const schema = [{
+      name,
+      label,
+      selector: {
+        select: {
+          mode: 'dropdown',
+          options,
+        },
+      },
+    }];
     return html`
       <ha-form
         .hass=${this.hass}
@@ -6181,7 +6427,7 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
       padding: 4px 0;
     }
 
-    ha-select {
+    ha-form {
       width: 100%;
     }
   `;
@@ -6303,16 +6549,10 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
         ${this._renderSwitch('show_team_name', 'Show team name')}
         ${this._renderSwitch('show_team_logo', 'Show team logo')}
 
-        <ha-select
-          .label=${'Team logo style'}
-          .value=${this._config.team_logo_style || 'color'}
-          @selected=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @change=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @closed=${(e) => e.stopPropagation()}
-        >
-          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
-          <mwc-list-item value="white">White</mwc-list-item>
-        </ha-select>
+        ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
+          { value: 'color', label: 'Color (fallback to white)' },
+          { value: 'white', label: 'White' },
+        ])}
 
         ${this._renderSwitch(
           'show_predicted_points',
@@ -6477,10 +6717,12 @@ class F1InvestigationsCard extends LitElement {
       grid-template-columns: 0.7fr 2.3fr;
       align-items: center;
       column-gap: 8px;
-      padding: 6px 8px;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
       background: var(--ts-chip);
-      font-size: clamp(10px, 1.6vw, 11px);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--ts-text);
       animation: fadeSlideIn 0.25s ease-out backwards;
       transition: background 0.2s ease, border-left 0.2s ease;
@@ -6499,7 +6741,7 @@ class F1InvestigationsCard extends LitElement {
     .inv-row.header {
       background: transparent;
       padding: 4px 6px 2px;
-      font-size: clamp(9px, 1.4vw, 10px);
+      font-size: var(--f1-table-header-font-size, clamp(9px, 1.4vw, 10px));
       text-transform: uppercase;
       letter-spacing: 0.12em;
       color: var(--ts-muted);
@@ -6515,7 +6757,15 @@ class F1InvestigationsCard extends LitElement {
     .inv-tla {
       font-weight: 700;
       letter-spacing: 0.08em;
+      text-transform: uppercase;
       color: var(--driver-color, var(--ts-text));
+    }
+
+    .inv-tla.full-name {
+      letter-spacing: 0.01em;
+      text-transform: none;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-weight: 600;
     }
 
     .inv-tla-wrap {
@@ -6523,13 +6773,12 @@ class F1InvestigationsCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
-      flex-wrap: wrap;
-      row-gap: 2px;
+      flex-wrap: nowrap;
     }
 
     .inv-team-logo {
-      width: 16px;
-      height: 16px;
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
       object-fit: contain;
       filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
     }
@@ -6549,7 +6798,7 @@ class F1InvestigationsCard extends LitElement {
       gap: 4px;
       padding: 4px 8px;
       border-radius: 999px;
-      font-size: 9px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
@@ -6619,6 +6868,7 @@ class F1InvestigationsCard extends LitElement {
       show_header: true,
       show_table_header: true,
       show_team_logo: false,
+      show_full_name: false,
       team_logo_style: 'color',
       show_all_drivers: false,
       investigations_entity: 'sensor.f1_investigations',
@@ -6678,11 +6928,12 @@ class F1InvestigationsCard extends LitElement {
 
     const rows = this._buildRows(invState, drivers, positions);
     const layoutMode = getResponsiveLayoutMode(this);
+    const showFullName = this.config.show_full_name === true;
     const gridTemplate = layoutMode === 'narrow'
       ? 'minmax(0, 1fr)'
       : layoutMode === 'medium'
-        ? 'minmax(0, 0.9fr) minmax(0, 2fr)'
-        : '0.85fr 2.3fr';
+        ? (showFullName ? 'minmax(0, 1.15fr) minmax(0, 1.75fr)' : 'minmax(0, 0.9fr) minmax(0, 2fr)')
+        : (showFullName ? '1.05fr 2.1fr' : '0.85fr 2.3fr');
 
     return html`
       <ha-card>
@@ -6707,7 +6958,7 @@ class F1InvestigationsCard extends LitElement {
                   const rowClass = hasPenalty ? 'has-penalty' : hasActiveInv ? 'under-investigation' : '';
                   return html`
                   <div class="inv-row ${rowClass}" style="grid-template-columns: ${gridTemplate};">
-                <div class="inv-cell inv-tla" style="${row.team_color ? `--driver-color: ${row.team_color};` : ''}">
+                <div class="inv-cell inv-tla ${row.use_full_name ? 'full-name' : 'code'}" style="${row.team_color ? `--driver-color: ${row.team_color};` : ''}">
                   <span class="inv-tla-wrap">
                     ${this.config.show_team_logo && row.team_logo
                       ? html`
@@ -6721,7 +6972,7 @@ class F1InvestigationsCard extends LitElement {
                         />
                       `
                       : null}
-                    ${row.tla}
+                    ${row.display_driver}
                   </span>
                 </div>
                     <div class="inv-cell inv-badges">
@@ -6792,6 +7043,10 @@ class F1InvestigationsCard extends LitElement {
 
       const rn = String(driver?.racing_number ?? '').trim();
       const positionInfo = positionMap.get(rn) || positionMap.get(tla) || {};
+      const driverDisplay = resolveDriverDisplay(
+        [driver, positionInfo],
+        this.config.show_full_name === true,
+      );
       const position = this._parsePosition(
         positionInfo?.current_position ?? positionInfo?.grid_position ?? driver?.position,
       );
@@ -6814,7 +7069,9 @@ class F1InvestigationsCard extends LitElement {
       );
 
       rows.push({
-        tla,
+        tla: driverDisplay.tla || tla,
+        display_driver: driverDisplay.label,
+        use_full_name: driverDisplay.use_full_name,
         team_color: this._normalizeColor(driver?.team_color || positionInfo?.team_color),
         team_logo: getTeamLogoMeta(
           driver?.team || driver?.team_name || positionInfo?.team,
@@ -7089,7 +7346,7 @@ class F1InvestigationsCardEditor extends LitElement {
       padding: 4px 0;
     }
 
-    ha-select {
+    ha-form {
       width: 100%;
     }
   `;
@@ -7173,18 +7430,13 @@ class F1InvestigationsCardEditor extends LitElement {
 
         ${this._renderSwitch('show_header', 'Show header')}
         ${this._renderSwitch('show_table_header', 'Show table header')}
+        ${this._renderSwitch('show_full_name', 'Use full driver name', 'Shows full driver names instead of TLA in the driver column')}
         ${this._renderSwitch('show_team_logo', 'Show team logos')}
 
-        <ha-select
-          .label=${'Team logo style'}
-          .value=${this._config.team_logo_style || 'color'}
-          @selected=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @change=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @closed=${(e) => e.stopPropagation()}
-        >
-          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
-          <mwc-list-item value="white">White</mwc-list-item>
-        </ha-select>
+        ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
+          { value: 'color', label: 'Color (fallback to white)' },
+          { value: 'white', label: 'White' },
+        ])}
 
         ${this._renderSwitch('show_all_drivers', 'Show all drivers')}
       </div>
@@ -7335,10 +7587,12 @@ class F1TrackLimitsCard extends LitElement {
       grid-template-columns: 0.85fr 2.1fr 0.6fr;
       align-items: center;
       column-gap: 8px;
-      padding: 6px 8px;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
       background: var(--ts-chip);
-      font-size: clamp(10px, 1.6vw, 11px);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--ts-text);
       animation: fadeSlideIn 0.25s ease-out backwards;
       transition: background 0.2s ease, border-left 0.2s ease;
@@ -7359,7 +7613,7 @@ class F1TrackLimitsCard extends LitElement {
     .tl-row.header {
       background: transparent;
       padding: 4px 6px 2px;
-      font-size: clamp(9px, 1.4vw, 10px);
+      font-size: var(--f1-table-header-font-size, clamp(9px, 1.4vw, 10px));
       text-transform: uppercase;
       letter-spacing: 0.12em;
       color: var(--ts-muted);
@@ -7375,7 +7629,15 @@ class F1TrackLimitsCard extends LitElement {
     .tl-tla {
       font-weight: 700;
       letter-spacing: 0.08em;
+      text-transform: uppercase;
       color: var(--driver-color, var(--ts-text));
+    }
+
+    .tl-tla.full-name {
+      letter-spacing: 0.01em;
+      text-transform: none;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-weight: 600;
     }
 
     .tl-tla-wrap {
@@ -7383,13 +7645,12 @@ class F1TrackLimitsCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
-      flex-wrap: wrap;
-      row-gap: 2px;
+      flex-wrap: nowrap;
     }
 
     .tl-team-logo {
-      width: 16px;
-      height: 16px;
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
       object-fit: contain;
       filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
     }
@@ -7454,7 +7715,7 @@ class F1TrackLimitsCard extends LitElement {
       gap: 4px;
       padding: 3px 6px;
       border-radius: 999px;
-      font-size: 9px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
@@ -7498,6 +7759,7 @@ class F1TrackLimitsCard extends LitElement {
       show_header: true,
       show_table_header: true,
       show_team_logo: false,
+      show_full_name: false,
       team_logo_style: 'color',
       show_all_drivers: false,
       track_limits_entity: 'sensor.f1_track_limits',
@@ -7557,11 +7819,12 @@ class F1TrackLimitsCard extends LitElement {
 
     const rows = this._buildRows(limitsState, drivers, positions);
     const layoutMode = getResponsiveLayoutMode(this);
+    const showFullName = this.config.show_full_name === true;
     const gridTemplate = layoutMode === 'narrow'
       ? 'minmax(0, 1fr)'
       : layoutMode === 'medium'
-        ? 'minmax(0, 0.8fr) minmax(0, 2fr)'
-        : '0.7fr 2.3fr';
+        ? (showFullName ? 'minmax(0, 1.05fr) minmax(0, 1.85fr)' : 'minmax(0, 0.8fr) minmax(0, 2fr)')
+        : (showFullName ? '0.95fr 2.15fr' : '0.7fr 2.3fr');
 
     return html`
       <ha-card>
@@ -7584,7 +7847,7 @@ class F1TrackLimitsCard extends LitElement {
                   const rowClass = row.hasPenalty ? 'has-penalty' : row.hasWarning ? 'has-warning' : '';
                   return html`
                   <div class="tl-row ${rowClass}" style="grid-template-columns: ${gridTemplate};">
-                <div class="tl-cell tl-tla" style="${row.team_color ? `--driver-color: ${row.team_color};` : ''}">
+                <div class="tl-cell tl-tla ${row.use_full_name ? 'full-name' : 'code'}" style="${row.team_color ? `--driver-color: ${row.team_color};` : ''}">
                   <span class="tl-tla-wrap">
                     ${this.config.show_team_logo && row.team_logo
                       ? html`
@@ -7598,7 +7861,7 @@ class F1TrackLimitsCard extends LitElement {
                         />
                       `
                       : null}
-                    ${row.tla}
+                    ${row.display_driver}
                   </span>
                 </div>
                     <div class="tl-cell tl-badges">
@@ -7649,6 +7912,10 @@ class F1TrackLimitsCard extends LitElement {
 
       const rn = String(driver?.racing_number ?? stats?.racing_number ?? '').trim();
       const positionInfo = positionMap.get(rn) || positionMap.get(tla) || {};
+      const driverDisplay = resolveDriverDisplay(
+        [driver, positionInfo, stats],
+        this.config.show_full_name === true,
+      );
       const position = this._parsePosition(
         positionInfo?.current_position ?? positionInfo?.grid_position ?? driver?.position,
       );
@@ -7663,7 +7930,9 @@ class F1TrackLimitsCard extends LitElement {
       if (!badges.length) badges.push({ label: '--', className: '' });
 
       rows.push({
-        tla,
+        tla: driverDisplay.tla || tla,
+        display_driver: driverDisplay.label,
+        use_full_name: driverDisplay.use_full_name,
         team_color: this._normalizeColor(driver?.team_color || positionInfo?.team_color),
         team_logo: getTeamLogoMeta(
           driver?.team || driver?.team_name || positionInfo?.team,
@@ -7874,7 +8143,7 @@ class F1TrackLimitsCardEditor extends LitElement {
       padding: 4px 0;
     }
 
-    ha-select {
+    ha-form {
       width: 100%;
     }
   `;
@@ -7958,18 +8227,13 @@ class F1TrackLimitsCardEditor extends LitElement {
 
         ${this._renderSwitch('show_header', 'Show header')}
         ${this._renderSwitch('show_table_header', 'Show table header')}
+        ${this._renderSwitch('show_full_name', 'Use full driver name', 'Shows full driver names instead of TLA in the driver column')}
         ${this._renderSwitch('show_team_logo', 'Show team logos')}
 
-        <ha-select
-          .label=${'Team logo style'}
-          .value=${this._config.team_logo_style || 'color'}
-          @selected=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @change=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @closed=${(e) => e.stopPropagation()}
-        >
-          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
-          <mwc-list-item value="white">White</mwc-list-item>
-        </ha-select>
+        ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
+          { value: 'color', label: 'Color (fallback to white)' },
+          { value: 'white', label: 'White' },
+        ])}
 
         ${this._renderSwitch('show_all_drivers', 'Show all drivers')}
       </div>
@@ -9290,7 +9554,7 @@ class F1LiveSessionCardEditor extends LitElement {
       padding: 4px 0;
     }
 
-    ha-select {
+    ha-form {
       width: 100%;
     }
   `;
@@ -9652,7 +9916,7 @@ class F1RaceControlCard extends LitElement {
     }
 
     .rc-queue-indicator {
-      font-size: 9px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 700;
       color: #1a1a1a;
       background: #ffd60a;
@@ -9711,7 +9975,7 @@ class F1RaceControlCard extends LitElement {
     }
 
     .rc-list-count {
-      font-size: 10px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 700;
       letter-spacing: 0.18em;
       text-transform: uppercase;
@@ -9735,7 +9999,7 @@ class F1RaceControlCard extends LitElement {
       border: 1px solid rgba(255, 59, 48, 0.45);
       background: rgba(255, 59, 48, 0.14);
       color: #ff8a84;
-      font-size: 10px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 700;
       letter-spacing: 0.18em;
       text-transform: uppercase;
@@ -9755,7 +10019,7 @@ class F1RaceControlCard extends LitElement {
       border-radius: 10px;
       padding: 7px 12px;
       font: inherit;
-      font-size: 10px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 700;
       letter-spacing: 0.18em;
       text-transform: uppercase;
@@ -9788,7 +10052,7 @@ class F1RaceControlCard extends LitElement {
       border: 1px dashed rgba(255, 255, 255, 0.1);
       color: var(--rc-muted);
       text-align: center;
-      font-size: 12px;
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       letter-spacing: 0.06em;
       text-transform: uppercase;
       background: rgba(255, 255, 255, 0.02);
@@ -9799,10 +10063,10 @@ class F1RaceControlCard extends LitElement {
       position: relative;
       display: grid;
       grid-template-columns: minmax(74px, auto) 1fr;
-      gap: 12px;
-      align-items: start;
-      min-height: 54px;
-      padding: 10px 14px 10px 16px;
+      gap: 10px;
+      align-items: center;
+      min-height: 44px;
+      padding: 8px 14px 8px 16px;
       border-radius: 12px;
       border: 1px solid rgba(255, 255, 255, 0.08);
       background: rgba(255, 255, 255, 0.02);
@@ -9848,9 +10112,9 @@ class F1RaceControlCard extends LitElement {
     .rc-list-meta {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 2px;
       min-width: 0;
-      font-size: 10px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       color: var(--rc-muted);
       text-transform: uppercase;
       letter-spacing: 0.1em;
@@ -9869,13 +10133,13 @@ class F1RaceControlCard extends LitElement {
     .rc-list-content {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 2px;
       min-width: 0;
     }
 
     .rc-list-category {
       color: var(--rc-row-accent);
-      font-size: 11px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 700;
       letter-spacing: 0.16em;
       text-transform: uppercase;
@@ -9883,8 +10147,8 @@ class F1RaceControlCard extends LitElement {
 
     .rc-list-message {
       color: var(--rc-text);
-      font-size: 14px;
-      line-height: 1.35;
+      font-size: 13px;
+      line-height: 1.3;
       font-weight: 600;
       word-break: break-word;
     }
@@ -9892,7 +10156,7 @@ class F1RaceControlCard extends LitElement {
     .rc-list-warning {
       padding: 0 16px 10px;
       color: #ffb4ab;
-      font-size: 11px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       letter-spacing: 0.06em;
       text-transform: uppercase;
     }
@@ -9909,13 +10173,13 @@ class F1RaceControlCard extends LitElement {
 
       .rc-list-row {
         grid-template-columns: 1fr;
-        min-height: 60px;
+        min-height: 48px;
       }
 
       .rc-list-meta {
         flex-direction: row;
         align-items: center;
-        gap: 10px;
+        gap: 8px;
       }
     }
 
@@ -9932,13 +10196,13 @@ class F1RaceControlCard extends LitElement {
 
       .rc-list-row {
         grid-template-columns: 1fr;
-        min-height: 60px;
+        min-height: 48px;
       }
 
       .rc-list-meta {
         flex-direction: row;
         align-items: center;
-        gap: 10px;
+        gap: 8px;
       }
     }
   `;
@@ -10307,12 +10571,12 @@ class F1RaceControlCard extends LitElement {
       ? String(value)
       : `${String(value)}Z`);
     if (Number.isNaN(parsed)) return '--:--:--';
-    return new Date(parsed).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    }).replace(/\./g, ':');
+    const date = new Date(parsed);
+    return [
+      date.getHours(),
+      date.getMinutes(),
+      date.getSeconds(),
+    ].map((part) => String(part).padStart(2, '0')).join(':');
   }
 
   _getListToneClass(item) {
@@ -10843,7 +11107,7 @@ class F1RaceControlCardEditor extends LitElement {
       padding: 4px 0;
     }
 
-    ha-select {
+    ha-form {
       width: 100%;
     }
   `;
@@ -11174,17 +11438,19 @@ class F1QualifyingTimingCard extends LitElement {
       grid-template-columns: var(--qt-columns);
       align-items: center;
       column-gap: 0px;
-      padding: 5px 4px;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
       background: var(--qt-chip);
-      font-size: clamp(10px, 1.6vw, 11px);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--qt-text);
     }
 
     .qt-row.header {
       background: transparent;
       padding: 4px 6px 2px;
-      font-size: clamp(9px, 1.4vw, 10px);
+      font-size: var(--f1-table-header-font-size, clamp(9px, 1.4vw, 10px));
       text-transform: uppercase;
       letter-spacing: 0.12em;
       color: var(--qt-muted);
@@ -11221,7 +11487,15 @@ class F1QualifyingTimingCard extends LitElement {
     .qt-tla {
       font-weight: 700;
       letter-spacing: 0.08em;
+      text-transform: uppercase;
       color: var(--driver-color, var(--qt-text));
+    }
+
+    .qt-tla.full-name {
+      letter-spacing: 0.01em;
+      text-transform: none;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-weight: 600;
     }
 
     .qt-tla-wrap {
@@ -11229,19 +11503,18 @@ class F1QualifyingTimingCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
-      flex-wrap: wrap;
-      row-gap: 2px;
+      flex-wrap: nowrap;
     }
 
     .qt-team-logo {
-      width: 14px;
-      height: 14px;
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
       object-fit: contain;
       filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
     }
 
     .qt-status {
-      font-size: 10px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 600;
       letter-spacing: 0.06em;
       text-transform: uppercase;
@@ -11373,7 +11646,7 @@ class F1QualifyingTimingCard extends LitElement {
 
       .qt-row {
         font-size: 9px;
-        padding: 4px 4px;
+        padding: 5px 6px;
       }
     }
 
@@ -11391,6 +11664,7 @@ class F1QualifyingTimingCard extends LitElement {
       show_header: true,
       show_table_header: true,
       show_team_logo: true,
+      show_full_name: false,
       show_timing_indicators: false,
       team_logo_style: 'color',
       positions_entity: 'sensor.f1_driver_positions',
@@ -11576,11 +11850,12 @@ class F1QualifyingTimingCard extends LitElement {
   }
 
   _columns(layoutMode = 'wide', sessionPart = null) {
+    const showFullName = this.config.show_full_name === true;
     if (layoutMode === 'narrow') {
       return [
         { key: 'position', label: 'P', width: '28px', center: true, compact: true },
         { key: 'logo', label: '', width: '24px', compact: true, hideHeader: true },
-        { key: 'tla', label: 'Driver', width: 'minmax(72px, 1fr)', compact: true },
+        { key: 'tla', label: 'Driver', width: showFullName ? 'minmax(132px, 1.45fr)' : 'minmax(104px, 1.2fr)', compact: true },
         { key: 'last_lap', label: 'LAST', width: '88px', center: true, groupStart: true },
         { key: 'best_session', label: sessionPart ? `Q${sessionPart}` : 'BEST', width: '88px', center: true, groupStart: true },
       ];
@@ -11590,7 +11865,7 @@ class F1QualifyingTimingCard extends LitElement {
       return [
         { key: 'position', label: 'P', width: '28px', center: true, compact: true },
         { key: 'logo', label: '', width: '24px', compact: true, hideHeader: true },
-        { key: 'tla', label: 'Driver', width: 'minmax(76px, 1fr)', compact: true },
+        { key: 'tla', label: 'Driver', width: showFullName ? 'minmax(138px, 1.55fr)' : 'minmax(112px, 1.25fr)', compact: true },
         { key: 'status', label: '', width: '34px', center: true, hideHeader: true },
         { key: 'tyre', label: 'TYR', width: '26px', center: true },
         { key: 'sector_1', label: 'S1', width: '68px', center: true, groupStart: true },
@@ -11604,7 +11879,7 @@ class F1QualifyingTimingCard extends LitElement {
     return [
       { key: 'position', label: 'P', width: '28px', center: true, compact: true },
       { key: 'logo', label: '', width: '24px', compact: true, hideHeader: true },
-      { key: 'tla', label: 'Driver', width: '76px', compact: true },
+      { key: 'tla', label: 'Driver', width: showFullName ? '124px' : '104px', compact: true },
       { key: 'status', label: '', width: '36px', center: true, hideHeader: true },
       { key: 'tyre', label: 'TYR', width: '26px', center: true },
       { key: 'tyre_age', label: 'AGE', width: '28px', center: true },
@@ -11667,8 +11942,8 @@ class F1QualifyingTimingCard extends LitElement {
     if (col.key === 'tla') {
       const style = row.team_color ? `--driver-color: ${row.team_color};` : '';
       return html`
-        <div class="${[...classes, 'qt-tla'].join(' ')}" style="${style}">
-          <span class="qt-tla-wrap">${row.tla || '--'}</span>
+        <div class="${[...classes, 'qt-tla', row.use_full_name ? 'full-name' : 'code'].join(' ')}" style="${style}">
+          <span class="qt-tla-wrap">${row.display_driver || row.tla || '--'}</span>
         </div>
       `;
     }
@@ -11789,6 +12064,34 @@ class F1QualifyingTimingCard extends LitElement {
   _buildRows(positionDrivers, tyresDrivers, driverList, currentQPart) {
     const resolvedQPart = this._normalizeQualifyingPart(currentQPart)
       ?? this._inferQualifyingPartFromDrivers(positionDrivers);
+    const resolveDisplay = typeof resolveDriverDisplay === 'function'
+      ? resolveDriverDisplay
+      : (sources, showFullName = false, fallback = '--') => {
+          const candidates = Array.isArray(sources) ? sources : [sources];
+          let tlaValue = null;
+          let fullName = null;
+          for (const candidate of candidates) {
+            if (!candidate || typeof candidate !== 'object') continue;
+            if (!tlaValue) {
+              const code = String(candidate.tla ?? candidate.driver_tla ?? candidate.code ?? candidate.Tla ?? '').trim().toUpperCase();
+              if (code) tlaValue = code;
+            }
+            if (!fullName) {
+              const name = String(candidate.full_name ?? candidate.driver_name ?? candidate.fullName ?? candidate.broadcast_name ?? candidate.name ?? '').replace(/\s+/g, ' ').trim();
+              if (name) fullName = name;
+            }
+            if (tlaValue && fullName) break;
+          }
+          const useFullName = Boolean(
+            showFullName && fullName && (!tlaValue || fullName.replace(/\s+/g, ' ').trim().toUpperCase() !== tlaValue),
+          );
+          return {
+            label: useFullName ? fullName : tlaValue || fullName || fallback,
+            tla: tlaValue,
+            full_name: fullName,
+            use_full_name: useFullName,
+          };
+        };
 
     const tyreMap = new Map();
     tyresDrivers.forEach((t) => {
@@ -11809,6 +12112,10 @@ class F1QualifyingTimingCard extends LitElement {
       const tla = String(pos?.tla ?? '').trim().toUpperCase();
       const tyre = tyreMap.get(rn);
       const dlEntry = driverListMap.get(rn) || driverListMap.get(tla);
+      const driverDisplay = resolveDisplay(
+        [dlEntry, pos],
+        this.config.show_full_name === true,
+      );
       const teamName = pos?.team || dlEntry?.team;
       const teamLogo = this.config.show_team_logo !== false
         ? getTeamLogoMeta(teamName, 24, this.config.team_logo_style)
@@ -11851,7 +12158,9 @@ class F1QualifyingTimingCard extends LitElement {
 
       return {
         rn,
-        tla: tla || '--',
+        tla: driverDisplay.tla || tla || '--',
+        display_driver: driverDisplay.label,
+        use_full_name: driverDisplay.use_full_name,
         team_color: teamColor,
         team_logo: teamLogo,
         position,
@@ -12126,7 +12435,7 @@ class F1QualifyingTimingCardEditor extends LitElement {
       margin-bottom: 8px;
     }
 
-    ha-select {
+    ha-form {
       width: 100%;
     }
   `;
@@ -12217,18 +12526,17 @@ class F1QualifyingTimingCardEditor extends LitElement {
 
         ${this._renderSwitch('show_header', 'Show header')}
         ${this._renderSwitch('show_table_header', 'Show column headers')}
+        ${this._renderSwitch(
+          'show_full_name',
+          'Use full driver name',
+          'Shows full driver names instead of TLA when the driver column is visible'
+        )}
         ${this._renderSwitch('show_team_logo', 'Show team logo')}
 
-        <ha-select
-          .label=${'Team logo style'}
-          .value=${this._config.team_logo_style || 'color'}
-          @selected=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @change=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @closed=${(e) => e.stopPropagation()}
-        >
-          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
-          <mwc-list-item value="white">White</mwc-list-item>
-        </ha-select>
+        ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
+          { value: 'color', label: 'Color (fallback to white)' },
+          { value: 'white', label: 'White' },
+        ])}
 
         <div class="section-header">ACCESSIBILITY</div>
         ${this._renderSwitch('show_timing_indicators', 'Show timing indicators', 'Adds ◆ and ● symbols next to overall fastest and personal best times')}
@@ -12404,17 +12712,19 @@ class F1PracticeTimingCard extends LitElement {
       grid-template-columns: var(--pt-columns);
       align-items: center;
       column-gap: 0;
-      padding: 5px 4px;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
       background: var(--pt-chip);
-      font-size: clamp(10px, 1.6vw, 11px);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--pt-text);
     }
 
     .pt-row.header {
       background: transparent;
       padding: 4px 6px 2px;
-      font-size: clamp(9px, 1.4vw, 10px);
+      font-size: var(--f1-table-header-font-size, clamp(9px, 1.4vw, 10px));
       text-transform: uppercase;
       letter-spacing: 0.12em;
       color: var(--pt-muted);
@@ -12457,7 +12767,15 @@ class F1PracticeTimingCard extends LitElement {
     .pt-driver {
       font-weight: 700;
       letter-spacing: 0.08em;
+      text-transform: uppercase;
       color: var(--driver-color, var(--pt-text));
+    }
+
+    .pt-driver.full-name {
+      letter-spacing: 0.01em;
+      text-transform: none;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-weight: 600;
     }
 
     .pt-driver-wrap {
@@ -12465,19 +12783,18 @@ class F1PracticeTimingCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
-      flex-wrap: wrap;
-      row-gap: 2px;
+      flex-wrap: nowrap;
     }
 
     .pt-team-logo {
-      width: 14px;
-      height: 14px;
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
       object-fit: contain;
       filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
     }
 
     .pt-status {
-      font-size: 10px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 600;
       letter-spacing: 0.06em;
       text-transform: uppercase;
@@ -12589,7 +12906,7 @@ class F1PracticeTimingCard extends LitElement {
 
       .pt-row {
         font-size: 9px;
-        padding: 4px 4px;
+        padding: 5px 6px;
       }
     }
   `;
@@ -12601,6 +12918,7 @@ class F1PracticeTimingCard extends LitElement {
       show_table_header: true,
       show_position: true,
       show_team_logo: true,
+      show_full_name: false,
       show_status: true,
       show_tyre: true,
       show_tyre_age: true,
@@ -12790,6 +13108,9 @@ class F1PracticeTimingCard extends LitElement {
     const mediumLayout = layoutMode === 'medium';
     const narrowLayout = layoutMode === 'narrow';
     const timingVisible = this.config.show_last_lap !== false || this.config.show_fastest_lap !== false;
+    const driverWidth = this.config.show_full_name === true
+      ? (narrowLayout ? 'minmax(152px, 1.55fr)' : 'minmax(130px, 1.16fr)')
+      : (narrowLayout ? 'minmax(112px, 1.2fr)' : '102px');
     const columns = [];
     if (this.config.show_position !== false) {
       columns.push({ key: 'position', label: 'Pos', width: '34px', center: true, compact: true });
@@ -12797,7 +13118,7 @@ class F1PracticeTimingCard extends LitElement {
     if (this.config.show_team_logo !== false) {
       columns.push({ key: 'logo', label: '', width: '24px', compact: true, hideHeader: true });
     }
-    columns.push({ key: 'driver', label: 'Driver', width: narrowLayout ? 'minmax(84px, 1fr)' : '84px', compact: true });
+    columns.push({ key: 'driver', label: 'Driver', width: driverWidth, compact: true });
     if (this.config.show_tyre !== false && (!narrowLayout || !timingVisible)) {
       columns.push({ key: 'tyre', label: 'Tyre', width: '32px', center: true, groupStart: true });
     }
@@ -12861,9 +13182,9 @@ class F1PracticeTimingCard extends LitElement {
       const statusClasses = ['pt-status'];
       if (row.status_key) statusClasses.push(row.status_key);
       return html`
-        <div class="${[...classes, 'pt-driver'].join(' ')}" style="${style}">
+        <div class="${[...classes, 'pt-driver', row.use_full_name ? 'full-name' : 'code'].join(' ')}" style="${style}">
           <span class="pt-driver-wrap">
-            <span>${row.tla || '--'}</span>
+            <span>${row.display_driver || row.tla || '--'}</span>
             ${this.config.show_status !== false && row.status_label
               ? html`<span class="${statusClasses.join(' ')}">${row.status_label}</span>`
               : null}
@@ -12926,6 +13247,34 @@ class F1PracticeTimingCard extends LitElement {
   }
 
   _buildRows(positionDrivers, tyresDrivers, driverList) {
+    const resolveDisplay = typeof resolveDriverDisplay === 'function'
+      ? resolveDriverDisplay
+      : (sources, showFullName = false, fallback = '--') => {
+          const candidates = Array.isArray(sources) ? sources : [sources];
+          let tlaValue = null;
+          let fullName = null;
+          for (const candidate of candidates) {
+            if (!candidate || typeof candidate !== 'object') continue;
+            if (!tlaValue) {
+              const code = String(candidate.tla ?? candidate.driver_tla ?? candidate.code ?? candidate.Tla ?? '').trim().toUpperCase();
+              if (code) tlaValue = code;
+            }
+            if (!fullName) {
+              const name = String(candidate.full_name ?? candidate.driver_name ?? candidate.fullName ?? candidate.broadcast_name ?? candidate.name ?? '').replace(/\s+/g, ' ').trim();
+              if (name) fullName = name;
+            }
+            if (tlaValue && fullName) break;
+          }
+          const useFullName = Boolean(
+            showFullName && fullName && (!tlaValue || fullName.replace(/\s+/g, ' ').trim().toUpperCase() !== tlaValue),
+          );
+          return {
+            label: useFullName ? fullName : tlaValue || fullName || fallback,
+            tla: tlaValue,
+            full_name: fullName,
+            use_full_name: useFullName,
+          };
+        };
     const tyreMap = new Map();
     tyresDrivers.forEach((driver) => {
       const rn = String(driver?.racing_number ?? '').trim();
@@ -12950,6 +13299,10 @@ class F1PracticeTimingCard extends LitElement {
         ? getTeamLogoMeta(teamName, 24, this.config.team_logo_style)
         : null;
       const teamColor = this._normalizeColor(pos?.team_color || dlEntry?.team_color || tyre?.team_color);
+      const driverDisplay = resolveDisplay(
+        [dlEntry, pos, tyre],
+        this.config.show_full_name === true,
+      );
       const statusInfo = this._statusInfo(pos);
       const compoundKey = this._normalizeCompoundKey(tyre?.compound || tyre?.compound_short);
       const compoundShort = this._compoundDisplayName(compoundKey || tyre?.compound_short);
@@ -12964,7 +13317,9 @@ class F1PracticeTimingCard extends LitElement {
 
       return {
         rn,
-        tla: tla || '--',
+        tla: driverDisplay.tla || tla || '--',
+        display_driver: driverDisplay.label,
+        use_full_name: driverDisplay.use_full_name,
         position,
         team_logo: teamLogo,
         team_color: teamColor,
@@ -13317,7 +13672,7 @@ class F1PracticeTimingCardEditor extends LitElement {
       margin-bottom: 8px;
     }
 
-    ha-select {
+    ha-form {
       width: 100%;
     }
   `;
@@ -13410,22 +13765,17 @@ class F1PracticeTimingCardEditor extends LitElement {
         ${this._renderSwitch('show_table_header', 'Show column headers')}
         ${this._renderSwitch('show_position', 'Show position')}
         ${this._renderSwitch('show_team_logo', 'Show team logo')}
+        ${this._renderSwitch('show_full_name', 'Use full driver name', 'Shows full driver names instead of TLA when the driver column is visible')}
         ${this._renderSwitch('show_status', 'Show inline status')}
         ${this._renderSwitch('show_tyre', 'Show tyre')}
         ${this._renderSwitch('show_tyre_age', 'Show tyre age')}
         ${this._renderSwitch('show_last_lap', 'Show last lap')}
         ${this._renderSwitch('show_fastest_lap', 'Show fastest lap')}
 
-        <ha-select
-          .label=${'Team logo style'}
-          .value=${this._config.team_logo_style || 'color'}
-          @selected=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @change=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @closed=${(e) => e.stopPropagation()}
-        >
-          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
-          <mwc-list-item value="white">White</mwc-list-item>
-        </ha-select>
+        ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
+          { value: 'color', label: 'Color (fallback to white)' },
+          { value: 'white', label: 'White' },
+        ])}
 
         <div class="section-header">ACCESSIBILITY</div>
         ${this._renderSwitch('show_timing_indicators', 'Show timing indicators', 'Adds ◆ and ● symbols next to overall fastest and personal best times')}
@@ -13601,17 +13951,19 @@ class F1RaceLapCard extends LitElement {
       grid-template-columns: var(--rl-columns);
       align-items: center;
       column-gap: 0;
-      padding: 5px 4px;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
       background: var(--rl-chip);
-      font-size: clamp(10px, 1.6vw, 11px);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--rl-text);
     }
 
     .rl-row.header {
       background: transparent;
       padding: 4px 6px 2px;
-      font-size: clamp(9px, 1.4vw, 10px);
+      font-size: var(--f1-table-header-font-size, clamp(9px, 1.4vw, 10px));
       text-transform: uppercase;
       letter-spacing: 0.12em;
       color: var(--rl-muted);
@@ -13654,7 +14006,15 @@ class F1RaceLapCard extends LitElement {
     .rl-driver {
       font-weight: 700;
       letter-spacing: 0.08em;
+      text-transform: uppercase;
       color: var(--driver-color, var(--rl-text));
+    }
+
+    .rl-driver.full-name {
+      letter-spacing: 0.01em;
+      text-transform: none;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-weight: 600;
     }
 
     .rl-driver-wrap {
@@ -13662,19 +14022,18 @@ class F1RaceLapCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
-      flex-wrap: wrap;
-      row-gap: 2px;
+      flex-wrap: nowrap;
     }
 
     .rl-team-logo {
-      width: 14px;
-      height: 14px;
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
       object-fit: contain;
       filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
     }
 
     .rl-status {
-      font-size: 10px;
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 600;
       letter-spacing: 0.06em;
       text-transform: uppercase;
@@ -13786,7 +14145,7 @@ class F1RaceLapCard extends LitElement {
 
       .rl-row {
         font-size: 9px;
-        padding: 4px 4px;
+        padding: 5px 6px;
       }
     }
   `;
@@ -13798,6 +14157,7 @@ class F1RaceLapCard extends LitElement {
       show_table_header: true,
       show_position: true,
       show_team_logo: true,
+      show_full_name: false,
       show_status: true,
       show_tyre: true,
       show_tyre_age: true,
@@ -14000,6 +14360,9 @@ class F1RaceLapCard extends LitElement {
   _columns(layoutMode = 'wide') {
     const mediumLayout = layoutMode === 'medium';
     const narrowLayout = layoutMode === 'narrow';
+    const driverWidth = this.config.show_full_name === true
+      ? (narrowLayout ? 'minmax(152px, 1.55fr)' : 'minmax(132px, 1.18fr)')
+      : (narrowLayout ? 'minmax(112px, 1.2fr)' : '104px');
     const columns = [];
     if (this.config.show_position !== false) {
       columns.push({ key: 'position', label: 'Pos', width: '34px', center: true, compact: true });
@@ -14007,7 +14370,7 @@ class F1RaceLapCard extends LitElement {
     if (this.config.show_team_logo !== false) {
       columns.push({ key: 'logo', label: '', width: '24px', compact: true, hideHeader: true });
     }
-    columns.push({ key: 'driver', label: 'Driver', width: narrowLayout ? 'minmax(84px, 1fr)' : '84px', compact: true });
+    columns.push({ key: 'driver', label: 'Driver', width: driverWidth, compact: true });
     if (this.config.show_tyre !== false && !narrowLayout) {
       columns.push({ key: 'tyre', label: 'Tyre', width: '32px', center: true, groupStart: true });
     }
@@ -14074,9 +14437,9 @@ class F1RaceLapCard extends LitElement {
       const statusClasses = ['rl-status'];
       if (row.status_key) statusClasses.push(row.status_key);
       return html`
-        <div class="${[...classes, 'rl-driver'].join(' ')}" style="${style}">
+        <div class="${[...classes, 'rl-driver', row.use_full_name ? 'full-name' : 'code'].join(' ')}" style="${style}">
           <span class="rl-driver-wrap">
-            <span>${row.tla || '--'}</span>
+            <span>${row.display_driver || row.tla || '--'}</span>
             ${this.config.show_status !== false && row.status_label
               ? html`<span class="${statusClasses.join(' ')}">${row.status_label}</span>`
               : null}
@@ -14177,6 +14540,10 @@ class F1RaceLapCard extends LitElement {
         ? getTeamLogoMeta(teamName, 24, this.config.team_logo_style)
         : null;
       const teamColor = this._normalizeColor(pos?.team_color || dlEntry?.team_color || tyre?.team_color);
+      const driverDisplay = resolveDriverDisplay(
+        [dlEntry, pos, tyre, pit],
+        this.config.show_full_name === true,
+      );
       const statusInfo = this._statusInfo(pos);
       const compoundKey = this._normalizeCompoundKey(tyre?.compound || tyre?.compound_short);
       const compoundShort = this._compoundDisplayName(compoundKey || tyre?.compound_short);
@@ -14198,7 +14565,9 @@ class F1RaceLapCard extends LitElement {
 
       return {
         rn,
-        tla: tla || '--',
+        tla: driverDisplay.tla || tla || '--',
+        display_driver: driverDisplay.label,
+        use_full_name: driverDisplay.use_full_name,
         position,
         team_logo: teamLogo,
         team_color: teamColor,
@@ -14516,7 +14885,7 @@ class F1RaceLapCardEditor extends LitElement {
       margin-bottom: 8px;
     }
 
-    ha-select {
+    ha-form {
       width: 100%;
     }
   `;
@@ -14621,6 +14990,7 @@ class F1RaceLapCardEditor extends LitElement {
         ${this._renderSwitch('show_table_header', 'Show column headers')}
         ${this._renderSwitch('show_position', 'Show position')}
         ${this._renderSwitch('show_team_logo', 'Show team logo')}
+        ${this._renderSwitch('show_full_name', 'Use full driver name', 'Shows full driver names instead of TLA when the driver column is visible')}
         ${this._renderSwitch('show_status', 'Show inline status')}
         ${this._renderSwitch('show_tyre', 'Show tyre')}
         ${this._renderSwitch('show_tyre_age', 'Show tyre age')}
@@ -14628,16 +14998,10 @@ class F1RaceLapCardEditor extends LitElement {
         ${this._renderSwitch('show_last_lap', 'Show last lap')}
         ${this._renderSwitch('show_fastest_lap', 'Show fastest lap')}
 
-        <ha-select
-          .label=${'Team logo style'}
-          .value=${this._config.team_logo_style || 'color'}
-          @selected=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @change=${(e) => this._valueChanged('team_logo_style', getSelectValue(e))}
-          @closed=${(e) => e.stopPropagation()}
-        >
-          <mwc-list-item value="color">Color (fallback to white)</mwc-list-item>
-          <mwc-list-item value="white">White</mwc-list-item>
-        </ha-select>
+        ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
+          { value: 'color', label: 'Color (fallback to white)' },
+          { value: 'white', label: 'White' },
+        ])}
 
         <div class="section-header">ACCESSIBILITY</div>
         ${this._renderSwitch('show_timing_indicators', 'Show timing indicators', 'Adds ◆ and ● symbols next to overall fastest and personal best times')}
