@@ -12200,18 +12200,42 @@ class F1QualifyingTimingCard extends LitElement {
         : null;
       const teamColor = this._normalizeColor(pos?.team_color || dlEntry?.team_color);
 
-      // During an active Q-part, never reuse a previous segment rank for drivers
-      // who have not set a time yet in the current segment.
-      let position = null;
+      const q1Position = pos.q1_position == null || pos.q1_position === ''
+        ? null
+        : this._parsePosition(pos.q1_position);
+      const q2Position = pos.q2_position == null || pos.q2_position === ''
+        ? null
+        : this._parsePosition(pos.q2_position);
+      const q3Position = pos.q3_position == null || pos.q3_position === ''
+        ? null
+        : this._parsePosition(pos.q3_position);
+      const fallbackPosition = this._parsePosition(pos.current_position);
+      let currentSegmentBestLap = null;
+      let activeSegmentPosition = null;
       if (resolvedQPart === 3) {
-        position = pos.q3_position ?? this._parsePosition(pos.current_position);
+        activeSegmentPosition = q3Position;
+        currentSegmentBestLap = pos.q3_time ?? null;
       } else if (resolvedQPart === 2) {
-        position = pos.q2_position ?? this._parsePosition(pos.current_position);
+        activeSegmentPosition = q2Position;
+        currentSegmentBestLap = pos.q2_time ?? null;
       } else if (resolvedQPart === 1) {
-        position = pos.q1_position ?? this._parsePosition(pos.current_position);
+        activeSegmentPosition = q1Position;
+        currentSegmentBestLap = pos.q1_time ?? null;
+      }
+
+      // During an active Q-part, only show current-segment positions.
+      // Drivers without a lap stay below timed drivers instead of borrowing
+      // live timing positions that are not segment ranks.
+      let position = null;
+      let sortPosition = null;
+      if (resolvedQPart !== null) {
+        position = activeSegmentPosition;
+        sortPosition = activeSegmentPosition ?? fallbackPosition;
       } else {
-        const qPos = pos.q3_position ?? pos.q2_position ?? pos.q1_position;
-        position = qPos != null ? qPos : this._parsePosition(pos.current_position);
+        const qPos = q3Position ?? q2Position ?? q1Position;
+        position = qPos != null ? qPos : fallbackPosition;
+        sortPosition = position;
+        currentSegmentBestLap = pos.q3_time ?? pos.q2_time ?? pos.q1_time ?? null;
       }
 
       // Last lap: from laps dict
@@ -12229,12 +12253,6 @@ class F1QualifyingTimingCard extends LitElement {
       const compoundShort = tyre?.compound_short || (compound ? compound[0] : null);
       const compoundColor = tyre?.compound_color || COMPOUND_FALLBACK[compoundKey] || null;
       const tyreAge = tyre?.stint_laps ?? null;
-      const currentSegmentBestLap = resolvedQPart === 3
-        ? (pos.q3_time ?? null)
-        : resolvedQPart === 2
-          ? (pos.q2_time ?? null)
-          : (pos.q1_time ?? null);
-
       return {
         rn,
         tla: driverDisplay.tla || tla || '--',
@@ -12260,6 +12278,7 @@ class F1QualifyingTimingCard extends LitElement {
         sector_3_personal_fastest: pos.sector_3_personal_fastest ?? null,
         last_lap: lastLap,
         current_segment_best_lap: currentSegmentBestLap,
+        sort_position: sortPosition,
         q1_lap: pos.q1_time ?? null,
         q1_lap_position: pos.q1_position ?? null,
         q2_lap: pos.q2_time ?? null,
@@ -12270,6 +12289,17 @@ class F1QualifyingTimingCard extends LitElement {
     });
 
     rows.sort((a, b) => {
+      if (resolvedQPart !== null) {
+        if (a.position !== null && b.position !== null) return a.position - b.position;
+        if (a.position !== null) return -1;
+        if (b.position !== null) return 1;
+        if (a.sort_position !== null && b.sort_position !== null) {
+          return a.sort_position - b.sort_position;
+        }
+        if (a.sort_position !== null) return -1;
+        if (b.sort_position !== null) return 1;
+        return 0;
+      }
       if (a.position !== null && b.position !== null) return a.position - b.position;
       if (a.position !== null) return -1;
       if (b.position !== null) return 1;
