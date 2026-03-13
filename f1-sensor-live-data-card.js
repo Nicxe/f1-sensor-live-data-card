@@ -278,6 +278,84 @@ const getEntityStateWithFallback = (hass, entityId) => {
   return hass.states?.[resolvedId] || null;
 };
 
+const getStateAgeSeconds = (state, field = 'last_changed') => {
+  const rawValue = state?.[field] || state?.last_updated || null;
+  if (!rawValue) return null;
+  const timestamp = new Date(rawValue);
+  if (Number.isNaN(timestamp.getTime())) return null;
+  return Math.max(0, (Date.now() - timestamp.getTime()) / 1000);
+};
+
+const resolveLiveDelaySeconds = (hass, entityIds = []) => {
+  const candidates = new Set(['number.f1_live_delay']);
+  entityIds.forEach((entityId) => {
+    if (typeof entityId !== 'string' || !entityId.includes('.')) return;
+    const [, objectId] = entityId.split('.', 2);
+    if (!objectId) return;
+    [
+      '_session_status',
+      '_current_session',
+      '_driver_positions',
+      '_race_lap_count',
+    ].forEach((suffix) => {
+      if (!objectId.endsWith(suffix)) return;
+      const prefix = objectId.slice(0, -suffix.length);
+      if (prefix) candidates.add(`number.${prefix}_live_delay`);
+    });
+  });
+
+  for (const candidate of candidates) {
+    const state = getEntityStateWithFallback(hass, candidate);
+    const parsed = Number.parseFloat(state?.state);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return Math.round(parsed);
+    }
+  }
+
+  return 0;
+};
+
+const shouldKeepSessionCardVisible = (
+  hass,
+  sessionState,
+  sessionStatusState,
+  labelMatcher,
+  keepAliveStates = [],
+  entityIds = [],
+) => {
+  const state = String(sessionState?.state || '').trim().toLowerCase();
+  if (labelMatcher(state)) {
+    return true;
+  }
+
+  const lastLabel = String(sessionState?.attributes?.last_label || '').trim().toLowerCase();
+  if (!labelMatcher(lastLabel)) {
+    return false;
+  }
+
+  const sessionStatus = String(sessionStatusState?.state || '').trim().toLowerCase();
+  if (keepAliveStates.includes(sessionStatus)) {
+    return true;
+  }
+
+  if (sessionStatus !== 'finished' && sessionStatus !== 'finalised') {
+    return false;
+  }
+
+  const stateAgeSeconds = getStateAgeSeconds(sessionState, 'last_changed');
+  if (stateAgeSeconds === null) {
+    return false;
+  }
+
+  // Keep timing cards around briefly after the session label drops so delayed
+  // broadcasts can still show the finish without stale cards lingering.
+  const graceSeconds = Math.min(
+    300,
+    Math.max(90, resolveLiveDelaySeconds(hass, entityIds) + 15),
+  );
+  return stateAgeSeconds <= graceSeconds;
+};
+
 const asEntityList = (value) => {
   if (Array.isArray(value)) return value;
   if (!value || typeof value !== 'object') return [];
@@ -12256,13 +12334,18 @@ class F1QualifyingTimingCard extends LitElement {
   }
 
   _isQualifyingSession(sessionState, sessionStatusState) {
-    const state = String(sessionState?.state || '').trim().toLowerCase();
-    if (this._isQualifyingLikeLabel(state)) {
-      return true;
-    }
-    const lastLabel = String(sessionState?.attributes?.last_label || '').trim().toLowerCase();
-    const sessionStatus = String(sessionStatusState?.state || '').trim().toLowerCase();
-    return this._isQualifyingLikeLabel(lastLabel) && sessionStatus === 'break';
+    return shouldKeepSessionCardVisible(
+      this.hass,
+      sessionState,
+      sessionStatusState,
+      (label) => this._isQualifyingLikeLabel(label),
+      ['break'],
+      [
+        this.config?.session_entity,
+        this.config?.session_status_entity,
+        this.config?.positions_entity,
+      ],
+    );
   }
 
   _isOverallFastestLap(rowRn, lapTime, fastestLapRn, fastestLapTime, fastestLapTimeSecs) {
@@ -12509,7 +12592,7 @@ class F1QualifyingTimingCardEditor extends LitElement {
         ${this._renderEntityPicker(
           'session_status_entity',
           'Session Status Sensor',
-          'Keeps the card visible during qualifying and sprint qualifying breaks between Q1, Q2, and Q3',
+          'Keeps the card visible during qualifying breaks and for a short delay-aware grace period after the session ends',
           false,
         )}
       </div>
@@ -13406,13 +13489,18 @@ class F1PracticeTimingCard extends LitElement {
   }
 
   _isPracticeSession(sessionState, sessionStatusState) {
-    const state = String(sessionState?.state || '').trim().toLowerCase();
-    if (this._isPracticeLikeLabel(state)) {
-      return true;
-    }
-    const lastLabel = String(sessionState?.attributes?.last_label || '').trim().toLowerCase();
-    const sessionStatus = String(sessionStatusState?.state || '').trim().toLowerCase();
-    return this._isPracticeLikeLabel(lastLabel) && (sessionStatus === 'live' || sessionStatus === 'suspended');
+    return shouldKeepSessionCardVisible(
+      this.hass,
+      sessionState,
+      sessionStatusState,
+      (label) => this._isPracticeLikeLabel(label),
+      ['live', 'suspended'],
+      [
+        this.config?.session_entity,
+        this.config?.session_status_entity,
+        this.config?.positions_entity,
+      ],
+    );
   }
 
   _isPracticeLikeLabel(label) {
@@ -13734,7 +13822,7 @@ class F1PracticeTimingCardEditor extends LitElement {
         ${this._renderEntityPicker(
           'session_status_entity',
           'Session Status Sensor',
-          'Keeps the card visible during practice suspensions when current_session falls back to last_label.',
+          'Keeps the card visible during practice suspensions and for a short delay-aware grace period after the session ends.',
           false,
         )}
         ${this._renderEntityPicker(
@@ -14606,13 +14694,19 @@ class F1RaceLapCard extends LitElement {
   }
 
   _isRaceSession(sessionState, sessionStatusState) {
-    const state = String(sessionState?.state || '').trim().toLowerCase();
-    if (this._isRaceLikeLabel(state)) {
-      return true;
-    }
-    const lastLabel = String(sessionState?.attributes?.last_label || '').trim().toLowerCase();
-    const sessionStatus = String(sessionStatusState?.state || '').trim().toLowerCase();
-    return this._isRaceLikeLabel(lastLabel) && (sessionStatus === 'live' || sessionStatus === 'suspended');
+    return shouldKeepSessionCardVisible(
+      this.hass,
+      sessionState,
+      sessionStatusState,
+      (label) => this._isRaceLikeLabel(label),
+      ['live', 'suspended'],
+      [
+        this.config?.session_entity,
+        this.config?.session_status_entity,
+        this.config?.positions_entity,
+        this.config?.lap_count_entity,
+      ],
+    );
   }
 
   _isRaceLikeLabel(label) {
@@ -14953,7 +15047,7 @@ class F1RaceLapCardEditor extends LitElement {
         ${this._renderEntityPicker(
           'session_status_entity',
           'Session Status Sensor',
-          'Keeps the card visible during race suspensions when current_session falls back to last_label.',
+          'Keeps the card visible during race suspensions and for a short delay-aware grace period after the session ends.',
           false,
         )}
         ${this._renderEntityPicker(
