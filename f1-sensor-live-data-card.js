@@ -12060,9 +12060,7 @@ class F1QualifyingTimingCard extends LitElement {
     if (col.key === 'sector_1' || col.key === 'sector_2' || col.key === 'sector_3') {
       const idx = col.key === 'sector_1' ? 1 : col.key === 'sector_2' ? 2 : 3;
       const time = row[`sector_${idx}`];
-      const overallFastest = row[`sector_${idx}_overall_fastest`];
-      const personalFastest = row[`sector_${idx}_personal_fastest`];
-      const sectorClass = this._sectorClass(overallFastest, personalFastest, time != null);
+      const sectorClass = row[`sector_${idx}_class`] || '';
       const displayTime = time != null ? this._formatSectorTime(time) : '--';
       const indicator = this._timingIndicator(sectorClass);
       return html`
@@ -12267,9 +12265,12 @@ class F1QualifyingTimingCard extends LitElement {
         compound_short: compoundShort,
         compound_color: compoundColor,
         tyre_age: tyreAge,
-        sector_1: pos.sector_1 ?? null,
-        sector_2: pos.sector_2 ?? null,
-        sector_3: pos.sector_3 ?? null,
+        sector_1: pos.best_sector_1 ?? pos.sector_1 ?? null,
+        sector_2: pos.best_sector_2 ?? pos.sector_2 ?? null,
+        sector_3: pos.best_sector_3 ?? pos.sector_3 ?? null,
+        sector_1_source: pos.best_sector_1 != null ? 'best' : (pos.sector_1 != null ? 'current' : null),
+        sector_2_source: pos.best_sector_2 != null ? 'best' : (pos.sector_2 != null ? 'current' : null),
+        sector_3_source: pos.best_sector_3 != null ? 'best' : (pos.sector_3 != null ? 'current' : null),
         sector_1_overall_fastest: pos.sector_1_overall_fastest ?? null,
         sector_1_personal_fastest: pos.sector_1_personal_fastest ?? null,
         sector_2_overall_fastest: pos.sector_2_overall_fastest ?? null,
@@ -12304,6 +12305,38 @@ class F1QualifyingTimingCard extends LitElement {
       if (a.position !== null) return -1;
       if (b.position !== null) return 1;
       return 0;
+    });
+
+    const overallBestSectorTimes = [1, 2, 3].map((idx) => {
+      const times = rows
+        .filter((row) => row[`sector_${idx}_source`] === 'best')
+        .map((row) => row[`sector_${idx}`])
+        .filter((time) => Number.isFinite(time));
+      if (times.length === 0) return null;
+      return Math.min(...times);
+    });
+    rows.forEach((row) => {
+      for (const idx of [1, 2, 3]) {
+        const time = row[`sector_${idx}`];
+        const source = row[`sector_${idx}_source`];
+        if (!Number.isFinite(time)) {
+          row[`sector_${idx}_class`] = '';
+          continue;
+        }
+        if (source === 'best') {
+          const overallFastestTime = overallBestSectorTimes[idx - 1];
+          row[`sector_${idx}_class`] = Number.isFinite(overallFastestTime)
+            && Math.abs(time - overallFastestTime) < 0.001
+            ? 'overall-fastest'
+            : 'personal-fastest';
+          continue;
+        }
+        row[`sector_${idx}_class`] = this._sectorClass(
+          row[`sector_${idx}_overall_fastest`],
+          row[`sector_${idx}_personal_fastest`],
+          true,
+        );
+      }
     });
 
     return rows;
