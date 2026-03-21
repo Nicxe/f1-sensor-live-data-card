@@ -8923,9 +8923,25 @@ class F1LiveSessionCard extends LitElement {
     const elapsedRaw = isValid(elapsedEntity) ? elapsedEntity.state : null;
     const clockRunning = readClockRunning(remainingEntity, elapsedEntity);
 
+    // Clear stale snapshot when both entities become unavailable (session transition)
+    if (!remainingRaw && !elapsedRaw) {
+      this._clockSnapshot = null;
+      this._clockSnapshotKey = null;
+      return { remaining: null, elapsed: null };
+    }
+
+    // Don't show time data before the session has started (idle phase)
+    const clockPhase = remainingEntity?.attributes?.clock_phase
+      || elapsedEntity?.attributes?.clock_phase;
+    if (clockPhase === 'idle') {
+      this._clockSnapshot = null;
+      this._clockSnapshotKey = null;
+      return { remaining: null, elapsed: null };
+    }
+
     // Update snapshot whenever HA pushes new state values
     const snapshotKey = `${remainingRaw}|${elapsedRaw}|${clockRunning}`;
-    if (snapshotKey !== this._clockSnapshotKey && (remainingRaw || elapsedRaw)) {
+    if (snapshotKey !== this._clockSnapshotKey) {
       this._clockSnapshotKey = snapshotKey;
       this._clockSnapshot = {
         remainingS: parseHMS(remainingRaw),
@@ -8951,7 +8967,7 @@ class F1LiveSessionCard extends LitElement {
     const deltaS = Math.round((Date.now() - this._clockSnapshot.ts) / 1000);
     return {
       remaining: this._clockSnapshot.remainingS != null
-        ? formatHMS(this._clockSnapshot.remainingS - deltaS)
+        ? formatHMS(Math.max(0, this._clockSnapshot.remainingS - deltaS))
         : null,
       elapsed: this._clockSnapshot.elapsedS != null
         ? formatHMS(this._clockSnapshot.elapsedS + deltaS)
@@ -8969,6 +8985,29 @@ class F1LiveSessionCard extends LitElement {
   _ensureSessionClockTimer() {
     const wantsTimer = this.config.show_time_remaining || this.config.show_time_elapsed;
     if (!wantsTimer) {
+      this._clearSessionClockTimer();
+      return;
+    }
+    // Only tick when the clock is actively running — when paused or stopped
+    // HA state pushes trigger re-renders, so no local timer is needed.
+    const remainingId = this._configuredEntityId(
+      'session_time_remaining_entity',
+      this._legacyEntityId('session_time_remaining_entity'),
+    );
+    const elapsedId = this._configuredEntityId(
+      'session_time_elapsed_entity',
+      this._legacyEntityId('session_time_elapsed_entity'),
+    );
+    const remainingEntity = getEntityStateWithFallback(this.hass, remainingId);
+    const elapsedEntity = getEntityStateWithFallback(this.hass, elapsedId);
+    let clockRunning = null;
+    for (const entity of [remainingEntity, elapsedEntity]) {
+      if (entity && typeof entity === 'object') {
+        const v = entity.attributes?.clock_running;
+        if (typeof v === 'boolean') { clockRunning = v; break; }
+      }
+    }
+    if (clockRunning === false) {
       this._clearSessionClockTimer();
       return;
     }
@@ -9829,6 +9868,2813 @@ class F1LiveSessionCardEditor extends LitElement {
   _valueChanged(name, value) {
     if (!this._config) return;
     const newConfig = { ...this._config, [name]: value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+}
+
+// ============================================================================
+// F1 Next Race Overview Card
+// ============================================================================
+
+class F1NextRaceCard extends LitElement {
+  static properties = {
+    hass: {},
+    config: {},
+    _historyExpanded: { state: true },
+  };
+
+  constructor() {
+    super();
+    this._countdownTimer = null;
+    this._historyExpanded = false;
+  }
+
+  static styles = css`
+    @keyframes nrPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.74; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    :host {
+      --nr-bg: #0b0b0d;
+      --nr-bg-soft: #131315;
+      --nr-border: rgba(255, 255, 255, 0.08);
+      --nr-panel: rgba(255, 255, 255, 0.04);
+      --nr-panel-soft: rgba(255, 255, 255, 0.025);
+      --nr-text: #f5f5f5;
+      --nr-muted: rgba(255, 255, 255, 0.65);
+      --nr-soft: rgba(255, 255, 255, 0.42);
+      --nr-accent: #e10600;
+      --nr-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+    }
+
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+    }
+
+    .nr-card {
+      position: relative;
+      overflow: hidden;
+      font-family: 'Formula1 Display', 'Titillium Web', Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      gap: clamp(6px, 1vw, 10px);
+      padding: clamp(8px, 1.2vw, 12px) clamp(10px, 1.4vw, 14px);
+      border-radius: var(--ha-card-border-radius, 12px);
+      background:
+        radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.06), transparent 45%),
+        linear-gradient(160deg, var(--nr-bg) 0%, var(--nr-bg-soft) 60%, #0a0a0a 100%);
+      border: 1px solid var(--nr-border);
+      box-shadow: var(--nr-shadow);
+      color: var(--nr-text);
+      container-type: inline-size;
+    }
+
+    .nr-hero {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-width: 0;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .nr-hero-top {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px 12px;
+      align-items: start;
+    }
+
+    .nr-identity {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .nr-header-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .nr-flag {
+      width: clamp(22px, 3.6vw, 30px);
+      border-radius: 2px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+      flex: 0 0 auto;
+    }
+
+    .nr-title-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .nr-title {
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(14px, 2vw, 18px);
+      line-height: 1.06;
+      letter-spacing: 0.02em;
+      text-wrap: balance;
+      margin: 0;
+    }
+
+    .nr-subtitle {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 8px;
+      align-items: center;
+      font-size: clamp(9px, 1.15vw, 11px);
+      color: var(--nr-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .nr-countdown-compact {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: min(188px, 100%);
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .nr-countdown-head,
+    .nr-glance-head,
+    .nr-section-heading,
+    .nr-history-ribbon-head,
+    .nr-mini-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .nr-countdown-inline,
+    .nr-metric-value {
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      line-height: 1.05;
+      white-space: nowrap;
+    }
+
+    .nr-countdown-inline {
+      font-size: clamp(13px, 1.7vw, 17px);
+      letter-spacing: 0.03em;
+    }
+
+    .nr-countdown-meta,
+    .nr-session-sub,
+    .nr-weather-status,
+    .nr-history-sub,
+    .nr-glance-sub,
+    .nr-section-caption {
+      font-size: 9px;
+      color: var(--nr-muted);
+      line-height: 1.3;
+    }
+
+    .nr-countdown-meta {
+      text-align: right;
+    }
+
+    .nr-section-label,
+    .nr-weather-label,
+    .nr-history-label {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--nr-soft);
+    }
+
+    .nr-glance-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .nr-glance-item {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .nr-glance-value {
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--nr-text);
+      word-break: break-word;
+    }
+
+    .nr-panel,
+    .nr-history-ribbon,
+    .nr-history-summary-item,
+    .nr-history-block,
+    .nr-metric-card,
+    .nr-weather-card {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      background: linear-gradient(180deg, var(--nr-panel), var(--nr-panel-soft));
+    }
+
+    .nr-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 8px 9px;
+      min-width: 0;
+    }
+
+    .nr-section-title,
+    .nr-mini-title {
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(10px, 1vw, 11px);
+      letter-spacing: 0.05em;
+      margin: 0;
+      text-transform: uppercase;
+      color: var(--nr-text);
+    }
+
+    .nr-summary-panel {
+      gap: 8px;
+    }
+
+    .nr-summary-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .nr-summary-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .nr-summary-grid {
+      display: grid;
+      gap: 6px 12px;
+      grid-template-columns: repeat(var(--nr-summary-columns, 2), minmax(0, 1fr));
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .nr-summary-countdown {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      padding: 7px 8px 8px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .nr-summary-countdown-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .nr-summary-countdown-value {
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(15px, 2vw, 19px);
+      line-height: 1.05;
+      color: var(--nr-text);
+      white-space: nowrap;
+    }
+
+    .nr-summary-countdown-sub {
+      font-size: 9px;
+      line-height: 1.25;
+      color: var(--nr-muted);
+    }
+
+    .nr-summary-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .nr-summary-cell-head,
+    .nr-summary-term {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+
+    .nr-summary-value {
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--nr-text);
+      word-break: break-word;
+    }
+
+    .nr-summary-sub {
+      font-size: 9px;
+      line-height: 1.25;
+      color: var(--nr-muted);
+    }
+
+    .nr-summary-definition {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .nr-summary-definition-row {
+      display: grid;
+      grid-template-columns: 104px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+    }
+
+    .nr-summary-detail {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      min-width: 0;
+    }
+
+    .nr-schedule-panel {
+      gap: 6px;
+    }
+
+    .nr-schedule-table {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .nr-schedule-head,
+    .nr-schedule-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(78px, 0.9fr) minmax(54px, auto) minmax(54px, auto);
+      align-items: center;
+      column-gap: 8px;
+      min-width: 0;
+    }
+
+    .nr-schedule-head {
+      padding: 0 0 4px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--nr-soft);
+    }
+
+    .nr-schedule-head.track-hidden,
+    .nr-schedule-row.track-hidden {
+      grid-template-columns: minmax(0, 1.65fr) minmax(54px, auto) minmax(82px, auto) auto;
+    }
+
+    .nr-schedule-row {
+      position: relative;
+      padding: 6px 0 6px 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .nr-schedule-row:last-child {
+      border-bottom: none;
+    }
+
+    .nr-schedule-row::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 6px;
+      bottom: 6px;
+      width: 2px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .nr-schedule-row.live::before {
+      background: rgba(225, 6, 0, 0.95);
+    }
+
+    .nr-schedule-row.upcoming::before {
+      background: rgba(245, 158, 11, 0.95);
+    }
+
+    .nr-schedule-cell {
+      min-width: 0;
+      font-size: 10px;
+      color: var(--nr-text);
+    }
+
+    .nr-schedule-cell.session {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-wrap: wrap;
+      font-weight: 700;
+    }
+
+    .nr-schedule-session-name {
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .nr-schedule-cell.date,
+    .nr-schedule-cell.time {
+      color: var(--nr-muted);
+      white-space: nowrap;
+    }
+
+    .nr-schedule-cell.date.compact {
+      text-align: right;
+    }
+
+    .nr-schedule-cell.time {
+      text-align: right;
+    }
+
+    .nr-schedule-cell.time.secondary {
+      color: var(--nr-text);
+      font-weight: 700;
+    }
+
+    .nr-schedule-row-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .nr-schedule-inline-times {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 4px 8px;
+      min-width: 0;
+    }
+
+    .nr-schedule-inline-time {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+      white-space: nowrap;
+    }
+
+    .nr-schedule-inline-time label {
+      font-size: 8px;
+      color: var(--nr-soft);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .nr-schedule-inline-time strong {
+      font-size: 10px;
+      color: var(--nr-text);
+    }
+
+    .nr-schedule-inline-time.secondary strong {
+      color: var(--nr-muted);
+    }
+
+    .nr-schedule-row-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 2px;
+      font-size: 9px;
+      color: var(--nr-muted);
+    }
+
+    .nr-schedule-row-status,
+    .nr-schedule-cell.status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      min-width: 0;
+    }
+
+    .nr-schedule-head-spacer {
+      min-width: 0;
+    }
+
+    .nr-secondary-panel {
+      gap: 6px;
+    }
+
+    .nr-secondary-grid {
+      display: grid;
+      gap: 8px;
+      align-items: start;
+      grid-template-columns: minmax(116px, 0.45fr) minmax(0, 1fr);
+    }
+
+    .nr-secondary-grid.single {
+      grid-template-columns: 1fr;
+    }
+
+    .nr-secondary-map,
+    .nr-secondary-weather {
+      min-width: 0;
+    }
+
+    .nr-secondary-map .nr-map-shell {
+      min-height: 76px;
+    }
+
+    .nr-secondary-map .nr-map-shell img {
+      padding: 8px;
+    }
+
+    .nr-secondary-weather {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(var(--nr-weather-columns, 2), minmax(0, 1fr));
+    }
+
+    .nr-weather-column {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .nr-weather-column-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .nr-weather-column-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .nr-weather-column-copy strong {
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .nr-weather-column-icon {
+      color: var(--nr-muted);
+      --mdc-icon-size: 16px;
+      flex: 0 0 auto;
+    }
+
+    .nr-weather-table {
+      display: grid;
+      gap: 0;
+    }
+
+    .nr-weather-row {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 8px;
+      align-items: baseline;
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .nr-weather-row:last-child {
+      border-bottom: none;
+    }
+
+    .nr-weather-row-label {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--nr-soft);
+    }
+
+    .nr-weather-row-value {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--nr-text);
+      text-align: right;
+      word-break: break-word;
+    }
+
+    .nr-history-ribbon-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .nr-history-ribbon-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .nr-weekend-grid {
+      display: grid;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .nr-weekend-grid.single {
+      grid-template-columns: 1fr;
+    }
+
+    .nr-track-visual,
+    .nr-timeline-wrap,
+    .nr-history-shell {
+      min-width: 0;
+    }
+
+    .nr-track-visual,
+    .nr-history-shell,
+    .nr-history-ribbon,
+    .nr-weather-card,
+    .nr-weather-title,
+    .nr-history-ribbon-title,
+    .nr-history-copy,
+    .nr-rank-copy,
+    .nr-rank-list,
+    .nr-stat-list {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .nr-track-visual,
+    .nr-history-shell,
+    .nr-history-ribbon,
+    .nr-weather-card,
+    .nr-rank-list,
+    .nr-stat-list {
+      gap: 8px;
+    }
+
+    .nr-map-shell {
+      position: relative;
+      min-height: 88px;
+      overflow: hidden;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background:
+        radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.05), transparent 36%),
+        linear-gradient(155deg, #111218 0%, #090a0e 100%);
+      display: grid;
+      place-items: center;
+    }
+
+    .nr-map-shell img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      padding: 10px;
+      filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.35));
+    }
+
+    .nr-map-fallback {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      align-items: flex-start;
+      justify-content: flex-end;
+      width: 100%;
+      height: 100%;
+      padding: 7px 8px;
+      background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.38) 100%);
+    }
+
+    .nr-map-fallback-title {
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(11px, 1.4vw, 14px);
+      line-height: 1;
+      max-width: 14ch;
+      text-wrap: balance;
+    }
+
+    .nr-chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .nr-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--nr-text);
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      white-space: nowrap;
+    }
+
+    .nr-chip.live {
+      color: #ffffff;
+      background: rgba(225, 6, 0, 0.16);
+      border-color: rgba(225, 6, 0, 0.28);
+      animation: nrPulse 1.5s ease-in-out infinite;
+    }
+
+    .nr-chip.next {
+      background: rgba(245, 158, 11, 0.16);
+      border-color: rgba(245, 158, 11, 0.3);
+      color: #ffd79a;
+    }
+
+    .nr-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .nr-session-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 7px;
+      align-items: center;
+      min-width: 0;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .nr-session-row.upcoming {
+      border-color: rgba(245, 158, 11, 0.28);
+      background:
+        linear-gradient(90deg, rgba(245, 158, 11, 0.12), transparent 40%),
+        rgba(255, 255, 255, 0.03);
+    }
+
+    .nr-session-row.live {
+      border-color: rgba(225, 6, 0, 0.28);
+      background:
+        linear-gradient(90deg, rgba(225, 6, 0, 0.12), transparent 42%),
+        rgba(255, 255, 255, 0.04);
+    }
+
+    .nr-session-label-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .nr-session-label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-wrap: wrap;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .nr-session-times {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      align-items: flex-end;
+      text-align: right;
+    }
+
+    .nr-time-line {
+      display: inline-flex;
+      align-items: baseline;
+      justify-content: flex-end;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .nr-time-line span {
+      font-size: 8px;
+      color: var(--nr-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .nr-time-line strong {
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .nr-time-line.secondary strong {
+      font-size: 9px;
+    }
+
+    .nr-weather-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .nr-weather-card {
+      gap: 8px;
+      min-width: 0;
+      padding: 9px 10px;
+    }
+
+    .nr-weather-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .nr-weather-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--nr-text);
+      flex: 0 0 auto;
+    }
+
+    .nr-weather-title {
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .nr-weather-title strong {
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .nr-weather-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 5px;
+    }
+
+    .nr-weather-metric {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .nr-weather-metric:last-child {
+      border-bottom: none;
+    }
+
+    .nr-weather-value {
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+
+    .nr-history-ribbon {
+      min-width: 0;
+      padding: 7px 8px;
+    }
+
+    .nr-history-ribbon-title {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .nr-history-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.045);
+      color: var(--nr-text);
+      font: inherit;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .nr-history-toggle:hover {
+      border-color: rgba(225, 6, 0, 0.32);
+      background: rgba(225, 6, 0, 0.08);
+    }
+
+    .nr-history-toggle:focus-visible {
+      outline: 2px solid rgba(225, 6, 0, 0.5);
+      outline-offset: 2px;
+    }
+
+    .nr-history-summary-grid,
+    .nr-history-top-grid,
+    .nr-history-block-grid,
+    .nr-metrics {
+      display: grid;
+      gap: 8px;
+    }
+
+    .nr-history-summary-item {
+      gap: 3px;
+      min-width: 0;
+      padding: 7px 8px;
+    }
+
+    .nr-history-summary-item .nr-history-value {
+      font-size: 11px;
+    }
+
+    .nr-history-empty {
+      font-size: 10px;
+      color: var(--nr-muted);
+      line-height: 1.4;
+    }
+
+    .nr-history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .nr-history-row {
+      display: flex;
+      align-items: flex-start;
+      min-width: 0;
+      padding: 7px 8px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .nr-history-copy,
+    .nr-rank-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .nr-history-value {
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+
+    .nr-history-block,
+    .nr-metric-card {
+      gap: 6px;
+      min-width: 0;
+      padding: 8px 9px;
+    }
+
+    .nr-rank-row,
+    .nr-stat-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .nr-rank-row:last-child,
+    .nr-stat-row:last-child {
+      border-bottom: none;
+    }
+
+    .nr-rank-pos {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      font-size: 8px;
+      font-weight: 700;
+      flex: 0 0 auto;
+    }
+
+    .nr-rank-row.win .nr-rank-pos {
+      background: rgba(225, 6, 0, 0.18);
+    }
+
+    .nr-rank-copy strong,
+    .nr-stat-row strong {
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--nr-text);
+    }
+
+    .nr-rank-copy span,
+    .nr-stat-row span {
+      font-size: 9px;
+      color: var(--nr-muted);
+    }
+
+    .nr-stat-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .nr-stat-row span {
+      text-align: right;
+    }
+
+    .nr-metric-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: baseline;
+    }
+
+    .nr-metric-value {
+      font-size: clamp(12px, 1.3vw, 14px);
+    }
+
+    .nr-bar {
+      position: relative;
+      height: 5px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .nr-bar > span {
+      position: absolute;
+      inset: 0 auto 0 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #ff4d47, #e10600);
+    }
+
+    .nr-empty {
+      padding: 12px;
+      border-radius: 12px;
+      text-align: center;
+      color: var(--nr-muted);
+      font-size: 11px;
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .nr-unavailable {
+      font-size: clamp(11px, 1.4vw, 13px);
+      color: var(--nr-muted);
+      padding: clamp(14px, 2.2vw, 18px);
+      text-align: center;
+    }
+
+    .nr-card[data-layout='wide'] .nr-glance-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .nr-card[data-layout='medium'] .nr-summary-grid {
+      column-gap: 8px;
+    }
+
+    .nr-card[data-layout='medium'] .nr-secondary-grid,
+    .nr-card[data-layout='narrow'] .nr-secondary-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .nr-card[data-layout='narrow'] .nr-secondary-weather,
+    .nr-card[data-layout='narrow'] .nr-history-ribbon-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .nr-card[data-layout='medium'] .nr-glance-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .nr-card[data-layout='narrow'] .nr-glance-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .nr-card[data-layout='wide'] .nr-weekend-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(160px, 0.52fr);
+    }
+
+    .nr-card[data-layout='medium'] .nr-weekend-grid,
+    .nr-card[data-layout='narrow'] .nr-weekend-grid,
+    .nr-card[data-layout='medium'] .nr-history-top-grid,
+    .nr-card[data-layout='narrow'] .nr-history-top-grid,
+    .nr-card[data-layout='medium'] .nr-history-block-grid,
+    .nr-card[data-layout='narrow'] .nr-history-block-grid,
+    .nr-card[data-layout='medium'] .nr-metrics,
+    .nr-card[data-layout='narrow'] .nr-metrics {
+      grid-template-columns: 1fr;
+    }
+
+    .nr-card[data-layout='wide'] .nr-weather-grid,
+    .nr-card[data-layout='medium'] .nr-weather-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .nr-card[data-layout='narrow'] .nr-weather-grid,
+    .nr-card[data-layout='narrow'] .nr-weather-metrics,
+    .nr-card[data-layout='narrow'] .nr-history-summary-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .nr-card[data-layout='wide'] .nr-history-summary-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .nr-card[data-layout='medium'] .nr-history-summary-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .nr-card[data-layout='narrow'] {
+      padding: 8px 9px;
+    }
+
+    .nr-card[data-layout='narrow'] .nr-hero-top {
+      grid-template-columns: 1fr;
+    }
+
+    .nr-card[data-layout='narrow'] .nr-summary-header {
+      align-items: flex-start;
+    }
+
+    .nr-card[data-layout='narrow'] .nr-summary-definition-row {
+      grid-template-columns: 104px minmax(0, 1fr);
+    }
+
+    .nr-card[data-layout='narrow'] .nr-summary-countdown-value {
+      white-space: normal;
+      text-wrap: balance;
+    }
+
+    .nr-card[data-layout='narrow'] .nr-countdown-compact {
+      min-width: 0;
+      align-items: flex-start;
+    }
+
+    .nr-card[data-layout='narrow'] .nr-countdown-meta {
+      text-align: left;
+    }
+
+    .nr-card[data-layout='narrow'] .nr-session-row {
+      grid-template-columns: 1fr;
+      align-items: flex-start;
+    }
+
+    .nr-card[data-layout='narrow'] .nr-session-times,
+    .nr-card[data-layout='narrow'] .nr-time-line {
+      align-items: flex-start;
+      justify-content: flex-start;
+      text-align: left;
+    }
+
+    .nr-card[data-layout='medium'] .nr-map-shell {
+      min-height: 72px;
+    }
+
+    .nr-card[data-layout='narrow'] .nr-map-shell {
+      min-height: 64px;
+    }
+
+    .nr-card[data-layout='narrow'] .nr-history-ribbon-head {
+      align-items: flex-start;
+    }
+
+    .nr-card[data-layout='narrow'] .nr-stat-row {
+      grid-template-columns: 1fr;
+      gap: 2px;
+    }
+
+    .nr-card[data-layout='narrow'] .nr-stat-row span {
+      text-align: left;
+    }
+  `;
+
+  connectedCallback() {
+    super.connectedCallback();
+    ensureF1Fonts();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._clearCountdownTimer();
+  }
+
+  updated(changedProps) {
+    if (changedProps?.has('_historyExpanded')) {
+      Promise.resolve(this.updateComplete)
+        .then(() => updateSectionsHeight(this))
+        .catch(() => {});
+    }
+  }
+
+  setConfig(config) {
+    this.config = {
+      next_race_entity: 'sensor.f1_next_race',
+      weather_entity: 'sensor.f1_weather',
+      track_weather_entity: 'sensor.f1_track_weather',
+      current_session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
+      show_header: true,
+      show_countdown: true,
+      show_overview: true,
+      show_schedule: true,
+      show_track_time: true,
+      show_map: true,
+      show_weather: true,
+      show_history: true,
+      prefer_live_weather: true,
+      ...config,
+    };
+  }
+
+  static getConfigElement() {
+    return document.createElement('f1-next-race-card-editor');
+  }
+
+  static getStubConfig() {
+    return {
+      type: 'custom:f1-next-race-card',
+      next_race_entity: 'sensor.f1_next_race',
+      weather_entity: 'sensor.f1_weather',
+      track_weather_entity: 'sensor.f1_track_weather',
+      current_session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
+      show_header: true,
+      show_countdown: true,
+      show_overview: true,
+      show_schedule: true,
+      show_track_time: true,
+      show_map: true,
+      show_weather: true,
+      show_history: true,
+      prefer_live_weather: true,
+    };
+  }
+
+  getCardSize() {
+    return 4;
+  }
+
+  getGridOptions() {
+    return {
+      columns: 12,
+      min_columns: 6,
+      max_columns: 12,
+      min_rows: 4,
+    };
+  }
+
+  _responsiveLayoutBreakpoints() {
+    return {
+      narrow: 560,
+      medium: 920,
+    };
+  }
+
+  _configuredEntityId(key, legacyDefault = null) {
+    if (!this.config || typeof this.config !== 'object') return legacyDefault;
+    const hasKey = Object.prototype.hasOwnProperty.call(this.config, key);
+    const value = this.config[key];
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) return trimmed;
+      return hasKey ? null : legacyDefault;
+    }
+    if (value != null) return value;
+    return hasKey ? null : legacyDefault;
+  }
+
+  _legacyEntityId(key) {
+    const defaults = {
+      next_race_entity: 'sensor.f1_next_race',
+      weather_entity: 'sensor.f1_weather',
+      track_weather_entity: 'sensor.f1_track_weather',
+      current_session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
+    };
+    return defaults[key] ?? null;
+  }
+
+  _getEntityState(key) {
+    const entityId = this._configuredEntityId(key, this._legacyEntityId(key));
+    if (!entityId) return null;
+    const entity = getEntityStateWithFallback(this.hass, entityId);
+    if (!entity || entity.state === 'unavailable' || entity.state === 'unknown') {
+      return null;
+    }
+    return entity;
+  }
+
+  _getNextRaceData() {
+    const entity = this._getEntityState('next_race_entity');
+    if (!entity) return null;
+    return { state: entity.state, ...entity.attributes };
+  }
+
+  _getWeatherState() {
+    return this._getEntityState('weather_entity');
+  }
+
+  _getTrackWeatherState() {
+    return this._getEntityState('track_weather_entity');
+  }
+
+  _getCurrentSessionData() {
+    const entity = this._getEntityState('current_session_entity');
+    if (!entity) return null;
+    return { state: entity.state, ...entity.attributes };
+  }
+
+  _getSessionStatusData() {
+    const entity = this._getEntityState('session_status_entity');
+    if (!entity) return null;
+    return { state: entity.state, ...entity.attributes };
+  }
+
+  _resolveVisibleSections() {
+    return {
+      header: this.config.show_header !== false,
+      countdown: this.config.show_countdown !== false,
+      overview: this.config.show_overview !== false,
+      schedule: this.config.show_schedule !== false,
+      map: this.config.show_map !== false,
+      weather: this.config.show_weather !== false,
+      history: this.config.show_history !== false,
+    };
+  }
+
+  _normalizeOffset(offset) {
+    if (!offset) return '';
+    const text = String(offset).trim();
+    if (text.startsWith('+') || text.startsWith('-')) {
+      return text.slice(0, 6);
+    }
+    if (/^\d{2}:\d{2}:\d{2}$/.test(text)) {
+      return `+${text.slice(0, 5)}`;
+    }
+    return '';
+  }
+
+  _parseDateWithOffset(value, offset = null) {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    if (text.includes('Z') || /[+-]\d{2}:\d{2}$/.test(text)) {
+      const dt = new Date(text);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+    const suffix = this._normalizeOffset(offset);
+    const dt = new Date(`${text}${suffix}`);
+    if (!Number.isNaN(dt.getTime())) return dt;
+    const fallback = new Date(text);
+    return Number.isNaN(fallback.getTime()) ? null : fallback;
+  }
+
+  _getTimeZone() {
+    return this.hass?.config?.time_zone
+      || this.hass?.locale?.time_zone
+      || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  }
+
+  _formatDate(date, timeZone = this._getTimeZone()) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    try {
+      return new Intl.DateTimeFormat(this.hass?.locale?.language || undefined, {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        timeZone,
+      }).format(date);
+    } catch (err) {
+      return date.toLocaleDateString([], {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        timeZone,
+      });
+    }
+  }
+
+  _formatTime(date, timeZone = this._getTimeZone()) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const hour12 = this.hass?.locale?.time_format === '12';
+    try {
+      return new Intl.DateTimeFormat(this.hass?.locale?.language || undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12,
+        timeZone,
+      }).format(date);
+    } catch (err) {
+      return date.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12,
+        timeZone,
+      });
+    }
+  }
+
+  _formatDateTimeParts(date, timeZone = this._getTimeZone()) {
+    return {
+      dateLabel: this._formatDate(date, timeZone),
+      timeLabel: this._formatTime(date, timeZone),
+    };
+  }
+
+  _clearCountdownTimer() {
+    if (this._countdownTimer) {
+      clearInterval(this._countdownTimer);
+      this._countdownTimer = null;
+    }
+  }
+
+  _ensureCountdownTimer(nextRace) {
+    const start = this._parseDateWithOffset(nextRace?.race_start_utc || nextRace?.state || nextRace?.race_start);
+    const shouldRun = start && start.getTime() > Date.now();
+    if (!shouldRun) {
+      this._clearCountdownTimer();
+      return;
+    }
+    if (!this._countdownTimer) {
+      this._countdownTimer = setInterval(() => this.requestUpdate(), 1000);
+    }
+  }
+
+  _getCountdownParts(nextRace) {
+    const start = this._parseDateWithOffset(nextRace?.race_start_utc || nextRace?.state || nextRace?.race_start);
+    if (!start) return null;
+    const totalSeconds = Math.max(0, Math.floor((start.getTime() - Date.now()) / 1000));
+    return {
+      totalSeconds,
+      days: Math.floor(totalSeconds / 86400),
+      hours: Math.floor((totalSeconds % 86400) / 3600),
+      minutes: Math.floor((totalSeconds % 3600) / 60),
+      seconds: totalSeconds % 60,
+      start,
+    };
+  }
+
+  _shortRaceName(value) {
+    const text = String(value || '').trim();
+    if (!text) return 'Next race';
+    return text.replace(' Grand Prix', ' GP');
+  }
+
+  _mapSessionLabel(value) {
+    const text = String(value || '').trim().toLowerCase();
+    if (!text) return null;
+    if (text.startsWith('practice 1')) return 'FP1';
+    if (text.startsWith('practice 2')) return 'FP2';
+    if (text.startsWith('practice 3')) return 'FP3';
+    if (text.startsWith('practice')) return 'FP';
+    if (text.startsWith('sprint qualifying') || text.startsWith('sprint shootout')) {
+      return 'Sprint Qualifying';
+    }
+    if (text.startsWith('qualifying')) return 'Qualifying';
+    if (text.startsWith('sprint')) return 'Sprint';
+    if (text.includes('race')) return 'Race';
+    return null;
+  }
+
+  _buildSessionItems(nextRace) {
+    const trackTz = nextRace?.circuit_timezone || null;
+    const items = [
+      ['first_practice_start', 'FP1'],
+      ['second_practice_start', 'FP2'],
+      ['third_practice_start', 'FP3'],
+      ['qualifying_start', 'Qualifying'],
+      ['sprint_qualifying_start', 'Sprint Qualifying'],
+      ['sprint_start', 'Sprint'],
+      ['race_start', 'Race'],
+    ];
+
+    return items
+      .map(([key, label]) => {
+        const date = this._parseDateWithOffset(nextRace?.[`${key}_utc`] || nextRace?.[key]);
+        if (!date) return null;
+        return {
+          key,
+          label,
+          date,
+          user: this._formatDateTimeParts(date, this._getTimeZone()),
+          track: trackTz ? this._formatDateTimeParts(date, trackTz) : null,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  _resolveTimelineState(items, currentSession, sessionStatus) {
+    const state = String(sessionStatus?.state || '').toLowerCase();
+    const liveStates = new Set(['live', 'suspended', 'break']);
+    let activeKey = null;
+    if (liveStates.has(state)) {
+      const mapped = this._mapSessionLabel(
+        currentSession?.state
+        || currentSession?.last_label
+        || currentSession?.session_name
+        || currentSession?.name,
+      );
+      activeKey = items.find((item) => item.label === mapped)?.key || null;
+    }
+    const now = Date.now();
+    const nextKey = items.find((item) => item.date.getTime() > now)?.key || null;
+    return { activeKey, nextKey, state };
+  }
+
+  _hasTrackWeather(trackWeatherState) {
+    const attrs = trackWeatherState?.attributes || {};
+    return attrs.air_temperature !== undefined
+      || attrs.track_temperature !== undefined
+      || attrs.wind_speed !== undefined;
+  }
+
+  _hasForecastWeather(weatherState) {
+    const attrs = weatherState?.attributes || {};
+    return attrs.current_temperature !== undefined
+      || attrs.race_temperature !== undefined;
+  }
+
+  _weatherBlockHasData(block) {
+    if (!block) return false;
+    return [
+      block.temperature,
+      block.trackTemperature,
+      block.windSpeed,
+      block.rainfall,
+      block.precipitationProbability,
+      block.cloudCover,
+      block.humidity,
+      block.pressure,
+    ].some((value) => value !== null && value !== undefined && value !== '');
+  }
+
+  _resolveWeatherComparison(weatherState, trackWeatherState, sessionStatus) {
+    const weatherAttrs = weatherState?.attributes || {};
+    const trackAttrs = trackWeatherState?.attributes || {};
+    const status = String(sessionStatus?.state || '').toLowerCase();
+    const weekendActive = ['pre', 'live', 'suspended', 'break'].includes(status);
+    const useLiveNow = this.config.prefer_live_weather !== false
+      && weekendActive
+      && this._hasTrackWeather(trackWeatherState);
+    const fallbackToLiveNow = this.config.prefer_live_weather !== false
+      && !sessionStatus
+      && this._hasTrackWeather(trackWeatherState);
+    const preferLiveNow = useLiveNow || fallbackToLiveNow;
+
+    const now = preferLiveNow
+      ? {
+          icon: weatherAttrs.icon || 'mdi:weather-partly-cloudy',
+          title: 'Now at circuit',
+          status: 'Live track feed',
+          temperature: trackAttrs.air_temperature,
+          trackTemperature: trackAttrs.track_temperature,
+          windSpeed: trackAttrs.wind_speed,
+          windDirection: trackAttrs.wind_from_direction_degrees,
+          rainfall: trackAttrs.rainfall,
+          precipitationProbability: null,
+          cloudCover: null,
+          humidity: trackAttrs.humidity,
+          pressure: trackAttrs.pressure,
+        }
+      : {
+          icon: weatherAttrs.icon || 'mdi:weather-partly-cloudy',
+          title: 'Now at circuit',
+          status: 'Current forecast',
+          temperature: weatherAttrs.current_temperature,
+          trackTemperature: null,
+          windSpeed: weatherAttrs.current_wind_speed,
+          windDirection: weatherAttrs.current_wind_from_direction_degrees,
+          rainfall: weatherAttrs.current_precipitation,
+          precipitationProbability: weatherAttrs.current_precipitation_probability,
+          cloudCover: weatherAttrs.current_cloud_cover,
+          humidity: weatherAttrs.current_humidity,
+          pressure: null,
+        };
+
+    const race = {
+      icon: weatherAttrs.race_weather_icon || weatherAttrs.icon || 'mdi:weather-partly-cloudy',
+      title: 'Race start',
+      status: 'Race start forecast',
+      temperature: weatherAttrs.race_temperature,
+      trackTemperature: null,
+      windSpeed: weatherAttrs.race_wind_speed,
+      windDirection: weatherAttrs.race_wind_from_direction_degrees,
+      rainfall: weatherAttrs.race_precipitation,
+      precipitationProbability: weatherAttrs.race_precipitation_probability,
+      cloudCover: weatherAttrs.race_cloud_cover,
+      humidity: weatherAttrs.race_humidity,
+      pressure: null,
+    };
+
+    return {
+      show: this._weatherBlockHasData(now) || this._weatherBlockHasData(race),
+      now: this._weatherBlockHasData(now) ? now : null,
+      race: this._weatherBlockHasData(race) ? race : null,
+    };
+  }
+
+  _windDirectionToCardinal(degrees) {
+    if (degrees === null || degrees === undefined) return '';
+    const num = Number(degrees);
+    if (!Number.isFinite(num)) return '';
+    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const index = Math.round(num / 45) % 8;
+    return directions[index];
+  }
+
+  _formatTemperature(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? `${num.toFixed(1)} °C` : 'n/a';
+  }
+
+  _formatNumber(value, suffix = '', digits = 0) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return 'n/a';
+    return `${num.toFixed(digits)}${suffix}`;
+  }
+
+  _formatWind(speed, directionDegrees) {
+    const speedValue = Number(speed);
+    if (!Number.isFinite(speedValue)) return 'n/a';
+    const direction = this._windDirectionToCardinal(directionDegrees);
+    return `${speedValue.toFixed(1)} m/s${direction ? ` ${direction}` : ''}`;
+  }
+
+  _formatCountdownCompact(countdown) {
+    if (!countdown) return 'TBD';
+    if (countdown.totalSeconds <= 0) return 'Race live';
+    const parts = [];
+    if (countdown.days > 0) {
+      parts.push(`${countdown.days}d`);
+      parts.push(`${String(countdown.hours).padStart(2, '0')}h`);
+      parts.push(`${String(countdown.minutes).padStart(2, '0')}m`);
+      return `T-${parts.join(' ')}`;
+    }
+    if (countdown.hours > 0) {
+      return `T-${countdown.hours}h ${String(countdown.minutes).padStart(2, '0')}m`;
+    }
+    return `T-${countdown.minutes}m ${String(countdown.seconds).padStart(2, '0')}s`;
+  }
+
+  _resolveWeekendSummary(items, timeline) {
+    const liveItem = items.find((item) => item.key === timeline.activeKey) || null;
+    if (liveItem) {
+      return {
+        label: 'Live session',
+        value: liveItem.label,
+        detail: `${liveItem.user.dateLabel} · ${liveItem.user.timeLabel}`,
+        chip: 'Live',
+        chipClass: 'live',
+      };
+    }
+
+    const nextItem = items.find((item) => item.key === timeline.nextKey) || null;
+    if (nextItem) {
+      return {
+        label: 'Next session',
+        value: nextItem.label,
+        detail: `${nextItem.user.dateLabel} · ${nextItem.user.timeLabel}`,
+        chip: 'Next',
+        chipClass: 'next',
+      };
+    }
+
+    const raceItem = items.find((item) => item.key === 'race_start')
+      || items[items.length - 1]
+      || null;
+    if (raceItem) {
+      return {
+        label: 'Race session',
+        value: raceItem.label,
+        detail: `${raceItem.user.dateLabel} · ${raceItem.user.timeLabel}`,
+        chip: null,
+        chipClass: '',
+      };
+    }
+
+    return {
+      label: 'Weekend',
+      value: 'Schedule pending',
+      detail: 'Session times are not available yet',
+      chip: null,
+      chipClass: '',
+    };
+  }
+
+  _renderGlanceItem(label, value, detail, chip = null, chipClass = '') {
+    const chipTemplate = chip
+      ? html`<span class="nr-chip ${chipClass}">${chip}</span>`
+      : null;
+    return html`
+      <div class="nr-glance-item">
+        <div class="nr-glance-head">
+          <span class="nr-section-label">${label}</span>
+          ${chipTemplate}
+        </div>
+        <span class="nr-glance-value">${value}</span>
+        ${detail ? html`<span class="nr-glance-sub">${detail}</span>` : null}
+      </div>
+    `;
+  }
+
+  _getRoundSummary(nextRace) {
+    return {
+      value: nextRace?.round ? `Round ${nextRace.round}` : 'Upcoming',
+      detail: nextRace?.season ? `Season ${nextRace.season}` : 'Season pending',
+    };
+  }
+
+  _getSummaryCells(nextRace, currentSession, sessionStatus, countdown) {
+    const items = this._buildSessionItems(nextRace);
+    const timeline = this._resolveTimelineState(items, currentSession, sessionStatus);
+    const weekendSummary = this._resolveWeekendSummary(items, timeline);
+    const roundSummary = this._getRoundSummary(nextRace);
+    const showOverview = this.config.show_overview !== false;
+    const showCountdown = this.config.show_countdown !== false;
+
+    return [
+      showOverview
+        ? {
+            key: 'weekend',
+            label: weekendSummary.label,
+            value: weekendSummary.value,
+            detail: weekendSummary.detail,
+            chip: weekendSummary.chipClass === 'next' ? null : weekendSummary.chip,
+            chipClass: weekendSummary.chipClass,
+          }
+        : null,
+      showOverview
+        ? {
+            key: 'race_start',
+            label: 'Race start',
+            value: countdown?.start
+              ? `${this._formatDate(countdown.start)} · ${this._formatTime(countdown.start)}`
+              : 'Race start pending',
+            detail: null,
+          }
+        : null,
+      showCountdown
+        ? {
+            key: 'countdown',
+            label: 'Countdown',
+            value: this._formatCountdownCompact(countdown),
+            detail: sessionStatus?.state === 'live'
+              ? 'Weekend live'
+              : (countdown?.start ? 'To lights out' : 'Race start pending'),
+            chip: sessionStatus?.state === 'live' ? 'Live' : null,
+            chipClass: sessionStatus?.state === 'live' ? 'live' : '',
+          }
+        : null,
+      showOverview
+        ? {
+            key: 'round',
+            label: 'Round',
+            value: roundSummary.value,
+            detail: roundSummary.detail,
+          }
+        : null,
+    ].filter(Boolean);
+  }
+
+  _renderSummaryCell(item) {
+    return html`
+      <div class="nr-summary-cell">
+        <div class="nr-summary-cell-head">
+          <span class="nr-section-label">${item.label}</span>
+          ${item.chip ? html`<span class="nr-chip ${item.chipClass || ''}">${item.chip}</span>` : null}
+        </div>
+        <span class="nr-summary-value">${item.value}</span>
+        ${item.detail ? html`<span class="nr-summary-sub">${item.detail}</span>` : null}
+      </div>
+    `;
+  }
+
+  _renderSummaryCountdown(item) {
+    if (!item) {
+      return null;
+    }
+
+    return html`
+      <div class="nr-summary-countdown">
+        <div class="nr-summary-countdown-head">
+          <span class="nr-section-label">${item.label}</span>
+          ${item.chip ? html`<span class="nr-chip ${item.chipClass || ''}">${item.chip}</span>` : null}
+        </div>
+        <div class="nr-summary-countdown-value">${item.value}</div>
+        ${item.detail ? html`<div class="nr-summary-countdown-sub">${item.detail}</div>` : null}
+      </div>
+    `;
+  }
+
+  _renderSummarySurface(nextRace, currentSession, sessionStatus, countdown, location, layoutMode) {
+    const showHeader = this.config.show_header !== false;
+    const cells = this._getSummaryCells(nextRace, currentSession, sessionStatus, countdown);
+    const countdownCell = cells.find((item) => item.key === 'countdown') || null;
+    const metaCells = cells.filter((item) => item.key !== 'countdown');
+    if (!showHeader && !cells.length) {
+      return null;
+    }
+
+    if (layoutMode === 'narrow') {
+      return html`
+        <section class="nr-panel nr-summary-panel">
+          ${showHeader ? html`
+            <div class="nr-summary-header">
+              ${nextRace.country_flag_url
+                ? html`<img class="nr-flag" src="${nextRace.country_flag_url}" alt="${nextRace.circuit_country || ''}" />`
+                : null}
+              <div class="nr-summary-copy">
+                <h2 class="nr-title">${this._shortRaceName(nextRace.race_name)}</h2>
+                <div class="nr-subtitle">
+                  ${nextRace.circuit_name ? html`<span>${nextRace.circuit_name}</span>` : null}
+                  ${location ? html`<span>${location}</span>` : null}
+                </div>
+              </div>
+            </div>
+          ` : null}
+          ${this._renderSummaryCountdown(countdownCell)}
+          ${metaCells.length ? html`
+            <div class="nr-summary-definition">
+              ${metaCells.map((item) => html`
+                <div class="nr-summary-definition-row">
+                  <div class="nr-summary-term">
+                    <span class="nr-section-label">${item.label}</span>
+                    ${item.chip ? html`<span class="nr-chip ${item.chipClass || ''}">${item.chip}</span>` : null}
+                  </div>
+                  <div class="nr-summary-detail">
+                    <span class="nr-summary-value">${item.value}</span>
+                    ${item.detail ? html`<span class="nr-summary-sub">${item.detail}</span>` : null}
+                  </div>
+                </div>
+              `)}
+            </div>
+          ` : null}
+        </section>
+      `;
+    }
+
+    return html`
+      <section class="nr-panel nr-summary-panel">
+        ${showHeader ? html`
+          <div class="nr-summary-header">
+            ${nextRace.country_flag_url
+              ? html`<img class="nr-flag" src="${nextRace.country_flag_url}" alt="${nextRace.circuit_country || ''}" />`
+              : null}
+            <div class="nr-summary-copy">
+              <h2 class="nr-title">${this._shortRaceName(nextRace.race_name)}</h2>
+              <div class="nr-subtitle">
+                ${nextRace.circuit_name ? html`<span>${nextRace.circuit_name}</span>` : null}
+                ${location ? html`<span>${location}</span>` : null}
+              </div>
+            </div>
+          </div>
+        ` : null}
+        ${this._renderSummaryCountdown(countdownCell)}
+        ${metaCells.length ? html`
+          <div class="nr-summary-grid" style=${`--nr-summary-columns: ${Math.min(2, metaCells.length)};`}>
+            ${metaCells.map((item) => this._renderSummaryCell(item))}
+          </div>
+        ` : null}
+      </section>
+    `;
+  }
+
+  _getWeatherMatrixRows(block) {
+    if (!block) return [];
+
+    const humidityValue = block.humidity !== null && block.humidity !== undefined
+      ? this._formatNumber(block.humidity, '%')
+      : 'n/a';
+    const trackOrHumidity = block.trackTemperature !== null && block.trackTemperature !== undefined
+      ? this._formatTemperature(block.trackTemperature)
+      : humidityValue;
+    const trackOrHumidityLabel = block.trackTemperature !== null && block.trackTemperature !== undefined
+      ? 'Track'
+      : 'Humidity';
+    const rainValue = block.precipitationProbability !== null && block.precipitationProbability !== undefined
+      ? this._formatNumber(block.precipitationProbability, '%')
+      : this._formatNumber(block.rainfall, ' mm', 1);
+
+    return [
+      { label: 'Air', value: this._formatTemperature(block.temperature) },
+      { label: trackOrHumidityLabel, value: trackOrHumidity },
+      { label: 'Wind', value: this._formatWind(block.windSpeed, block.windDirection) },
+      { label: 'Rain', value: rainValue },
+    ].filter((item) => item.value !== 'n/a');
+  }
+
+  _renderWeatherColumn(title, block) {
+    if (!block) return null;
+    const rows = this._getWeatherMatrixRows(block);
+    if (!rows.length) return null;
+
+    return html`
+      <div class="nr-weather-column">
+        <div class="nr-weather-column-head">
+          <div class="nr-weather-column-copy">
+            <span class="nr-section-label">${title}</span>
+            <strong>${block.status}</strong>
+          </div>
+          <ha-icon class="nr-weather-column-icon" .icon=${block.icon}></ha-icon>
+        </div>
+        <div class="nr-weather-table">
+          ${rows.map((row) => html`
+            <div class="nr-weather-row">
+              <span class="nr-weather-row-label">${row.label}</span>
+              <span class="nr-weather-row-value">${row.value}</span>
+            </div>
+          `)}
+        </div>
+      </div>
+    `;
+  }
+
+  _resolveSecondaryPanelState(sections, weather) {
+    const showMap = sections.map;
+    const showWeather = sections.weather && Boolean(weather?.show);
+    return {
+      showMap,
+      showWeather,
+      showPanel: showMap || showWeather,
+    };
+  }
+
+  _renderSecondaryPanel(nextRace, weather) {
+    const sections = this._resolveVisibleSections();
+    const secondary = this._resolveSecondaryPanelState(sections, weather);
+    if (!secondary.showPanel) {
+      return null;
+    }
+
+    const weatherColumns = [
+      secondary.showWeather ? this._renderWeatherColumn('Now', weather.now) : null,
+      secondary.showWeather ? this._renderWeatherColumn('Race', weather.race) : null,
+    ].filter(Boolean);
+
+    return html`
+      <div class="nr-panel nr-secondary-panel">
+        <div class="nr-section-heading">
+          <div>
+            <div class="nr-section-label">Circuit</div>
+            <h3 class="nr-section-title">Map & conditions</h3>
+          </div>
+          <span class="nr-section-caption">${nextRace.circuit_name || 'Circuit overview'}</span>
+        </div>
+        <div class="nr-secondary-grid ${secondary.showMap && weatherColumns.length ? '' : 'single'}">
+          ${secondary.showMap ? html`
+            <div class="nr-secondary-map">
+              ${this._renderTrackVisual(nextRace)}
+            </div>
+          ` : null}
+          ${weatherColumns.length ? html`
+            <div class="nr-secondary-weather" style=${`--nr-weather-columns: ${Math.min(2, weatherColumns.length)};`}>
+              ${weatherColumns}
+            </div>
+          ` : null}
+        </div>
+      </div>
+    `;
+  }
+
+  _getHistoryRibbonItems(nextRace) {
+    if (!this._historyHasContent(nextRace)) {
+      return [];
+    }
+
+    const defendingWinner = nextRace.defending_winner;
+    const poleToWin = Number(nextRace?.pole_to_win_conversion_last_5);
+    const dnfRate = Number(nextRace?.dnf_rate_last_5);
+
+    return [
+      {
+        label: 'Defending winner',
+        value: defendingWinner?.driver_name || 'n/a',
+        detail: defendingWinner
+          ? `${defendingWinner.constructor_name || ''} · ${defendingWinner.season || ''}`
+          : 'No previous winner data',
+      },
+      {
+        label: 'Races held',
+        value: nextRace.races_held_here != null ? String(nextRace.races_held_here) : 'n/a',
+        detail: nextRace.circuit_country || 'Circuit history',
+      },
+      {
+        label: Number.isFinite(poleToWin) ? 'Pole to win' : 'DNF rate',
+        value: Number.isFinite(poleToWin)
+          ? `${poleToWin.toFixed(1)}%`
+          : Number.isFinite(dnfRate)
+            ? `${dnfRate.toFixed(1)}%`
+            : 'n/a',
+        detail: 'Last five races here',
+      },
+    ];
+  }
+
+  _renderHeroGlance(nextRace, currentSession, sessionStatus, countdown) {
+    const items = this._buildSessionItems(nextRace);
+    const timeline = this._resolveTimelineState(items, currentSession, sessionStatus);
+    const weekendSummary = this._resolveWeekendSummary(items, timeline);
+    const raceStartDetail = countdown?.start
+      ? `${this._formatDate(countdown.start)} · ${this._formatTime(countdown.start)}`
+      : 'Race start pending';
+    const roundSummary = this._getRoundSummary(nextRace);
+
+    return html`
+      <div class="nr-glance-grid">
+        ${this._renderGlanceItem(
+          weekendSummary.label,
+          weekendSummary.value,
+          weekendSummary.detail,
+          weekendSummary.chip,
+          weekendSummary.chipClass,
+        )}
+        ${this._renderGlanceItem(
+          'Race start',
+          raceStartDetail,
+          'Weekend headline session',
+        )}
+        ${this._renderGlanceItem('Round', roundSummary.value, roundSummary.detail)}
+      </div>
+    `;
+  }
+
+  _renderWeatherMetric(label, value) {
+    if (value === 'n/a') return null;
+    return html`
+      <div class="nr-weather-metric">
+        <span class="nr-weather-label">${label}</span>
+        <span class="nr-weather-value">${value}</span>
+      </div>
+    `;
+  }
+
+  _getCompactWeatherMetrics(block) {
+    if (!block) return [];
+
+    const rainValue = block.precipitationProbability !== null && block.precipitationProbability !== undefined
+      ? this._formatNumber(block.precipitationProbability, '%')
+      : this._formatNumber(block.rainfall, ' mm', 1);
+
+    const secondaryMetric = block.trackTemperature !== null && block.trackTemperature !== undefined
+      ? { label: 'Track', value: this._formatTemperature(block.trackTemperature) }
+      : block.humidity !== null && block.humidity !== undefined
+        ? { label: 'Humidity', value: this._formatNumber(block.humidity, '%') }
+        : null;
+
+    return [
+      { label: 'Air', value: this._formatTemperature(block.temperature) },
+      secondaryMetric,
+      { label: 'Wind', value: this._formatWind(block.windSpeed, block.windDirection) },
+      rainValue !== 'n/a'
+        ? { label: 'Rain', value: rainValue }
+        : block.humidity !== null && block.humidity !== undefined && secondaryMetric?.label !== 'Humidity'
+          ? { label: 'Humidity', value: this._formatNumber(block.humidity, '%') }
+          : null,
+    ].filter((item) => item && item.value !== 'n/a');
+  }
+
+  _renderWeatherCard(block) {
+    if (!block) return null;
+    const metrics = this._getCompactWeatherMetrics(block);
+    return html`
+      <div class="nr-weather-card">
+        <div class="nr-weather-head">
+          <div class="nr-weather-title">
+            <span class="nr-weather-label">${block.title}</span>
+            <strong>${block.status}</strong>
+          </div>
+          <div class="nr-weather-icon">
+            <ha-icon .icon=${block.icon}></ha-icon>
+          </div>
+        </div>
+        <div class="nr-weather-metrics">
+          ${metrics.map((metric) => this._renderWeatherMetric(metric.label, metric.value))}
+        </div>
+      </div>
+    `;
+  }
+
+  _historyHasContent(nextRace) {
+    const dnfRate = Number(nextRace?.dnf_rate_last_5);
+    const poleToWin = Number(nextRace?.pole_to_win_conversion_last_5);
+    return Boolean(
+      nextRace?.defending_winner
+      || nextRace?.defending_pole_sitter
+      || (Array.isArray(nextRace?.last_5_winners) && nextRace.last_5_winners.length)
+      || (Array.isArray(nextRace?.top_5_driver_wins_here) && nextRace.top_5_driver_wins_here.length)
+      || nextRace?.last_year_podium
+      || Number(nextRace?.races_held_here) > 0
+      || Number.isFinite(dnfRate)
+      || Number.isFinite(poleToWin)
+      || nextRace?.first_f1_race_here,
+    );
+  }
+
+  _renderHistoryStat(label, value, sublabel = '') {
+    const hasValue = value !== null && value !== undefined && value !== '';
+    const hasSublabel = sublabel !== null && sublabel !== undefined && sublabel !== '';
+    if (!hasValue && !hasSublabel) return null;
+    return html`
+      <div class="nr-history-row">
+        <div class="nr-history-copy">
+          <span class="nr-history-label">${label}</span>
+          <span class="nr-history-value">${hasValue ? value : 'n/a'}</span>
+          ${hasSublabel ? html`<span class="nr-history-sub">${sublabel}</span>` : null}
+        </div>
+      </div>
+    `;
+  }
+
+  _renderHistorySummaryItem(label, value, sublabel = '') {
+    const hasValue = value !== null && value !== undefined && value !== '';
+    const hasSublabel = sublabel !== null && sublabel !== undefined && sublabel !== '';
+    if (!hasValue && !hasSublabel) return null;
+    return html`
+      <div class="nr-history-summary-item">
+        <span class="nr-history-label">${label}</span>
+        <span class="nr-history-value">${hasValue ? value : 'n/a'}</span>
+        ${hasSublabel ? html`<span class="nr-history-sub">${sublabel}</span>` : null}
+      </div>
+    `;
+  }
+
+  _renderHistoryPerformanceSummary(nextRace) {
+    const poleToWin = Number(nextRace?.pole_to_win_conversion_last_5);
+    if (Number.isFinite(poleToWin)) {
+      return this._renderHistorySummaryItem(
+        'Pole to win',
+        `${poleToWin.toFixed(1)}%`,
+        'Last five races here',
+      );
+    }
+
+    const dnfRate = Number(nextRace?.dnf_rate_last_5);
+    if (Number.isFinite(dnfRate)) {
+      return this._renderHistorySummaryItem(
+        'DNF rate',
+        `${dnfRate.toFixed(1)}%`,
+        'Last five races here',
+      );
+    }
+
+    return this._renderHistorySummaryItem('Pole to win', 'n/a', 'Last five races here');
+  }
+
+  _toggleHistory(ev) {
+    ev?.preventDefault?.();
+    ev?.stopPropagation?.();
+    this._historyExpanded = !this._historyExpanded;
+  }
+
+  _renderPodium(podium) {
+    if (!podium || !Array.isArray(podium.podium) || podium.podium.length < 3) return null;
+    const entries = podium.podium.slice(0, 3);
+    const renderEntry = (entry, rank) => html`
+      <div class="nr-rank-row ${rank === 1 ? 'win' : ''}">
+        <span class="nr-rank-pos">P${rank}</span>
+        <div class="nr-rank-copy">
+          <strong>${entry?.driver_name || `P${rank}`}</strong>
+          <span>${entry?.constructor_name || `Season ${podium.season || ''}`}</span>
+        </div>
+      </div>
+    `;
+    return html`
+      <div class="nr-history-block">
+        <div class="nr-mini-heading">
+          <span class="nr-section-label">Last year</span>
+          <span class="nr-mini-title">Podium${podium.season ? ` · ${podium.season}` : ''}</span>
+        </div>
+        <div class="nr-rank-list">
+          ${renderEntry(entries[0], 1)}
+          ${renderEntry(entries[1], 2)}
+          ${renderEntry(entries[2], 3)}
+        </div>
+      </div>
+    `;
+  }
+
+  _renderHorizontalList(title, items, renderMeta) {
+    if (!Array.isArray(items) || !items.length) return null;
+    return html`
+      <div class="nr-history-block">
+        <div class="nr-mini-heading">
+          <span class="nr-section-label">History</span>
+          <span class="nr-mini-title">${title}</span>
+        </div>
+        <div class="nr-stat-list">
+          ${items.map((item) => html`
+            <div class="nr-stat-row">
+              <strong>${item?.driver_name || item?.constructor_name || item?.race_name || 'n/a'}</strong>
+              <span>${renderMeta(item)}</span>
+            </div>
+          `)}
+        </div>
+      </div>
+    `;
+  }
+
+  _renderMetricCard(label, value, caption) {
+    const pct = Math.max(0, Math.min(100, Number(value) || 0));
+    return html`
+      <div class="nr-metric-card">
+        <div class="nr-metric-row">
+          <div>
+            <div class="nr-history-label">${label}</div>
+            <div class="nr-history-sub">${caption}</div>
+          </div>
+          <div class="nr-metric-value">${pct.toFixed(1)}%</div>
+        </div>
+        <div class="nr-bar"><span style="width: ${pct}%"></span></div>
+      </div>
+    `;
+  }
+
+  _renderTrackVisual(nextRace) {
+    const flagUrl = nextRace.country_flag_url;
+    const circuitName = nextRace.circuit_name || 'Circuit';
+    const mapUrl = nextRace.circuit_map_url;
+
+    return html`
+      <div class="nr-map-shell">
+        ${mapUrl
+          ? html`<img src="${mapUrl}" alt="${circuitName}" loading="lazy" />`
+          : html`
+            <div class="nr-map-fallback">
+              <div class="nr-chip-row">
+                ${flagUrl ? html`<img class="nr-flag" src="${flagUrl}" alt="${nextRace.circuit_country || ''}" />` : null}
+                ${nextRace.season ? html`<span class="nr-chip">Season ${nextRace.season}</span>` : null}
+              </div>
+              <div class="nr-map-fallback-title">${circuitName}</div>
+              <div class="nr-chip-row">
+                ${nextRace.circuit_locality ? html`<span class="nr-chip">${nextRace.circuit_locality}</span>` : null}
+                ${nextRace.circuit_country ? html`<span class="nr-chip">${nextRace.circuit_country}</span>` : null}
+              </div>
+            </div>
+          `}
+      </div>
+    `;
+  }
+
+  _renderWeekendPanel(nextRace, currentSession, sessionStatus, layoutMode = 'wide') {
+    const items = this._buildSessionItems(nextRace);
+    const timeline = this._resolveTimelineState(items, currentSession, sessionStatus);
+    const sections = this._resolveVisibleSections();
+    const showSchedule = sections.schedule;
+    const showTrackTimes = this.config.show_track_time !== false && Boolean(nextRace?.circuit_timezone);
+
+    if (!showSchedule) {
+      return null;
+    }
+
+    const scheduleRows = items.length ? items.map((item) => {
+      const live = item.key === timeline.activeKey;
+      const upcoming = !live && item.key === timeline.nextKey;
+
+      if (layoutMode === 'narrow') {
+        return html`
+          <div class="nr-schedule-row narrow ${live ? 'live' : ''} ${upcoming ? 'upcoming' : ''}">
+            <div class="nr-schedule-row-top">
+              <div class="nr-schedule-cell session">
+                <span class="nr-schedule-session-name">${item.label}</span>
+              </div>
+              <div class="nr-schedule-inline-times">
+                <span class="nr-schedule-inline-time">
+                  <label>Your</label>
+                  <strong>${item.user.timeLabel}</strong>
+                </span>
+                ${showTrackTimes && item.track?.timeLabel
+                  ? html`
+                    <span class="nr-schedule-inline-time secondary">
+                      <label>Track</label>
+                      <strong>${item.track.timeLabel}</strong>
+                    </span>
+                  `
+                  : null}
+              </div>
+            </div>
+            <div class="nr-schedule-row-bottom">
+              <span>${item.user.dateLabel}</span>
+              <span class="nr-schedule-row-status">
+                ${upcoming ? html`<span class="nr-chip next">Next</span>` : null}
+                ${live ? html`<span class="nr-chip live">Live</span>` : null}
+              </span>
+            </div>
+          </div>
+        `;
+      }
+
+      if (!showTrackTimes) {
+        return html`
+          <div class="nr-schedule-row ${live ? 'live' : ''} ${upcoming ? 'upcoming' : ''} track-hidden">
+            <div class="nr-schedule-cell session">
+              <span class="nr-schedule-session-name">${item.label}</span>
+            </div>
+            <div class="nr-schedule-cell time">${item.user.timeLabel}</div>
+            <div class="nr-schedule-cell date compact">${item.user.dateLabel}</div>
+            <div class="nr-schedule-cell status">
+              ${upcoming ? html`<span class="nr-chip next">Next</span>` : null}
+              ${live ? html`<span class="nr-chip live">Live</span>` : null}
+            </div>
+          </div>
+        `;
+      }
+
+      return html`
+        <div class="nr-schedule-row ${live ? 'live' : ''} ${upcoming ? 'upcoming' : ''}">
+          <div class="nr-schedule-cell session">
+            <span class="nr-schedule-session-name">${item.label}</span>
+            ${upcoming ? html`<span class="nr-chip next">Next</span>` : null}
+            ${live ? html`<span class="nr-chip live">Live</span>` : null}
+          </div>
+          <div class="nr-schedule-cell date">${item.user.dateLabel}</div>
+          <div class="nr-schedule-cell time">${item.user.timeLabel}</div>
+          ${showTrackTimes ? html`
+            <div class="nr-schedule-cell time secondary">
+              ${item.track?.timeLabel || '—'}
+            </div>
+          ` : null}
+        </div>
+      `;
+    }) : html`<div class="nr-empty">Session times are not available yet</div>`;
+
+    return html`
+      <div class="nr-panel nr-schedule-panel">
+        <div class="nr-section-heading">
+          <div>
+            <div class="nr-section-label">Weekend</div>
+            <h3 class="nr-section-title">Schedule</h3>
+          </div>
+          <span class="nr-section-caption">${items.length ? `${items.length} sessions` : 'Schedule pending'}</span>
+        </div>
+        <div class="nr-schedule-table ${layoutMode}">
+          ${layoutMode !== 'narrow' && items.length ? html`
+            <div class="nr-schedule-head ${showTrackTimes ? '' : 'track-hidden'}">
+              <span>Session</span>
+              ${showTrackTimes ? html`<span>Date</span>` : html`<span>Your</span>`}
+              ${showTrackTimes ? html`<span>Your</span>` : html`<span>Date</span>`}
+              ${showTrackTimes ? html`<span>Track</span>` : html`<span class="nr-schedule-head-spacer" aria-hidden="true"></span>`}
+            </div>
+          ` : null}
+          ${scheduleRows}
+        </div>
+      </div>
+    `;
+  }
+
+  _renderHistoryPanel(nextRace) {
+    const historySummaryItems = this._getHistoryRibbonItems(nextRace);
+    if (!historySummaryItems.length) {
+      return null;
+    }
+
+    const defendingWinner = nextRace.defending_winner;
+    const firstRace = nextRace.first_f1_race_here;
+
+    const historyDetailItems = [
+      this._renderHistoryStat(
+        'Defending winner',
+        defendingWinner?.driver_name,
+        defendingWinner ? `${defendingWinner.constructor_name || ''} · ${defendingWinner.season || ''}` : '',
+      ),
+      this._renderHistoryStat(
+        'Defending pole',
+        nextRace.defending_pole_sitter?.driver_name,
+        nextRace.defending_pole_sitter
+          ? `${nextRace.defending_pole_sitter.constructor_name || ''} · ${nextRace.defending_pole_sitter.season || ''}`
+          : '',
+      ),
+      this._renderHistoryStat(
+        'Races held',
+        nextRace.races_held_here != null ? String(nextRace.races_held_here) : '',
+        nextRace.circuit_country || '',
+      ),
+      this._renderHistoryStat(
+        'First F1 race',
+        firstRace?.season,
+        firstRace ? `${firstRace.race_name || ''} · ${firstRace.date || ''}` : '',
+      ),
+    ].filter(Boolean);
+
+    return html`
+      <div class="nr-history-shell">
+        <div class="nr-history-ribbon">
+          <div class="nr-history-ribbon-head">
+            <div class="nr-history-ribbon-title">
+              <div class="nr-section-label">History</div>
+              <span class="nr-mini-title">Track trends</span>
+            </div>
+            <button
+              class="nr-history-toggle"
+              type="button"
+              aria-expanded=${String(this._historyExpanded)}
+              @click=${this._toggleHistory}
+            >
+              ${this._historyExpanded ? 'Hide history' : 'Show history'}
+            </button>
+          </div>
+          <div class="nr-history-ribbon-grid">
+            ${historySummaryItems.map((item) => html`
+              <div class="nr-history-ribbon-item">
+                <span class="nr-history-label">${item.label}</span>
+                <span class="nr-history-value">${item.value}</span>
+                ${item.detail ? html`<span class="nr-history-sub">${item.detail}</span>` : null}
+              </div>
+            `)}
+          </div>
+        </div>
+
+        ${this._historyExpanded ? html`
+          <div class="nr-panel nr-history-panel">
+            ${historyDetailItems.length || nextRace.last_year_podium
+              ? html`
+                <div class="nr-history-top-grid">
+                  ${historyDetailItems.length ? html`<div class="nr-history-list">${historyDetailItems}</div>` : null}
+                  ${this._renderPodium(nextRace.last_year_podium)}
+                </div>
+              `
+              : null}
+
+            <div class="nr-history-block-grid">
+              ${this._renderHorizontalList(
+                'Last 5 winners',
+                nextRace.last_5_winners,
+                (item) => [item?.season, item?.race_name].filter(Boolean).join(' · '),
+              )}
+              ${this._renderHorizontalList(
+                'Top 5 wins here',
+                nextRace.top_5_driver_wins_here,
+                (item) => `${item?.wins || 0} wins · last ${item?.last_win_season || 'n/a'}`,
+              )}
+            </div>
+
+            <div class="nr-metrics">
+              ${this._renderMetricCard('DNF rate', nextRace.dnf_rate_last_5, 'Across the last five races here')}
+              ${this._renderMetricCard(
+                'Pole to win',
+                nextRace.pole_to_win_conversion_last_5,
+                'Pole sitter converting to victory over the last five races',
+              )}
+            </div>
+          </div>
+        ` : null}
+      </div>
+    `;
+  }
+
+  render() {
+    if (!this.hass || !this.config) {
+      return html`<ha-card><div class="nr-card nr-unavailable">Loading…</div></ha-card>`;
+    }
+
+    const nextRace = this._getNextRaceData();
+    if (!nextRace) {
+      return html`<ha-card><div class="nr-card nr-unavailable">No next race data available</div></ha-card>`;
+    }
+
+    this._ensureCountdownTimer(nextRace);
+
+    const weatherState = this._getWeatherState();
+    const trackWeatherState = this._getTrackWeatherState();
+    const currentSession = this._getCurrentSessionData();
+    const sessionStatus = this._getSessionStatusData();
+    const countdown = this._getCountdownParts(nextRace);
+    const layoutMode = getResponsiveLayoutMode(this);
+    const weather = this._resolveWeatherComparison(weatherState, trackWeatherState, sessionStatus);
+    const location = [nextRace.circuit_locality, nextRace.circuit_country].filter(Boolean).join(', ');
+    const sections = this._resolveVisibleSections();
+    const showHistory = sections.history && this._getHistoryRibbonItems(nextRace).length > 0;
+    const showSummary = sections.header || sections.countdown || sections.overview;
+    return html`
+      <ha-card>
+        <div class="nr-card" data-layout=${layoutMode}>
+          ${showSummary
+            ? this._renderSummarySurface(
+                nextRace,
+                currentSession,
+                sessionStatus,
+                countdown,
+                location,
+                layoutMode,
+              )
+            : null}
+
+          ${this._renderWeekendPanel(nextRace, currentSession, sessionStatus, layoutMode)}
+
+          ${this._renderSecondaryPanel(nextRace, weather)}
+
+          ${showHistory ? this._renderHistoryPanel(nextRace) : null}
+        </div>
+      </ha-card>
+    `;
+  }
+}
+
+class F1NextRaceCardEditor extends LitElement {
+  static properties = {
+    hass: {},
+    _config: {},
+    _activeTab: { state: true },
+  };
+
+  static styles = css`
+    .card-config {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--divider-color);
+      margin-bottom: 16px;
+    }
+
+    .tabs button {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary-text-color);
+      font-size: 14px;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+
+    .tabs button:hover {
+      color: var(--primary-color);
+    }
+
+    .tabs button.active {
+      color: var(--primary-color);
+      border-bottom: 2px solid var(--primary-color);
+      margin-bottom: -1px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--secondary-text-color);
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .helper {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      padding-left: 16px;
+      line-height: 1.4;
+    }
+
+    .warning {
+      font-size: 12px;
+      color: var(--error-color);
+      padding-left: 16px;
+    }
+
+    .display-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    ha-formfield {
+      display: flex;
+      align-items: center;
+      padding: 4px 0;
+    }
+
+    ha-form {
+      width: 100%;
+    }
+  `;
+
+  constructor() {
+    super();
+    this._activeTab = 'sources';
+  }
+
+  setConfig(config) {
+    this._config = {
+      next_race_entity: 'sensor.f1_next_race',
+      weather_entity: 'sensor.f1_weather',
+      track_weather_entity: 'sensor.f1_track_weather',
+      current_session_entity: 'sensor.f1_current_session',
+      session_status_entity: 'sensor.f1_session_status',
+      show_header: true,
+      show_countdown: true,
+      show_overview: true,
+      show_schedule: true,
+      show_track_time: true,
+      show_map: true,
+      show_weather: true,
+      show_history: true,
+      prefer_live_weather: true,
+      ...config,
+    };
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    return html`
+      <div class="card-config">
+        <div class="tabs">
+          <button
+            class=${this._activeTab === 'sources' ? 'active' : ''}
+            @click=${() => this._activeTab = 'sources'}
+          >
+            Data Sources
+          </button>
+          <button
+            class=${this._activeTab === 'display' ? 'active' : ''}
+            @click=${() => this._activeTab = 'display'}
+          >
+            Display
+          </button>
+        </div>
+
+        ${this._activeTab === 'sources'
+          ? this._renderDataSourcesTab()
+          : this._renderDisplayTab()}
+      </div>
+    `;
+  }
+
+  _renderDataSourcesTab() {
+    return html`
+      <div class="section">
+        <div class="section-header">REQUIRED SENSOR</div>
+        ${this._renderEntityPicker(
+          'next_race_entity',
+          'Next Race Sensor',
+          'Provides race name, circuit, track map, session schedule, and historical stats.',
+          true,
+          'sensor',
+        )}
+      </div>
+      <div class="section">
+        <div class="section-header">OPTIONAL SENSORS</div>
+        ${this._renderEntityPicker(
+          'weather_entity',
+          'Weather Forecast Sensor',
+          'Provides current and race-start forecast values and weather icons.',
+          false,
+          'sensor',
+        )}
+        ${this._renderEntityPicker(
+          'track_weather_entity',
+          'Live Track Weather Sensor',
+          'Used for live circuit conditions when a race weekend is active.',
+          false,
+          'sensor',
+        )}
+        ${this._renderEntityPicker(
+          'current_session_entity',
+          'Current Session Sensor',
+          'Marks the active session row when the weekend is live.',
+          false,
+          'sensor',
+        )}
+        ${this._renderEntityPicker(
+          'session_status_entity',
+          'Session Status Sensor',
+          'Used to detect pre/live/suspended states and prioritize live weather.',
+          false,
+          'sensor',
+        )}
+      </div>
+    `;
+  }
+
+  _renderDisplayTab() {
+    return html`
+      <div class="display-section">
+        ${this._renderSwitch('show_header', 'Show race header')}
+        ${this._renderSwitch('show_countdown', 'Show countdown block')}
+        ${this._renderSwitch('show_overview', 'Show overview highlights')}
+        ${this._renderSwitch('show_schedule', 'Show weekend schedule')}
+        ${this._renderSwitch(
+          'show_track_time',
+          'Show track time in schedule',
+          'Adds the local circuit time column when the next race sensor provides a circuit timezone.',
+        )}
+        ${this._renderSwitch('show_map', 'Show circuit map panel')}
+        ${this._renderSwitch('show_weather', 'Show weather comparison')}
+        ${this._renderSwitch('show_history', 'Show history and trends')}
+        ${this._renderSwitch(
+          'prefer_live_weather',
+          'Prefer live track weather when weekend is active',
+          'Uses the live track weather sensor for the “Now at circuit” column when available.',
+        )}
+      </div>
+    `;
+  }
+
+  _renderEntityPicker(name, label, helper, required, domain) {
+    const value = this._config[name];
+    const showWarning = required && !value;
+    const schema = [{ name, label, required, selector: { entity: { domain } } }];
+
+    return html`
+      <div class="field">
+        <ha-form
+          .hass=${this.hass}
+          .data=${this._config}
+          .schema=${schema}
+          .computeLabel=${() => label}
+          @value-changed=${this._formValueChanged}
+        ></ha-form>
+        <div class="helper">${helper}</div>
+        ${showWarning ? html`
+          <div class="warning">This sensor is required for the card to function</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  _renderSwitch(name, label, helper = null) {
+    const schema = [{ name, label, selector: { boolean: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _formValueChanged(ev) {
+    if (!this._config) return;
+    const value = ev.detail?.value || {};
+    const newConfig = { ...this._config, ...value };
     this._config = newConfig;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
   }
@@ -15279,6 +18125,13 @@ installSectionsAutoHeight(F1TrackLimitsCard, {
   min_rows: 1,
 });
 
+installSectionsAutoHeight(F1NextRaceCard, {
+  columns: 12,
+  min_columns: 6,
+  max_columns: 12,
+  min_rows: 5,
+});
+
 installSectionsAutoHeight(F1LiveSessionCard, {
   columns: 12,
   min_columns: 6,
@@ -15369,6 +18222,14 @@ if (!customElements.get('f1-track-limits-card')) {
 
 if (!customElements.get('f1-track-limits-card-editor')) {
   customElements.define('f1-track-limits-card-editor', F1TrackLimitsCardEditor);
+}
+
+if (!customElements.get('f1-next-race-card')) {
+  customElements.define('f1-next-race-card', F1NextRaceCard);
+}
+
+if (!customElements.get('f1-next-race-card-editor')) {
+  customElements.define('f1-next-race-card-editor', F1NextRaceCardEditor);
 }
 
 if (!customElements.get('f1-live-session-card')) {
@@ -15463,6 +18324,14 @@ window.customCards.push({
   type: 'f1-track-limits-card',
   name: 'F1 Track Limits',
   description: 'Track limits violations with deletions, warnings, and penalties',
+  configurable: true,
+  preview: true,
+});
+
+window.customCards.push({
+  type: 'f1-next-race-card',
+  name: 'F1 Next Race Overview',
+  description: 'Next race overview with countdown, track map, weekend schedule, weather, and history',
   configurable: true,
   preview: true,
 });
