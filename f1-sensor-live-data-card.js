@@ -9581,7 +9581,8 @@ class F1QualifyingTimingCard extends LitElement {
       } else if (resolvedQPart === 1) {
         position = pos.q1_position ?? null;
       } else {
-        position = this._parsePosition(pos.current_position);
+        const qPos = pos.q3_position ?? pos.q2_position ?? pos.q1_position;
+        position = qPos != null ? qPos : this._parsePosition(pos.current_position);
       }
 
       // Last lap: from laps dict
