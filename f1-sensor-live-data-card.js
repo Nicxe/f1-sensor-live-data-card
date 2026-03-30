@@ -278,6 +278,11 @@ const getEntityStateWithFallback = (hass, entityId) => {
   return hass.states?.[resolvedId] || null;
 };
 
+const isUnavailableLikeEntityState = (entityState) => {
+  const state = String(entityState?.state || '').trim().toLowerCase();
+  return state === 'unavailable' || state === 'unknown';
+};
+
 const getStateAgeSeconds = (state, field = 'last_changed') => {
   const rawValue = state?.[field] || state?.last_updated || null;
   if (!rawValue) return null;
@@ -1807,10 +1812,13 @@ class F1PitStopOverviewCard extends LitElement {
     const tyresState = getEntityStateWithFallback(this.hass, this.config.tyres_entity);
     const tyres = this._asList(tyresState?.attributes?.drivers);
     const pitState = getEntityStateWithFallback(this.hass, this.config.pitstops_entity);
-    const pitCars = pitState?.attributes?.cars && typeof pitState.attributes.cars === 'object'
+    const pitDataAvailable = Boolean(pitState && !isUnavailableLikeEntityState(pitState));
+    const pitCars = pitDataAvailable && pitState?.attributes?.cars && typeof pitState.attributes.cars === 'object'
       ? pitState.attributes.cars
       : {};
-    const pitStopsReplayOnly = Boolean(this.config.pitstops_entity && !pitState);
+    const pitStopsReplayOnly = Boolean(
+      this.config.pitstops_entity && (!pitState || isUnavailableLikeEntityState(pitState)),
+    );
     const positionsState = this.config.positions_entity
       ? getEntityStateWithFallback(this.hass, this.config.positions_entity)
       : null;
@@ -1818,13 +1826,20 @@ class F1PitStopOverviewCard extends LitElement {
 
     const rows = this._buildRows(drivers, tyres, pitCars, positions);
     const layoutMode = getResponsiveLayoutMode(this);
-    const columns = this._columns(rows, layoutMode, pitStopsReplayOnly);
+    const columns = this._columns(
+      rows,
+      layoutMode,
+      Boolean(this.config.pitstops_entity) && !pitDataAvailable,
+    );
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
       return html`
         <ha-card>
           <div class="ps-card">
+            ${pitStopsReplayOnly
+              ? html`<div class="ps-replay-note">Pit stop data is available in Replay Mode only</div>`
+              : null}
             <div class="ps-empty">No driver data</div>
           </div>
         </ha-card>
@@ -4532,13 +4547,18 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     const standings = Array.isArray(currentState?.attributes?.driver_standings)
       ? currentState.attributes.driver_standings
       : [];
-    const predictions = hasCollectionEntries(predictionState?.attributes?.drivers)
+    const predictionDataAvailable = Boolean(
+      predictionState && !isUnavailableLikeEntityState(predictionState),
+    );
+    const predictions = predictionDataAvailable && hasCollectionEntries(predictionState?.attributes?.drivers)
       ? predictionState.attributes.drivers
       : null;
 
     const hasCurrentData = standings.length > 0;
     const hasPredictionData = hasCollectionEntries(predictions);
-    const predictionReplayOnly = Boolean(this.config.entity && !predictionState);
+    const predictionReplayOnly = Boolean(
+      this.config.entity && (!predictionState || isUnavailableLikeEntityState(predictionState)),
+    );
     const useLiveRaceBase = hasCurrentData
       && hasPredictionData
       && isRaceSessionActive(sessionState, sessionStatusState);
@@ -4578,7 +4598,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       if (this.config.current_entity && !currentState) {
         return this._renderEmpty('Current standings entity not found', mode, spoilerBlocked);
       }
-      if (this.config.entity && !predictionState && !currentState) {
+      if (predictionReplayOnly) {
         return this._renderEmpty('Predicted points available in Replay Mode only', mode, spoilerBlocked);
       }
       return this._renderEmpty('No standings data', mode, spoilerBlocked);
@@ -4587,7 +4607,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
-      return this._renderEmpty(emptyMessage, mode, spoilerBlocked);
+      return this._renderEmpty(emptyMessage, mode, spoilerBlocked, predictionReplayOnly);
     }
 
     return html`
@@ -4613,7 +4633,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     `;
   }
 
-  _renderEmpty(message, mode = 'current', spoilerBlocked = false) {
+  _renderEmpty(message, mode = 'current', spoilerBlocked = false, replayOnly = false) {
     return html`
       <ha-card>
         <div class="cpd-card" data-layout=${getResponsiveLayoutMode(this)}>
@@ -4624,6 +4644,9 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
                 ${this._renderHeaderBadges(mode, spoilerBlocked)}
               </div>
             `
+            : null}
+          ${replayOnly
+            ? html`<div class="cpd-replay-note">Predicted points available in Replay Mode only</div>`
             : null}
           <div class="cpd-empty">${message}</div>
         </div>
@@ -5605,13 +5628,18 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     const standings = Array.isArray(currentState?.attributes?.constructor_standings)
       ? currentState.attributes.constructor_standings
       : [];
-    const predictions = hasCollectionEntries(predictionState?.attributes?.teams)
+    const predictionDataAvailable = Boolean(
+      predictionState && !isUnavailableLikeEntityState(predictionState),
+    );
+    const predictions = predictionDataAvailable && hasCollectionEntries(predictionState?.attributes?.teams)
       ? predictionState.attributes.teams
       : null;
 
     const hasCurrentData = standings.length > 0;
     const hasPredictionData = hasCollectionEntries(predictions);
-    const predictionReplayOnly = Boolean(this.config.entity && !predictionState);
+    const predictionReplayOnly = Boolean(
+      this.config.entity && (!predictionState || isUnavailableLikeEntityState(predictionState)),
+    );
     const useLiveRaceBase = hasCurrentData
       && hasPredictionData
       && isRaceSessionActive(sessionState, sessionStatusState);
@@ -5650,7 +5678,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       if (this.config.current_entity && !currentState) {
         return this._renderEmpty('Current standings entity not found', mode, spoilerBlocked);
       }
-      if (this.config.entity && !predictionState && !currentState) {
+      if (predictionReplayOnly) {
         return this._renderEmpty('Predicted points available in Replay Mode only', mode, spoilerBlocked);
       }
       return this._renderEmpty('No standings data', mode, spoilerBlocked);
@@ -5659,7 +5687,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
-      return this._renderEmpty(emptyMessage, mode, spoilerBlocked);
+      return this._renderEmpty(emptyMessage, mode, spoilerBlocked, predictionReplayOnly);
     }
 
     return html`
@@ -5685,7 +5713,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     `;
   }
 
-  _renderEmpty(message, mode = 'current', spoilerBlocked = false) {
+  _renderEmpty(message, mode = 'current', spoilerBlocked = false, replayOnly = false) {
     return html`
       <ha-card>
         <div class="cpt-card" data-layout=${getResponsiveLayoutMode(this)}>
@@ -5696,6 +5724,9 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
                 ${this._renderHeaderBadges(mode, spoilerBlocked)}
               </div>
             `
+            : null}
+          ${replayOnly
+            ? html`<div class="cpt-replay-note">Predicted points available in Replay Mode only</div>`
             : null}
           <div class="cpt-empty">${message}</div>
         </div>
@@ -9046,7 +9077,8 @@ class F1LiveSessionCard extends LitElement {
       };
     }
 
-    const deltaS = Math.round((Date.now() - this._clockSnapshot.ts) / 1000);
+    // Avoid ticking a whole second early around pause/resume transitions.
+    const deltaS = Math.floor((Date.now() - this._clockSnapshot.ts) / 1000);
     return {
       remaining: this._clockSnapshot.remainingS != null
         ? formatHMS(Math.max(0, this._clockSnapshot.remainingS - deltaS))
@@ -17415,9 +17447,19 @@ class F1RaceLapCard extends LitElement {
     const pitCars = pitState?.attributes?.cars && typeof pitState.attributes.cars === 'object'
       ? pitState.attributes.cars
       : {};
-    const pitStopsReplayOnly = Boolean(this.config.pitstops_entity && !pitState);
+    const pitDataAvailable = Boolean(pitState && !isUnavailableLikeEntityState(pitState));
+    const pitStopsReplayOnly = Boolean(
+      this.config.pitstops_entity && pitState && isUnavailableLikeEntityState(pitState),
+    );
 
-    const rows = this._buildRows(positionDrivers, tyresDrivers, driverList, pitCars, fastestLap, Boolean(pitState));
+    const rows = this._buildRows(
+      positionDrivers,
+      tyresDrivers,
+      driverList,
+      pitCars,
+      fastestLap,
+      pitDataAvailable,
+    );
     if (rows.length === 0) {
       return html`
         <ha-card>
@@ -17429,7 +17471,10 @@ class F1RaceLapCard extends LitElement {
     }
 
     const layoutMode = getResponsiveLayoutMode(this);
-    const columns = this._columns(layoutMode, pitStopsReplayOnly);
+    const columns = this._columns(
+      layoutMode,
+      Boolean(this.config.pitstops_entity) && !pitDataAvailable,
+    );
     const gridColumns = columns.map((col) => col.width).join(' ');
     const title = this._buildTitle(lapCountState, positionsState);
     const colorOverrides = this._timingColorStyles();
