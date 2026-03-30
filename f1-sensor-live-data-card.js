@@ -9570,17 +9570,18 @@ class F1QualifyingTimingCard extends LitElement {
         : null;
       const teamColor = this._normalizeColor(pos?.team_color || dlEntry?.team_color);
 
-      // Position: segment-specific based on current Q part
+      // Position: segment-specific based on current Q part.
+      // When a Q-part is active, only use that segment's position so drivers
+      // without a time in the current segment do not inherit an earlier rank.
       let position = null;
-      if (resolvedQPart === 3 && pos.q3_position != null) {
-        position = pos.q3_position;
-      } else if (resolvedQPart === 2 && pos.q2_position != null) {
-        position = pos.q2_position;
-      } else if (resolvedQPart === 1 && pos.q1_position != null) {
-        position = pos.q1_position;
+      if (resolvedQPart === 3) {
+        position = pos.q3_position ?? null;
+      } else if (resolvedQPart === 2) {
+        position = pos.q2_position ?? null;
+      } else if (resolvedQPart === 1) {
+        position = pos.q1_position ?? null;
       } else {
-        const qPos = pos.q3_position ?? pos.q2_position ?? pos.q1_position;
-        position = qPos != null ? qPos : this._parsePosition(pos.current_position);
+        position = this._parsePosition(pos.current_position);
       }
 
       // Last lap: from laps dict
