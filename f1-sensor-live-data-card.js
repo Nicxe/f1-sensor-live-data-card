@@ -468,11 +468,15 @@ const measureRenderedCardHeight = (host) => {
 };
 
 const measureRenderedCardWidth = (host) => {
+  const hostWidth = host?.getBoundingClientRect?.().width ?? 0;
   const card = host?.renderRoot?.querySelector?.('ha-card');
   const content = card?.firstElementChild;
-  const cardWidth = card?.getBoundingClientRect?.().width ?? 0;
-  const contentWidth = content?.getBoundingClientRect?.().width ?? 0;
-  return Math.max(cardWidth, contentWidth);
+  const cardWidth = card?.clientWidth || card?.getBoundingClientRect?.().width || 0;
+  const measuredWidth = Math.max(hostWidth, cardWidth);
+  if (measuredWidth > 0) {
+    return measuredWidth;
+  }
+  return content?.getBoundingClientRect?.().width ?? 0;
 };
 
 const DEFAULT_RESPONSIVE_BREAKPOINTS = {
@@ -4452,7 +4456,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
 
   setConfig(config) {
     this.config = {
-      title: 'Championship Standings Drivers',
+      title: 'Driver Championship',
       current_entity: 'sensor.f1_driver_standings',
       entity: 'sensor.f1_championship_prediction_drivers',
       drivers_entity: 'sensor.f1_driver_list',
@@ -4508,7 +4512,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       entity: 'sensor.f1_championship_prediction_drivers',
       drivers_entity: 'sensor.f1_driver_list',
       no_spoiler_entity: 'switch.f1_no_spoiler_mode',
-      title: 'Championship Standings Drivers',
+      title: 'Driver Championship',
     };
   }
 
@@ -4616,7 +4620,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
           ${this.config.show_header
             ? html`
               <div class="cpd-header-row">
-                <div class="cpd-header">${this.config.title || 'Championship Standings Drivers'}</div>
+                <div class="cpd-header">${this.config.title || 'Driver Championship'}</div>
                 ${this._renderHeaderBadges(mode, spoilerBlocked, predictionReplayOnly)}
               </div>
             `
@@ -4640,7 +4644,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
           ${this.config.show_header
             ? html`
               <div class="cpd-header-row">
-                <div class="cpd-header">${this.config.title || 'Championship Standings Drivers'}</div>
+                <div class="cpd-header">${this.config.title || 'Driver Championship'}</div>
                 ${this._renderHeaderBadges(mode, spoilerBlocked)}
               </div>
             `
@@ -5542,7 +5546,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
 
   setConfig(config) {
     this.config = {
-      title: 'Championship Standings Teams',
+      title: 'Constructor Championship',
       current_entity: 'sensor.f1_constructor_standings',
       entity: 'sensor.f1_championship_prediction_teams',
       session_entity: 'sensor.f1_current_session',
@@ -5594,7 +5598,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       current_entity: 'sensor.f1_constructor_standings',
       entity: 'sensor.f1_championship_prediction_teams',
       no_spoiler_entity: 'switch.f1_no_spoiler_mode',
-      title: 'Championship Standings Teams',
+      title: 'Constructor Championship',
     };
   }
 
@@ -5696,7 +5700,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
           ${this.config.show_header
             ? html`
               <div class="cpt-header-row">
-                <div class="cpt-header">${this.config.title || 'Championship Standings Teams'}</div>
+                <div class="cpt-header">${this.config.title || 'Constructor Championship'}</div>
                 ${this._renderHeaderBadges(mode, spoilerBlocked, predictionReplayOnly)}
               </div>
             `
@@ -5720,7 +5724,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
           ${this.config.show_header
             ? html`
               <div class="cpt-header-row">
-                <div class="cpt-header">${this.config.title || 'Championship Standings Teams'}</div>
+                <div class="cpt-header">${this.config.title || 'Constructor Championship'}</div>
                 ${this._renderHeaderBadges(mode, spoilerBlocked)}
               </div>
             `
@@ -6274,7 +6278,7 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      title: 'Championship Standings Drivers',
+      title: 'Driver Championship',
       current_entity: 'sensor.f1_driver_standings',
       entity: 'sensor.f1_championship_prediction_drivers',
       drivers_entity: 'sensor.f1_driver_list',
@@ -6630,7 +6634,7 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      title: 'Championship Standings Teams',
+      title: 'Constructor Championship',
       current_entity: 'sensor.f1_constructor_standings',
       entity: 'sensor.f1_championship_prediction_teams',
       session_entity: 'sensor.f1_current_session',
@@ -8921,7 +8925,7 @@ class F1LiveSessionCard extends LitElement {
   getGridOptions() {
     return {
       columns: 12,
-      min_columns: 6,
+      min_columns: 4,
       max_columns: 12,
       min_rows: 1,
     };
@@ -14408,6 +14412,7 @@ class F1QualifyingTimingCard extends LitElement {
       position: relative;
       display: flex;
       flex-direction: column;
+      --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
@@ -14483,6 +14488,10 @@ class F1QualifyingTimingCard extends LitElement {
       background: var(--qt-chip);
       font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--qt-text);
+    }
+
+    .qt-row:not(.header) {
+      height: var(--f1-live-table-row-height, 34px);
     }
 
     .qt-row.header {
@@ -14726,7 +14735,7 @@ class F1QualifyingTimingCard extends LitElement {
   getGridOptions() {
     return {
       columns: 12,
-      min_columns: 6,
+      min_columns: 4,
       max_columns: 12,
       min_rows: 10,
     };
@@ -15769,6 +15778,7 @@ class F1PracticeTimingCard extends LitElement {
       position: relative;
       display: flex;
       flex-direction: column;
+      --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
@@ -15826,6 +15836,10 @@ class F1PracticeTimingCard extends LitElement {
       background: var(--pt-chip);
       font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--pt-text);
+    }
+
+    .pt-row:not(.header) {
+      height: var(--f1-live-table-row-height, 34px);
     }
 
     .pt-row.header {
@@ -16054,7 +16068,7 @@ class F1PracticeTimingCard extends LitElement {
   getGridOptions() {
     return {
       columns: 12,
-      min_columns: 6,
+      min_columns: 4,
       max_columns: 12,
       min_rows: 10,
     };
@@ -17013,6 +17027,7 @@ class F1RaceLapCard extends LitElement {
       position: relative;
       display: flex;
       flex-direction: column;
+      --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
@@ -17070,6 +17085,10 @@ class F1RaceLapCard extends LitElement {
       background: var(--rl-chip);
       font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--rl-text);
+    }
+
+    .rl-row:not(.header) {
+      height: var(--f1-live-table-row-height, 34px);
     }
 
     .rl-row.header {
@@ -17341,7 +17360,7 @@ class F1RaceLapCard extends LitElement {
   getGridOptions() {
     return {
       columns: 12,
-      min_columns: 6,
+      min_columns: 4,
       max_columns: 12,
       min_rows: 10,
     };
@@ -18282,7 +18301,7 @@ installSectionsAutoHeight(F1NextRaceCard, {
 
 installSectionsAutoHeight(F1LiveSessionCard, {
   columns: 12,
-  min_columns: 6,
+  min_columns: 4,
   max_columns: 12,
   min_rows: 1,
 });
@@ -18296,21 +18315,21 @@ installSectionsAutoHeight(F1RaceControlCard, {
 
 installSectionsAutoHeight(F1QualifyingTimingCard, {
   columns: 12,
-  min_columns: 6,
+  min_columns: 4,
   max_columns: 12,
   min_rows: 10,
 });
 
 installSectionsAutoHeight(F1PracticeTimingCard, {
   columns: 12,
-  min_columns: 6,
+  min_columns: 4,
   max_columns: 12,
   min_rows: 10,
 });
 
 installSectionsAutoHeight(F1RaceLapCard, {
   columns: 12,
-  min_columns: 6,
+  min_columns: 4,
   max_columns: 12,
   min_rows: 10,
 });
