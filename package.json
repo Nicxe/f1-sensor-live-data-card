@@ -12,6 +12,7 @@
   "overrides": {
     "tar": "^7.5.3",
     "cross-spawn": "^7.0.6",
-    "brace-expansion": "^2.0.2"
+    "brace-expansion": "^2.0.2",
+    "picomatch": ">=4.0.4"
   }
 }
