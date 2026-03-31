@@ -278,6 +278,11 @@ const getEntityStateWithFallback = (hass, entityId) => {
   return hass.states?.[resolvedId] || null;
 };
 
+const isUnavailableLikeEntityState = (entityState) => {
+  const state = String(entityState?.state || '').trim().toLowerCase();
+  return state === 'unavailable' || state === 'unknown';
+};
+
 const getStateAgeSeconds = (state, field = 'last_changed') => {
   const rawValue = state?.[field] || state?.last_updated || null;
   if (!rawValue) return null;
@@ -463,11 +468,15 @@ const measureRenderedCardHeight = (host) => {
 };
 
 const measureRenderedCardWidth = (host) => {
+  const hostWidth = host?.getBoundingClientRect?.().width ?? 0;
   const card = host?.renderRoot?.querySelector?.('ha-card');
   const content = card?.firstElementChild;
-  const cardWidth = card?.getBoundingClientRect?.().width ?? 0;
-  const contentWidth = content?.getBoundingClientRect?.().width ?? 0;
-  return Math.max(cardWidth, contentWidth);
+  const cardWidth = card?.clientWidth || card?.getBoundingClientRect?.().width || 0;
+  const measuredWidth = Math.max(hostWidth, cardWidth);
+  if (measuredWidth > 0) {
+    return measuredWidth;
+  }
+  return content?.getBoundingClientRect?.().width ?? 0;
 };
 
 const DEFAULT_RESPONSIVE_BREAKPOINTS = {
@@ -1681,6 +1690,23 @@ class F1PitStopOverviewCard extends LitElement {
       font-size: 13px;
     }
 
+    .ps-replay-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      background: rgba(251, 191, 36, 0.06);
+      border: 1px solid rgba(251, 191, 36, 0.15);
+      color: rgba(251, 191, 36, 0.85);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-align: center;
+      line-height: 1.4;
+    }
+
     @media (max-width: 720px) {
       .ps-card {
         padding: 12px 10px 12px;
@@ -1790,9 +1816,13 @@ class F1PitStopOverviewCard extends LitElement {
     const tyresState = getEntityStateWithFallback(this.hass, this.config.tyres_entity);
     const tyres = this._asList(tyresState?.attributes?.drivers);
     const pitState = getEntityStateWithFallback(this.hass, this.config.pitstops_entity);
-    const pitCars = pitState?.attributes?.cars && typeof pitState.attributes.cars === 'object'
+    const pitDataAvailable = Boolean(pitState && !isUnavailableLikeEntityState(pitState));
+    const pitCars = pitDataAvailable && pitState?.attributes?.cars && typeof pitState.attributes.cars === 'object'
       ? pitState.attributes.cars
       : {};
+    const pitStopsReplayOnly = Boolean(
+      this.config.pitstops_entity && (!pitState || isUnavailableLikeEntityState(pitState)),
+    );
     const positionsState = this.config.positions_entity
       ? getEntityStateWithFallback(this.hass, this.config.positions_entity)
       : null;
@@ -1800,13 +1830,20 @@ class F1PitStopOverviewCard extends LitElement {
 
     const rows = this._buildRows(drivers, tyres, pitCars, positions);
     const layoutMode = getResponsiveLayoutMode(this);
-    const columns = this._columns(rows, layoutMode);
+    const columns = this._columns(
+      rows,
+      layoutMode,
+      Boolean(this.config.pitstops_entity) && !pitDataAvailable,
+    );
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
       return html`
         <ha-card>
           <div class="ps-card">
+            ${pitStopsReplayOnly
+              ? html`<div class="ps-replay-note">Pit stop data is available in Replay Mode only</div>`
+              : null}
             <div class="ps-empty">No driver data</div>
           </div>
         </ha-card>
@@ -1819,6 +1856,9 @@ class F1PitStopOverviewCard extends LitElement {
           ${this.config.show_header
             ? html`<div class="ps-header">${this.config.title || 'Pit Stops & Tyres'}</div>`
             : null}
+          ${pitStopsReplayOnly
+            ? html`<div class="ps-replay-note">Pit stop data is available in Replay Mode only</div>`
+            : null}
           <div class="ps-table" data-layout=${layoutMode} style="--ps-columns: ${gridColumns};">
             ${this.config.show_table_header ? this._renderHeader(columns) : null}
             ${rows.map((row) => this._renderRow(row, columns))}
@@ -1828,7 +1868,7 @@ class F1PitStopOverviewCard extends LitElement {
     `;
   }
 
-  _columns(rows, layoutMode = 'wide') {
+  _columns(rows, layoutMode = 'wide', suppressPit = false) {
     const compactLayout = layoutMode === 'narrow';
     const mediumLayout = layoutMode === 'medium';
     const driverWidth = this.config.show_full_name === true
@@ -1848,6 +1888,7 @@ class F1PitStopOverviewCard extends LitElement {
     if (this.config.show_tyre !== false) {
       cols.push({ key: 'tyre', label: 'TYRES', width: compactLayout ? '0.38fr' : '0.3fr' });
     }
+    if (suppressPit) return cols;
     const pitColumns = [];
     if (this.config.show_pit_count !== false) {
       pitColumns.push({
@@ -2622,8 +2663,8 @@ class F1PitStopOverviewCardEditor extends LitElement {
         )}
         ${this._renderEntityPicker(
           'pitstops_entity',
-          'Pit Stops Sensor',
-          'Provides pit stop times, lane times, and deltas',
+          'Pit Stops Sensor (Replay Mode only)',
+          'Provides pit stop times, lane times, and deltas. This sensor is only available during Replay Mode sessions.',
           true,
           'sensor'
         )}
@@ -2667,10 +2708,10 @@ class F1PitStopOverviewCardEditor extends LitElement {
 
         ${this._renderSwitch('show_status', 'Show status')}
         ${this._renderSwitch('show_tyre', 'Show tyre')}
-        ${this._renderSwitch('show_pit_count', 'Show pit stop count')}
-        ${this._renderSwitch('show_pit_time', 'Show pit stop time')}
-        ${this._renderSwitch('show_pit_lane_time', 'Show pit lane time')}
-        ${this._renderSwitch('show_pit_delta', 'Show pit stop delta')}
+        ${this._renderSwitch('show_pit_count', 'Show pit stop count (Replay Mode only)')}
+        ${this._renderSwitch('show_pit_time', 'Show pit stop time (Replay Mode only)')}
+        ${this._renderSwitch('show_pit_lane_time', 'Show pit lane time (Replay Mode only)')}
+        ${this._renderSwitch('show_pit_delta', 'Show pit stop delta (Replay Mode only)')}
       </div>
     `;
   }
@@ -4189,6 +4230,12 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       border-color: rgba(250, 204, 21, 0.26);
     }
 
+    .cpd-mode-pill.replay-only {
+      background: rgba(251, 191, 36, 0.10);
+      color: rgba(251, 191, 36, 0.85);
+      border-color: rgba(251, 191, 36, 0.20);
+    }
+
     .cpd-table {
       display: grid;
       gap: 6px;
@@ -4364,6 +4411,23 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       font-size: 13px;
     }
 
+    .cpd-replay-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      background: rgba(251, 191, 36, 0.06);
+      border: 1px solid rgba(251, 191, 36, 0.15);
+      color: rgba(251, 191, 36, 0.85);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-align: center;
+      line-height: 1.4;
+    }
+
     @media (max-width: 720px) {
       .cpd-card {
         padding: 12px 10px 12px;
@@ -4392,7 +4456,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
 
   setConfig(config) {
     this.config = {
-      title: 'Championship Standings Drivers',
+      title: 'Driver Championship',
       current_entity: 'sensor.f1_driver_standings',
       entity: 'sensor.f1_championship_prediction_drivers',
       drivers_entity: 'sensor.f1_driver_list',
@@ -4448,7 +4512,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       entity: 'sensor.f1_championship_prediction_drivers',
       drivers_entity: 'sensor.f1_driver_list',
       no_spoiler_entity: 'switch.f1_no_spoiler_mode',
-      title: 'Championship Standings Drivers',
+      title: 'Driver Championship',
     };
   }
 
@@ -4487,12 +4551,18 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     const standings = Array.isArray(currentState?.attributes?.driver_standings)
       ? currentState.attributes.driver_standings
       : [];
-    const predictions = hasCollectionEntries(predictionState?.attributes?.drivers)
+    const predictionDataAvailable = Boolean(
+      predictionState && !isUnavailableLikeEntityState(predictionState),
+    );
+    const predictions = predictionDataAvailable && hasCollectionEntries(predictionState?.attributes?.drivers)
       ? predictionState.attributes.drivers
       : null;
 
     const hasCurrentData = standings.length > 0;
     const hasPredictionData = hasCollectionEntries(predictions);
+    const predictionReplayOnly = Boolean(
+      this.config.entity && (!predictionState || isUnavailableLikeEntityState(predictionState)),
+    );
     const useLiveRaceBase = hasCurrentData
       && hasPredictionData
       && isRaceSessionActive(sessionState, sessionStatusState);
@@ -4532,8 +4602,8 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       if (this.config.current_entity && !currentState) {
         return this._renderEmpty('Current standings entity not found', mode, spoilerBlocked);
       }
-      if (this.config.entity && !predictionState && !currentState) {
-        return this._renderEmpty('Prediction entity not found', mode, spoilerBlocked);
+      if (predictionReplayOnly) {
+        return this._renderEmpty('Predicted points available in Replay Mode only', mode, spoilerBlocked);
       }
       return this._renderEmpty('No standings data', mode, spoilerBlocked);
     }
@@ -4541,7 +4611,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
-      return this._renderEmpty(emptyMessage, mode, spoilerBlocked);
+      return this._renderEmpty(emptyMessage, mode, spoilerBlocked, predictionReplayOnly);
     }
 
     return html`
@@ -4550,10 +4620,13 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
           ${this.config.show_header
             ? html`
               <div class="cpd-header-row">
-                <div class="cpd-header">${this.config.title || 'Championship Standings Drivers'}</div>
-                ${this._renderHeaderBadges(mode, spoilerBlocked)}
+                <div class="cpd-header">${this.config.title || 'Driver Championship'}</div>
+                ${this._renderHeaderBadges(mode, spoilerBlocked, predictionReplayOnly)}
               </div>
             `
+            : null}
+          ${predictionReplayOnly
+            ? html`<div class="cpd-replay-note">Predicted points available in Replay Mode only</div>`
             : null}
           <div class="cpd-table" style="--cpd-columns: ${gridColumns};">
             ${this.config.show_table_header ? this._renderHeader(columns) : null}
@@ -4564,17 +4637,20 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     `;
   }
 
-  _renderEmpty(message, mode = 'current', spoilerBlocked = false) {
+  _renderEmpty(message, mode = 'current', spoilerBlocked = false, replayOnly = false) {
     return html`
       <ha-card>
         <div class="cpd-card" data-layout=${getResponsiveLayoutMode(this)}>
           ${this.config.show_header
             ? html`
               <div class="cpd-header-row">
-                <div class="cpd-header">${this.config.title || 'Championship Standings Drivers'}</div>
+                <div class="cpd-header">${this.config.title || 'Driver Championship'}</div>
                 ${this._renderHeaderBadges(mode, spoilerBlocked)}
               </div>
             `
+            : null}
+          ${replayOnly
+            ? html`<div class="cpd-replay-note">Predicted points available in Replay Mode only</div>`
             : null}
           <div class="cpd-empty">${message}</div>
         </div>
@@ -4589,11 +4665,14 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     return 'CURRENT';
   }
 
-  _renderHeaderBadges(mode, spoilerBlocked) {
+  _renderHeaderBadges(mode, spoilerBlocked, predictionReplayOnly = false) {
     if (this.config.show_mode_badge === false) return null;
     return html`
       <div class="cpd-header-badges">
         <div class="cpd-mode-pill ${mode}">${this._modeLabel(mode)}</div>
+        ${predictionReplayOnly
+          ? html`<div class="cpd-mode-pill replay-only">PREDICTIONS: REPLAY ONLY</div>`
+          : null}
         ${spoilerBlocked
           ? html`<div class="cpd-mode-pill masked">NO SPOILER</div>`
           : null}
@@ -5279,6 +5358,12 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       border-color: rgba(250, 204, 21, 0.26);
     }
 
+    .cpt-mode-pill.replay-only {
+      background: rgba(251, 191, 36, 0.10);
+      color: rgba(251, 191, 36, 0.85);
+      border-color: rgba(251, 191, 36, 0.20);
+    }
+
     .cpt-table {
       display: grid;
       gap: 6px;
@@ -5416,6 +5501,23 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       font-size: 13px;
     }
 
+    .cpt-replay-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      background: rgba(251, 191, 36, 0.06);
+      border: 1px solid rgba(251, 191, 36, 0.15);
+      color: rgba(251, 191, 36, 0.85);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-align: center;
+      line-height: 1.4;
+    }
+
     @media (max-width: 720px) {
       .cpt-card {
         padding: 12px 10px 12px;
@@ -5444,7 +5546,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
 
   setConfig(config) {
     this.config = {
-      title: 'Championship Standings Teams',
+      title: 'Constructor Championship',
       current_entity: 'sensor.f1_constructor_standings',
       entity: 'sensor.f1_championship_prediction_teams',
       session_entity: 'sensor.f1_current_session',
@@ -5496,7 +5598,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       current_entity: 'sensor.f1_constructor_standings',
       entity: 'sensor.f1_championship_prediction_teams',
       no_spoiler_entity: 'switch.f1_no_spoiler_mode',
-      title: 'Championship Standings Teams',
+      title: 'Constructor Championship',
     };
   }
 
@@ -5530,12 +5632,18 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     const standings = Array.isArray(currentState?.attributes?.constructor_standings)
       ? currentState.attributes.constructor_standings
       : [];
-    const predictions = hasCollectionEntries(predictionState?.attributes?.teams)
+    const predictionDataAvailable = Boolean(
+      predictionState && !isUnavailableLikeEntityState(predictionState),
+    );
+    const predictions = predictionDataAvailable && hasCollectionEntries(predictionState?.attributes?.teams)
       ? predictionState.attributes.teams
       : null;
 
     const hasCurrentData = standings.length > 0;
     const hasPredictionData = hasCollectionEntries(predictions);
+    const predictionReplayOnly = Boolean(
+      this.config.entity && (!predictionState || isUnavailableLikeEntityState(predictionState)),
+    );
     const useLiveRaceBase = hasCurrentData
       && hasPredictionData
       && isRaceSessionActive(sessionState, sessionStatusState);
@@ -5574,8 +5682,8 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       if (this.config.current_entity && !currentState) {
         return this._renderEmpty('Current standings entity not found', mode, spoilerBlocked);
       }
-      if (this.config.entity && !predictionState && !currentState) {
-        return this._renderEmpty('Prediction entity not found', mode, spoilerBlocked);
+      if (predictionReplayOnly) {
+        return this._renderEmpty('Predicted points available in Replay Mode only', mode, spoilerBlocked);
       }
       return this._renderEmpty('No standings data', mode, spoilerBlocked);
     }
@@ -5583,7 +5691,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
-      return this._renderEmpty(emptyMessage, mode, spoilerBlocked);
+      return this._renderEmpty(emptyMessage, mode, spoilerBlocked, predictionReplayOnly);
     }
 
     return html`
@@ -5592,10 +5700,13 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
           ${this.config.show_header
             ? html`
               <div class="cpt-header-row">
-                <div class="cpt-header">${this.config.title || 'Championship Standings Teams'}</div>
-                ${this._renderHeaderBadges(mode, spoilerBlocked)}
+                <div class="cpt-header">${this.config.title || 'Constructor Championship'}</div>
+                ${this._renderHeaderBadges(mode, spoilerBlocked, predictionReplayOnly)}
               </div>
             `
+            : null}
+          ${predictionReplayOnly
+            ? html`<div class="cpt-replay-note">Predicted points available in Replay Mode only</div>`
             : null}
           <div class="cpt-table" style="--cpt-columns: ${gridColumns};">
             ${this.config.show_table_header ? this._renderHeader(columns) : null}
@@ -5606,17 +5717,20 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     `;
   }
 
-  _renderEmpty(message, mode = 'current', spoilerBlocked = false) {
+  _renderEmpty(message, mode = 'current', spoilerBlocked = false, replayOnly = false) {
     return html`
       <ha-card>
         <div class="cpt-card" data-layout=${getResponsiveLayoutMode(this)}>
           ${this.config.show_header
             ? html`
               <div class="cpt-header-row">
-                <div class="cpt-header">${this.config.title || 'Championship Standings Teams'}</div>
+                <div class="cpt-header">${this.config.title || 'Constructor Championship'}</div>
                 ${this._renderHeaderBadges(mode, spoilerBlocked)}
               </div>
             `
+            : null}
+          ${replayOnly
+            ? html`<div class="cpt-replay-note">Predicted points available in Replay Mode only</div>`
             : null}
           <div class="cpt-empty">${message}</div>
         </div>
@@ -5631,11 +5745,14 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     return 'CURRENT';
   }
 
-  _renderHeaderBadges(mode, spoilerBlocked) {
+  _renderHeaderBadges(mode, spoilerBlocked, predictionReplayOnly = false) {
     if (this.config.show_mode_badge === false) return null;
     return html`
       <div class="cpt-header-badges">
         <div class="cpt-mode-pill ${mode}">${this._modeLabel(mode)}</div>
+        ${predictionReplayOnly
+          ? html`<div class="cpt-mode-pill replay-only">PREDICTIONS: REPLAY ONLY</div>`
+          : null}
         ${spoilerBlocked
           ? html`<div class="cpt-mode-pill masked">NO SPOILER</div>`
           : null}
@@ -6161,7 +6278,7 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      title: 'Championship Standings Drivers',
+      title: 'Driver Championship',
       current_entity: 'sensor.f1_driver_standings',
       entity: 'sensor.f1_championship_prediction_drivers',
       drivers_entity: 'sensor.f1_driver_list',
@@ -6225,11 +6342,11 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
         )}
       </div>
       <div class="section">
-        <div class="section-header">LIVE RACE SOURCES</div>
+        <div class="section-header">RACE PROJECTION SOURCES (Replay Mode only)</div>
         ${this._renderEntityPicker(
           'entity',
-          'Prediction Sensor (live race)',
-          'Adds live projected points during an active Race session when available',
+          'Prediction Sensor (Replay Mode only)',
+          'Adds projected points during Race sessions. This sensor is only available during Replay Mode.',
           false,
           'sensor'
         )}
@@ -6311,14 +6428,14 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
 
         ${this._renderSwitch(
           'show_predicted_points',
-          'Show live projection during race',
-          'Only shown when an active Race session is confirmed and prediction data exists; live current points still follow replay/race timing when available'
+          'Show projection during race (Replay Mode only)',
+          'Prediction data is only available during Replay Mode sessions. Current standings are always shown regardless of mode.'
         )}
         ${this._renderSwitch('show_current_points', 'Show current points')}
         ${this._renderSwitch(
           'show_delta',
           'Show points delta',
-          'Shown only when live projection is visible'
+          'Shown only when projection is visible (Replay Mode only)'
         )}
 
         <ha-textfield
@@ -6517,7 +6634,7 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
-      title: 'Championship Standings Teams',
+      title: 'Constructor Championship',
       current_entity: 'sensor.f1_constructor_standings',
       entity: 'sensor.f1_championship_prediction_teams',
       session_entity: 'sensor.f1_current_session',
@@ -6578,11 +6695,11 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
         )}
       </div>
       <div class="section">
-        <div class="section-header">LIVE RACE SOURCES</div>
+        <div class="section-header">RACE PROJECTION SOURCES (Replay Mode only)</div>
         ${this._renderEntityPicker(
           'entity',
-          'Prediction Sensor (live race)',
-          'Adds live projected points during an active Race session when available',
+          'Prediction Sensor (Replay Mode only)',
+          'Adds projected points during Race sessions. This sensor is only available during Replay Mode.',
           false,
           'sensor'
         )}
@@ -6634,14 +6751,14 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
 
         ${this._renderSwitch(
           'show_predicted_points',
-          'Show live projection during race',
-          'Only shown when an active Race session is confirmed and prediction data exists; live current points still follow replay/race timing when available'
+          'Show projection during race (Replay Mode only)',
+          'Prediction data is only available during Replay Mode sessions. Current standings are always shown regardless of mode.'
         )}
         ${this._renderSwitch('show_current_points', 'Show current points')}
         ${this._renderSwitch(
           'show_delta',
           'Show points delta',
-          'Shown only when live projection is visible'
+          'Shown only when projection is visible (Replay Mode only)'
         )}
 
         <ha-textfield
@@ -8808,7 +8925,7 @@ class F1LiveSessionCard extends LitElement {
   getGridOptions() {
     return {
       columns: 12,
-      min_columns: 6,
+      min_columns: 4,
       max_columns: 12,
       min_rows: 1,
     };
@@ -8964,7 +9081,8 @@ class F1LiveSessionCard extends LitElement {
       };
     }
 
-    const deltaS = Math.round((Date.now() - this._clockSnapshot.ts) / 1000);
+    // Avoid ticking a whole second early around pause/resume transitions.
+    const deltaS = Math.floor((Date.now() - this._clockSnapshot.ts) / 1000);
     return {
       remaining: this._clockSnapshot.remainingS != null
         ? formatHMS(Math.max(0, this._clockSnapshot.remainingS - deltaS))
@@ -9743,8 +9861,8 @@ class F1LiveSessionCardEditor extends LitElement {
         )}
         ${this._renderEntityPicker(
           'formation_start_entity',
-          'Formation Lap Sensor',
-          'Indicates formation lap in progress',
+          'Formation Lap Sensor (Replay Mode only)',
+          'Indicates formation lap in progress. This sensor is only available during Replay Mode sessions.',
           false,
           'binary_sensor'
         )}
@@ -14294,6 +14412,7 @@ class F1QualifyingTimingCard extends LitElement {
       position: relative;
       display: flex;
       flex-direction: column;
+      --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
@@ -14369,6 +14488,10 @@ class F1QualifyingTimingCard extends LitElement {
       background: var(--qt-chip);
       font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--qt-text);
+    }
+
+    .qt-row:not(.header) {
+      height: var(--f1-live-table-row-height, 34px);
     }
 
     .qt-row.header {
@@ -14612,7 +14735,7 @@ class F1QualifyingTimingCard extends LitElement {
   getGridOptions() {
     return {
       columns: 12,
-      min_columns: 6,
+      min_columns: 4,
       max_columns: 12,
       min_rows: 10,
     };
@@ -15655,6 +15778,7 @@ class F1PracticeTimingCard extends LitElement {
       position: relative;
       display: flex;
       flex-direction: column;
+      --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
@@ -15712,6 +15836,10 @@ class F1PracticeTimingCard extends LitElement {
       background: var(--pt-chip);
       font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--pt-text);
+    }
+
+    .pt-row:not(.header) {
+      height: var(--f1-live-table-row-height, 34px);
     }
 
     .pt-row.header {
@@ -15940,7 +16068,7 @@ class F1PracticeTimingCard extends LitElement {
   getGridOptions() {
     return {
       columns: 12,
-      min_columns: 6,
+      min_columns: 4,
       max_columns: 12,
       min_rows: 10,
     };
@@ -16899,6 +17027,7 @@ class F1RaceLapCard extends LitElement {
       position: relative;
       display: flex;
       flex-direction: column;
+      --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
       background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
@@ -16956,6 +17085,10 @@ class F1RaceLapCard extends LitElement {
       background: var(--rl-chip);
       font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       color: var(--rl-text);
+    }
+
+    .rl-row:not(.header) {
+      height: var(--f1-live-table-row-height, 34px);
     }
 
     .rl-row.header {
@@ -17131,6 +17264,23 @@ class F1RaceLapCard extends LitElement {
       font-size: 13px;
     }
 
+    .rl-replay-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      background: rgba(251, 191, 36, 0.06);
+      border: 1px solid rgba(251, 191, 36, 0.15);
+      color: rgba(251, 191, 36, 0.85);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-align: center;
+      line-height: 1.4;
+    }
+
     @media (max-width: 720px) {
       .rl-card {
         padding: 12px 10px 12px;
@@ -17210,7 +17360,7 @@ class F1RaceLapCard extends LitElement {
   getGridOptions() {
     return {
       columns: 12,
-      min_columns: 6,
+      min_columns: 4,
       max_columns: 12,
       min_rows: 10,
     };
@@ -17316,8 +17466,19 @@ class F1RaceLapCard extends LitElement {
     const pitCars = pitState?.attributes?.cars && typeof pitState.attributes.cars === 'object'
       ? pitState.attributes.cars
       : {};
+    const pitDataAvailable = Boolean(pitState && !isUnavailableLikeEntityState(pitState));
+    const pitStopsReplayOnly = Boolean(
+      this.config.pitstops_entity && pitState && isUnavailableLikeEntityState(pitState),
+    );
 
-    const rows = this._buildRows(positionDrivers, tyresDrivers, driverList, pitCars, fastestLap, Boolean(pitState));
+    const rows = this._buildRows(
+      positionDrivers,
+      tyresDrivers,
+      driverList,
+      pitCars,
+      fastestLap,
+      pitDataAvailable,
+    );
     if (rows.length === 0) {
       return html`
         <ha-card>
@@ -17329,7 +17490,10 @@ class F1RaceLapCard extends LitElement {
     }
 
     const layoutMode = getResponsiveLayoutMode(this);
-    const columns = this._columns(layoutMode);
+    const columns = this._columns(
+      layoutMode,
+      Boolean(this.config.pitstops_entity) && !pitDataAvailable,
+    );
     const gridColumns = columns.map((col) => col.width).join(' ');
     const title = this._buildTitle(lapCountState, positionsState);
     const colorOverrides = this._timingColorStyles();
@@ -17344,6 +17508,9 @@ class F1RaceLapCard extends LitElement {
               </div>
             `
             : null}
+          ${pitStopsReplayOnly
+            ? html`<div class="rl-replay-note">Pit stop data is available in Replay Mode only</div>`
+            : null}
           <div class="rl-scroll">
             <div class="rl-table" style="--rl-columns: ${gridColumns};">
               ${this.config.show_table_header !== false ? this._renderHeader(columns) : null}
@@ -17355,7 +17522,7 @@ class F1RaceLapCard extends LitElement {
     `;
   }
 
-  _columns(layoutMode = 'wide') {
+  _columns(layoutMode = 'wide', suppressPit = false) {
     const mediumLayout = layoutMode === 'medium';
     const narrowLayout = layoutMode === 'narrow';
     const driverWidth = this.config.show_full_name === true
@@ -17375,7 +17542,7 @@ class F1RaceLapCard extends LitElement {
     if (this.config.show_tyre_age !== false && !mediumLayout && !narrowLayout) {
       columns.push({ key: 'tyre_age', label: 'Age', width: '30px', center: true });
     }
-    if (this.config.show_pit_count !== false) {
+    if (this.config.show_pit_count !== false && !suppressPit) {
       columns.push({ key: 'pit_count', label: 'Pit', width: '38px', center: true });
     }
     if (this.config.show_last_lap !== false) {
@@ -17973,8 +18140,8 @@ class F1RaceLapCardEditor extends LitElement {
         )}
         ${this._renderEntityPicker(
           'pitstops_entity',
-          'Pit Stops Sensor',
-          'Provides the pit stop count column',
+          'Pit Stops Sensor (Replay Mode only)',
+          'Provides the pit stop count column. This sensor is only available during Replay Mode sessions.',
           false,
         )}
       </div>
@@ -17998,7 +18165,7 @@ class F1RaceLapCardEditor extends LitElement {
         ${this._renderSwitch('show_status', 'Show inline status')}
         ${this._renderSwitch('show_tyre', 'Show tyre')}
         ${this._renderSwitch('show_tyre_age', 'Show tyre age')}
-        ${this._renderSwitch('show_pit_count', 'Show pit stops')}
+        ${this._renderSwitch('show_pit_count', 'Show pit stops (Replay Mode only)')}
         ${this._renderSwitch('show_last_lap', 'Show last lap')}
         ${this._renderSwitch('show_fastest_lap', 'Show fastest lap')}
 
@@ -18134,7 +18301,7 @@ installSectionsAutoHeight(F1NextRaceCard, {
 
 installSectionsAutoHeight(F1LiveSessionCard, {
   columns: 12,
-  min_columns: 6,
+  min_columns: 4,
   max_columns: 12,
   min_rows: 1,
 });
@@ -18148,21 +18315,21 @@ installSectionsAutoHeight(F1RaceControlCard, {
 
 installSectionsAutoHeight(F1QualifyingTimingCard, {
   columns: 12,
-  min_columns: 6,
+  min_columns: 4,
   max_columns: 12,
   min_rows: 10,
 });
 
 installSectionsAutoHeight(F1PracticeTimingCard, {
   columns: 12,
-  min_columns: 6,
+  min_columns: 4,
   max_columns: 12,
   min_rows: 10,
 });
 
 installSectionsAutoHeight(F1RaceLapCard, {
   columns: 12,
-  min_columns: 6,
+  min_columns: 4,
   max_columns: 12,
   min_rows: 10,
 });
@@ -18283,7 +18450,7 @@ window.customCards.push({
 window.customCards.push({
   type: 'f1-pitstop-overview-card',
   name: 'F1 Pit Stops & Tyres',
-  description: 'Live pit stop overview with tyre and stop timing columns',
+  description: 'Pit stop overview with tyre and stop timing columns. Pit stop data is Replay Mode only.',
   configurable: true,
   preview: true,
 });
@@ -18299,7 +18466,7 @@ window.customCards.push({
 window.customCards.push({
   type: 'f1-championship-prediction-drivers-card',
   name: 'F1 Championship Standings Drivers',
-  description: 'Current driver championship standings with live race projection overlay',
+  description: 'Current driver championship standings with race projection overlay (predictions Replay Mode only)',
   configurable: true,
   preview: true,
 });
@@ -18307,7 +18474,7 @@ window.customCards.push({
 window.customCards.push({
   type: 'f1-championship-prediction-teams-card',
   name: 'F1 Championship Standings Teams',
-  description: 'Current constructor championship standings with live race projection overlay',
+  description: 'Current constructor championship standings with race projection overlay (predictions Replay Mode only)',
   configurable: true,
   preview: true,
 });
@@ -18371,7 +18538,7 @@ window.customCards.push({
 window.customCards.push({
   type: 'f1-race-lap-card',
   name: 'F1 Race Lap',
-  description: 'Race-only timing table with lap count title, tyre age, pit stops, and fastest lap highlights',
+  description: 'Race-only timing table with lap count title, tyre age, fastest lap highlights, and pit stops (Replay Mode only)',
   configurable: true,
   preview: true,
 });
