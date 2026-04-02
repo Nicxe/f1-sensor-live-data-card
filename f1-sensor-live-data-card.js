@@ -674,8 +674,8 @@ const installSectionsAutoHeight = (CardClass, fallbackGridOptions = {}) => {
       ...originalOptions,
     };
 
-    // These cards render variable-height live content. In sections view,
-    // forcing numeric row counts causes clipping/overlap when content grows.
+    // Provide only column sizing here. Avoid returning `rows` so Sections can
+    // auto-size height based on content without clipping or overlap.
     delete merged.rows;
     delete merged.fixed_rows;
 
@@ -3116,37 +3116,8 @@ class F1DriverLapTimesCard extends LitElement {
     ensureF1Fonts();
   }
 
-  disconnectedCallback() {
-    this._detachCardObserver();
-    super.disconnectedCallback();
-  }
-
-  firstUpdated() {
-    updateResponsiveLayout(this);
-    this._attachCardObserver();
-    this._updateGridRows();
-  }
-
-  updated(changedProps) {
-    super.updated(changedProps);
-
-    if (changedProps.has('hass') || changedProps.has('config')) {
-      updateResponsiveLayout(this);
-      this._attachCardObserver();
-      this._updateGridRows();
-    }
-  }
-
-  async getCardSize() {
-    await this.updateComplete;
-
-    const renderedHeight = this._measureCardHeight();
-
-    if (renderedHeight > 0) {
-      return Math.max(1, Math.ceil(renderedHeight / 50));
-    }
-
-    return this._estimateGridRows();
+  getCardSize() {
+    return 4;
   }
 
   getGridOptions() {
@@ -3469,109 +3440,6 @@ class F1DriverLapTimesCard extends LitElement {
     });
 
     return rows;
-  }
-
-  _attachCardObserver() {
-    if (!this.isConnected || typeof ResizeObserver === 'undefined') {
-      return;
-    }
-
-    const card = this.renderRoot?.querySelector('ha-card');
-    if (!card) {
-      return;
-    }
-
-    if (!this._cardResizeObserver) {
-      this._cardResizeObserver = new ResizeObserver(() => {
-        const layoutChanged = updateResponsiveLayout(this);
-        if (layoutChanged) {
-          Promise.resolve(this.updateComplete)
-            .then(() => this._updateGridRows())
-            .catch(() => {});
-          return;
-        }
-        this._updateGridRows();
-      });
-    }
-
-    if (this._observedCard === card) {
-      return;
-    }
-
-    this._detachCardObserver();
-    this._observedCard = card;
-    this._cardResizeObserver.observe(card);
-  }
-
-  _detachCardObserver() {
-    if (this._cardResizeObserver && this._observedCard) {
-      this._cardResizeObserver.unobserve(this._observedCard);
-    }
-    this._observedCard = undefined;
-  }
-
-  _updateGridRows() {
-    const measuredHeight = this._measureCardHeight();
-    const nextHeight = measuredHeight > 0 ? Math.ceil(measuredHeight) : 0;
-
-    if (nextHeight <= 0 || nextHeight === this._lastMeasuredHeight) {
-      return;
-    }
-
-    this._lastMeasuredHeight = nextHeight;
-    this.dispatchEvent(new Event('card-updated', { bubbles: true, composed: true }));
-    this.dispatchEvent(new Event('iron-resize', { bubbles: true, composed: true }));
-  }
-
-  _measureCardHeight() {
-    const card = this.renderRoot?.querySelector('ha-card');
-    const content = card?.querySelector('.dl-card');
-
-    const cardHeight = card?.getBoundingClientRect?.().height ?? 0;
-    const contentHeight = content?.scrollHeight ?? 0;
-
-    return Math.max(cardHeight, contentHeight);
-  }
-
-  _heightToGridRows(height) {
-    const sectionRowHeight = 56;
-    const sectionRowGap = 8;
-    return Math.max(1, Math.ceil((height + sectionRowGap) / (sectionRowHeight + sectionRowGap)));
-  }
-
-  _estimateGridRows() {
-    const dataRows = this._estimateDataRowCount();
-    const cardPadding = 28;
-    const headerHeight = this.config?.show_header === false ? 0 : 44;
-    const tableHeaderHeight = this.config?.show_table_header === false ? 0 : 26;
-    const rowHeight = 34;
-    const rowGap = 4;
-    const totalHeight = cardPadding
-      + headerHeight
-      + tableHeaderHeight
-      + (dataRows * rowHeight)
-      + (Math.max(0, dataRows + (tableHeaderHeight > 0 ? 1 : 0) - 1) * rowGap);
-
-    return this._heightToGridRows(totalHeight);
-  }
-
-  _estimateDataRowCount() {
-    if (!this.hass || !this.config?.drivers_entity || !this.config?.positions_entity) {
-      return 20;
-    }
-
-    const driversState = getEntityStateWithFallback(this.hass, this.config.drivers_entity);
-    const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
-    if (!driversState || !positionsState) {
-      return 20;
-    }
-
-    const drivers = this._asList(driversState?.attributes?.drivers);
-    const positions = positionsState?.attributes?.drivers;
-    const fastestLap = positionsState?.attributes?.fastest_lap;
-    const rows = this._buildRows(drivers, positions, fastestLap);
-
-    return Math.max(rows.length, 1);
   }
 
   _buildPositionMap(positions) {
@@ -4670,9 +4538,6 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     return html`
       <div class="cpd-header-badges">
         <div class="cpd-mode-pill ${mode}">${this._modeLabel(mode)}</div>
-        ${predictionReplayOnly
-          ? html`<div class="cpd-mode-pill replay-only">PREDICTIONS: REPLAY ONLY</div>`
-          : null}
         ${spoilerBlocked
           ? html`<div class="cpd-mode-pill masked">NO SPOILER</div>`
           : null}
@@ -5750,9 +5615,6 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     return html`
       <div class="cpt-header-badges">
         <div class="cpt-mode-pill ${mode}">${this._modeLabel(mode)}</div>
-        ${predictionReplayOnly
-          ? html`<div class="cpt-mode-pill replay-only">PREDICTIONS: REPLAY ONLY</div>`
-          : null}
         ${spoilerBlocked
           ? html`<div class="cpt-mode-pill masked">NO SPOILER</div>`
           : null}
@@ -12798,6 +12660,805 @@ class F1NextRaceCardEditor extends LitElement {
   }
 }
 
+class F1SeasonCalendarCard extends LitElement {
+  static properties = {
+    hass: {},
+    config: {},
+  };
+
+  static styles = css`
+    :host {
+      --sc-bg: #0b0b0d;
+      --sc-bg-soft: #131315;
+      --sc-border: rgba(255, 255, 255, 0.08);
+      --sc-text: #f5f5f5;
+      --sc-muted: rgba(255, 255, 255, 0.68);
+      --sc-soft: rgba(255, 255, 255, 0.5);
+      --sc-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --sc-panel: rgba(255, 255, 255, 0.035);
+      display: block;
+      font-family: 'Formula1 Display', 'Titillium Web', Arial, sans-serif;
+    }
+
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+    }
+
+    .sc-card {
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: clamp(8px, 1vw, 10px);
+      padding: clamp(8px, 1.2vw, 12px) clamp(10px, 1.4vw, 14px);
+      border-radius: var(--ha-card-border-radius, 12px);
+      background:
+        radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.06), transparent 45%),
+        linear-gradient(160deg, var(--sc-bg) 0%, var(--sc-bg-soft) 60%, #0a0a0a 100%);
+      border: 1px solid var(--sc-border);
+      box-shadow: var(--sc-shadow);
+      color: var(--sc-text);
+      container-type: inline-size;
+    }
+
+    .sc-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 8px 9px;
+      min-width: 0;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.025));
+    }
+
+    .sc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+
+    .sc-header-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .sc-section-label {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--sc-soft);
+    }
+
+    .sc-title {
+      margin: 0;
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(14px, 2vw, 18px);
+      line-height: 1.06;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      text-wrap: balance;
+    }
+
+    .sc-subtitle {
+      font-size: clamp(9px, 1.15vw, 11px);
+      color: var(--sc-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .sc-chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    .sc-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--sc-text);
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      white-space: nowrap;
+    }
+
+    .sc-chip.next {
+      background: rgba(245, 158, 11, 0.16);
+      border-color: rgba(245, 158, 11, 0.3);
+      color: #ffd79a;
+    }
+
+    .sc-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .sc-row {
+      position: relative;
+      min-width: 0;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--sc-panel);
+      transition: border-color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+    }
+
+    .sc-row::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 2px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .sc-row.next {
+      border-color: rgba(245, 158, 11, 0.28);
+      background:
+        linear-gradient(90deg, rgba(245, 158, 11, 0.12), transparent 42%),
+        rgba(255, 255, 255, 0.04);
+    }
+
+    .sc-row.next::before {
+      background: rgba(245, 158, 11, 0.95);
+    }
+
+    .sc-row.past {
+      opacity: 0.62;
+    }
+
+    .sc-row-main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .sc-row-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .sc-row-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: flex-start;
+      min-width: 0;
+    }
+
+    .sc-row-identity {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .sc-round {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 34px;
+      padding: 3px 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--sc-soft);
+      white-space: nowrap;
+    }
+
+    .sc-flag {
+      width: clamp(18px, 2.8vw, 22px);
+      border-radius: 2px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+      flex: 0 0 auto;
+    }
+
+    .sc-race-name {
+      min-width: 0;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--sc-text);
+      text-wrap: balance;
+    }
+
+    .sc-row-sub {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 8px;
+      font-size: 9px;
+      color: var(--sc-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      line-height: 1.3;
+      min-width: 0;
+    }
+
+    .sc-row-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .sc-date {
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: 10px;
+      line-height: 1.1;
+      color: var(--sc-text);
+      white-space: nowrap;
+    }
+
+    .sc-empty {
+      padding: 12px;
+      border-radius: 12px;
+      text-align: center;
+      color: var(--sc-muted);
+      font-size: 11px;
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .sc-unavailable {
+      font-size: clamp(11px, 1.4vw, 13px);
+      color: var(--sc-muted);
+      padding: clamp(14px, 2.2vw, 18px);
+      text-align: center;
+    }
+
+    .sc-card[data-layout='medium'] .sc-date,
+    .sc-card[data-layout='narrow'] .sc-date {
+      font-size: 9px;
+    }
+
+    .sc-card[data-layout='narrow'] {
+      padding: 8px 9px;
+    }
+
+    .sc-card[data-layout='narrow'] .sc-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .sc-card[data-layout='narrow'] .sc-chip-row {
+      justify-content: flex-start;
+    }
+
+    .sc-card[data-layout='narrow'] .sc-row-main {
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+
+    .sc-card[data-layout='narrow'] .sc-row-meta {
+      align-items: flex-start;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+  `;
+
+  setConfig(config) {
+    this.config = {
+      current_season_entity: 'sensor.f1_current_season',
+      show_header: true,
+      show_round: true,
+      show_country_flag: true,
+      show_circuit_name: false,
+      show_location: false,
+      highlight_next_race: true,
+      dim_past_races: true,
+      hide_past_races: false,
+      ...config,
+    };
+  }
+
+  static getConfigElement() {
+    return document.createElement('f1-season-calendar-card-editor');
+  }
+
+  static getStubConfig() {
+    return {
+      type: 'custom:f1-season-calendar-card',
+      current_season_entity: 'sensor.f1_current_season',
+      show_header: true,
+      show_round: true,
+      show_country_flag: true,
+      show_circuit_name: false,
+      show_location: false,
+      highlight_next_race: true,
+      dim_past_races: true,
+      hide_past_races: false,
+    };
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    ensureF1Fonts();
+  }
+
+  getCardSize() {
+    return 4;
+  }
+
+  getGridOptions() {
+    return {
+      columns: 12,
+      min_columns: 4,
+      max_columns: 12,
+      min_rows: 4,
+    };
+  }
+
+  _responsiveLayoutBreakpoints() {
+    return {
+      narrow: 560,
+      medium: 920,
+    };
+  }
+
+  _getLanguage() {
+    return this.hass?.locale?.language || undefined;
+  }
+
+  _getSeasonEntity() {
+    const entityId = this.config?.current_season_entity || 'sensor.f1_current_season';
+    if (!entityId) return null;
+    const entity = getEntityStateWithFallback(this.hass, entityId);
+    if (!entity || isUnavailableLikeEntityState(entity)) {
+      return null;
+    }
+    return entity;
+  }
+
+  _parseOfficialRaceDate(dateText) {
+    if (!dateText) return null;
+    const match = String(dateText).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    const [, year, month, day] = match;
+    return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12, 0, 0));
+  }
+
+  _parseRaceDateTime(race) {
+    const dateText = String(race?.date || '').trim();
+    if (!dateText) return null;
+    const timeText = String(race?.time || '').trim();
+    if (timeText) {
+      const isoText = timeText.includes('T') ? timeText : `${dateText}T${timeText}`;
+      const parsed = new Date(isoText);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    const officialDate = this._parseOfficialRaceDate(dateText);
+    if (!officialDate) return null;
+    return new Date(Date.UTC(
+      officialDate.getUTCFullYear(),
+      officialDate.getUTCMonth(),
+      officialDate.getUTCDate(),
+      23,
+      59,
+      59,
+    ));
+  }
+
+  _formatRaceDate(dateText) {
+    const date = this._parseOfficialRaceDate(dateText);
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+      return 'Date TBD';
+    }
+
+    try {
+      return new Intl.DateTimeFormat(this._getLanguage(), {
+        day: 'numeric',
+        month: 'short',
+        timeZone: 'UTC',
+      }).format(date);
+    } catch (err) {
+      return date.toLocaleDateString([], {
+        day: 'numeric',
+        month: 'short',
+        timeZone: 'UTC',
+      });
+    }
+  }
+
+  _resolveRoundLabel(roundValue) {
+    const round = Number.parseInt(roundValue, 10);
+    if (Number.isFinite(round) && round > 0) {
+      return `R${String(round).padStart(2, '0')}`;
+    }
+    const fallback = String(roundValue || '').trim();
+    return fallback ? `R${fallback}` : null;
+  }
+
+  _buildSeasonRows(seasonData) {
+    const races = Array.isArray(seasonData?.races) ? [...seasonData.races] : [];
+    races.sort((left, right) => {
+      const leftRound = Number.parseInt(left?.round, 10);
+      const rightRound = Number.parseInt(right?.round, 10);
+      if (Number.isFinite(leftRound) && Number.isFinite(rightRound)) {
+        return leftRound - rightRound;
+      }
+      return String(left?.round || '').localeCompare(String(right?.round || ''));
+    });
+
+    const now = Date.now();
+    let nextAssigned = false;
+
+    return races.map((race) => {
+      const scheduled = this._parseRaceDateTime(race);
+      const isPast = scheduled ? scheduled.getTime() < now : false;
+      const isNext = !nextAssigned && !isPast;
+      if (isNext) {
+        nextAssigned = true;
+      }
+
+      const circuit = race?.Circuit || {};
+      const location = circuit?.Location || {};
+      return {
+        roundLabel: this._resolveRoundLabel(race?.round),
+        raceName: race?.raceName || race?.race_name || 'Grand Prix',
+        dateLabel: this._formatRaceDate(race?.date),
+        isNext,
+        isPast,
+        countryFlagUrl: race?.country_flag_url || null,
+        circuitName: circuit?.circuitName || null,
+        locationLabel: [location?.locality, location?.country].filter(Boolean).join(', ') || null,
+      };
+    }).filter((row) => !(this.config.hide_past_races === true && row.isPast));
+  }
+
+  _renderHeader(seasonData, rows) {
+    if (this.config.show_header === false) {
+      return null;
+    }
+
+    const seasonLabel = seasonData?.season ? `Season ${seasonData.season}` : null;
+    const raceCount = rows.length ? `${rows.length} grands prix` : 'Schedule pending';
+
+    return html`
+      <section class="sc-panel">
+        <div class="sc-header">
+          <div class="sc-header-copy">
+            <span class="sc-section-label">Calendar</span>
+            <h2 class="sc-title">Season Calendar</h2>
+            <span class="sc-subtitle">Full season race dates</span>
+          </div>
+          <div class="sc-chip-row">
+            ${seasonLabel ? html`<span class="sc-chip">${seasonLabel}</span>` : null}
+            <span class="sc-chip">${raceCount}</span>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  _renderRow(row, layoutMode) {
+    const showRound = this.config.show_round !== false;
+    const showCountryFlag = this.config.show_country_flag !== false;
+    const showCircuitName = this.config.show_circuit_name === true;
+    const showLocation = this.config.show_location === true;
+    const dimPastRaces = this.config.dim_past_races !== false;
+    const hidePastRaces = this.config.hide_past_races === true;
+    const showNextMarker = this.config.highlight_next_race !== false
+      && dimPastRaces
+      && !hidePastRaces;
+
+    const secondaryParts = [];
+    if (showCircuitName && row.circuitName) {
+      secondaryParts.push(row.circuitName);
+    }
+    if (showLocation && row.locationLabel) {
+      secondaryParts.push(row.locationLabel);
+    }
+
+    const rowClasses = [
+      'sc-row',
+      showNextMarker && row.isNext ? 'next' : '',
+      dimPastRaces && row.isPast ? 'past' : '',
+    ].filter(Boolean).join(' ');
+
+    return html`
+      <div class="${rowClasses}">
+        <div class="sc-row-main">
+          <div class="sc-row-copy">
+            <div class="sc-row-top">
+              <div class="sc-row-identity">
+                ${showRound && row.roundLabel ? html`<span class="sc-round">${row.roundLabel}</span>` : null}
+                ${showCountryFlag && row.countryFlagUrl
+                  ? html`<img class="sc-flag" src="${row.countryFlagUrl}" alt="" loading="lazy" />`
+                  : null}
+                <span class="sc-race-name">${row.raceName}</span>
+              </div>
+              ${showNextMarker && row.isNext
+                ? html`<span class="sc-chip next">Next</span>`
+                : null}
+            </div>
+            ${secondaryParts.length
+              ? html`<div class="sc-row-sub">${secondaryParts.join(' · ')}</div>`
+              : null}
+          </div>
+          <div class="sc-row-meta">
+            <div class="sc-date">${row.dateLabel}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  render() {
+    if (!this.hass || !this.config) {
+      return html`<ha-card><div class="sc-card sc-unavailable">Loading…</div></ha-card>`;
+    }
+
+    const seasonEntity = this._getSeasonEntity();
+    if (!seasonEntity) {
+      return html`<ha-card><div class="sc-card sc-unavailable">No season calendar data available</div></ha-card>`;
+    }
+
+    const seasonData = {
+      state: seasonEntity.state,
+      ...seasonEntity.attributes,
+    };
+    const rows = this._buildSeasonRows(seasonData);
+    const layoutMode = getResponsiveLayoutMode(this);
+
+    return html`
+      <ha-card>
+        <div class="sc-card" data-layout=${layoutMode}>
+          ${this._renderHeader(seasonData, rows)}
+          <section class="sc-panel">
+            <div class="sc-list">
+              ${rows.length
+                ? rows.map((row) => this._renderRow(row, layoutMode))
+                : html`<div class="sc-empty">No races available for the selected season</div>`}
+            </div>
+          </section>
+        </div>
+      </ha-card>
+    `;
+  }
+}
+
+class F1SeasonCalendarCardEditor extends LitElement {
+  static properties = {
+    hass: {},
+    _config: {},
+    _activeTab: { state: true },
+  };
+
+  static styles = css`
+    .card-config {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--divider-color);
+      margin-bottom: 16px;
+    }
+
+    .tabs button {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary-text-color);
+      font-size: 14px;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+
+    .tabs button:hover {
+      color: var(--primary-color);
+    }
+
+    .tabs button.active {
+      color: var(--primary-color);
+      border-bottom: 2px solid var(--primary-color);
+      margin-bottom: -1px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--secondary-text-color);
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .helper {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      padding-left: 16px;
+      line-height: 1.4;
+    }
+
+    .warning {
+      font-size: 12px;
+      color: var(--error-color);
+      padding-left: 16px;
+    }
+
+    .display-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    ha-form {
+      width: 100%;
+    }
+  `;
+
+  constructor() {
+    super();
+    this._activeTab = 'sources';
+  }
+
+  setConfig(config) {
+    this._config = {
+      current_season_entity: 'sensor.f1_current_season',
+      show_header: true,
+      show_round: true,
+      show_country_flag: true,
+      show_circuit_name: false,
+      show_location: false,
+      highlight_next_race: true,
+      dim_past_races: true,
+      hide_past_races: false,
+      ...config,
+    };
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    return html`
+      <div class="card-config">
+        <div class="tabs">
+          <button
+            class=${this._activeTab === 'sources' ? 'active' : ''}
+            @click=${() => { this._activeTab = 'sources'; }}
+          >
+            Data Sources
+          </button>
+          <button
+            class=${this._activeTab === 'display' ? 'active' : ''}
+            @click=${() => { this._activeTab = 'display'; }}
+          >
+            Display
+          </button>
+        </div>
+
+        ${this._activeTab === 'sources'
+          ? this._renderDataSourcesTab()
+          : this._renderDisplayTab()}
+      </div>
+    `;
+  }
+
+  _renderDataSourcesTab() {
+    return html`
+      <div class="section">
+        <div class="section-header">REQUIRED SENSOR</div>
+        ${this._renderEntityPicker(
+          'current_season_entity',
+          'Current Season Sensor',
+          'Provides season schedule, race dates, and circuit details.',
+          true,
+        )}
+      </div>
+    `;
+  }
+
+  _renderDisplayTab() {
+    return html`
+      <div class="display-section">
+        ${this._renderSwitch('show_header', 'Show header')}
+        ${this._renderSwitch('show_round', 'Show round badge')}
+        ${this._renderSwitch('show_country_flag', 'Show country flag')}
+        ${this._renderSwitch('show_circuit_name', 'Show circuit name')}
+        ${this._renderSwitch('show_location', 'Show location')}
+        ${this._renderSwitch('highlight_next_race', 'Highlight next race')}
+        ${this._renderSwitch('dim_past_races', 'Dim past races')}
+        ${this._renderSwitch('hide_past_races', 'Hide past races')}
+      </div>
+    `;
+  }
+
+  _renderEntityPicker(name, label, helper, required) {
+    const value = this._config[name];
+    const showWarning = required && !value;
+    const schema = [{ name, label, required, selector: { entity: { domain: 'sensor' } } }];
+
+    return html`
+      <div class="field">
+        <ha-form
+          .hass=${this.hass}
+          .data=${this._config}
+          .schema=${schema}
+          .computeLabel=${() => label}
+          @value-changed=${this._formValueChanged}
+        ></ha-form>
+        <div class="helper">${helper}</div>
+        ${showWarning ? html`
+          <div class="warning">This sensor is required for the card to function</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  _renderSwitch(name, label, helper = null) {
+    const schema = [{ name, label, selector: { boolean: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _formValueChanged(ev) {
+    if (!this._config) return;
+    const value = ev.detail?.value || {};
+    const newConfig = { ...this._config, ...value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+}
+
 // ============================================================================
 // F1 Race Control Card
 // ============================================================================
@@ -13766,7 +14427,6 @@ class F1RaceControlCard extends LitElement {
         columns: 12,
         min_columns: 6,
         max_columns: 12,
-        rows: 5,
         min_rows: 3,
       };
     }
@@ -13775,7 +14435,6 @@ class F1RaceControlCard extends LitElement {
       columns: 12,
       min_columns: 6,
       max_columns: 12,
-      rows: 1,
       min_rows: 1,
     };
   }
@@ -18264,6 +18923,13 @@ installSectionsAutoHeight(F1PitStopOverviewCard, {
   min_rows: 6,
 });
 
+installSectionsAutoHeight(F1DriverLapTimesCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 4,
+});
+
 installSectionsAutoHeight(F1ChampionshipPredictionDriversCard, {
   columns: 12,
   min_columns: 4,
@@ -18295,6 +18961,13 @@ installSectionsAutoHeight(F1TrackLimitsCard, {
 installSectionsAutoHeight(F1NextRaceCard, {
   columns: 12,
   min_columns: 6,
+  max_columns: 12,
+  min_rows: 5,
+});
+
+installSectionsAutoHeight(F1SeasonCalendarCard, {
+  columns: 12,
+  min_columns: 4,
   max_columns: 12,
   min_rows: 5,
 });
@@ -18399,6 +19072,14 @@ if (!customElements.get('f1-next-race-card-editor')) {
   customElements.define('f1-next-race-card-editor', F1NextRaceCardEditor);
 }
 
+if (!customElements.get('f1-season-calendar-card')) {
+  customElements.define('f1-season-calendar-card', F1SeasonCalendarCard);
+}
+
+if (!customElements.get('f1-season-calendar-card-editor')) {
+  customElements.define('f1-season-calendar-card-editor', F1SeasonCalendarCardEditor);
+}
+
 if (!customElements.get('f1-live-session-card')) {
   customElements.define('f1-live-session-card', F1LiveSessionCard);
 }
@@ -18499,6 +19180,14 @@ window.customCards.push({
   type: 'f1-next-race-card',
   name: 'F1 Next Race Overview',
   description: 'Next race overview with countdown, track map, weekend schedule, weather, and history',
+  configurable: true,
+  preview: true,
+});
+
+window.customCards.push({
+  type: 'f1-season-calendar-card',
+  name: 'F1 Season Calendar',
+  description: 'Full season calendar with one row per grand prix and sprint weekend markers',
   configurable: true,
   preview: true,
 });
