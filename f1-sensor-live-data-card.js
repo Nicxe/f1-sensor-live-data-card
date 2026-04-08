@@ -10281,7 +10281,7 @@ class F1NextRaceCard extends LitElement {
 
     .nr-schedule-cell.session {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 5px;
       flex-wrap: wrap;
       font-weight: 700;
@@ -10289,9 +10289,11 @@ class F1NextRaceCard extends LitElement {
 
     .nr-schedule-session-name {
       min-width: 0;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      line-height: 1.25;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      overflow-wrap: anywhere;
     }
 
     .nr-schedule-cell.date,
@@ -11380,18 +11382,27 @@ class F1NextRaceCard extends LitElement {
     ];
 
     return items
-      .map(([key, label]) => {
+      .map(([key, label], index) => {
         const date = this._parseDateWithOffset(nextRace?.[`${key}_utc`] || nextRace?.[key]);
         if (!date) return null;
         return {
           key,
           label,
           date,
+          sortIndex: index,
           user: this._formatDateTimeParts(date, this._getTimeZone()),
           track: trackTz ? this._formatDateTimeParts(date, trackTz) : null,
         };
       })
-      .filter(Boolean);
+      .filter(Boolean)
+      .sort((left, right) => {
+        const timeDiff = left.date.getTime() - right.date.getTime();
+        if (timeDiff !== 0) {
+          return timeDiff;
+        }
+        return left.sortIndex - right.sortIndex;
+      })
+      .map(({ sortIndex, ...item }) => item);
   }
 
   _resolveTimelineState(items, currentSession, sessionStatus) {
