@@ -85,7 +85,6 @@ const TEAM_LOGO_ALIASES = {
   astonmartin: 'Aston Martin',
   audi: 'Audi',
   cadillac: 'Cadillac',
-  'cadillac f1 team': 'Cadillac',
   ferrari: 'Ferrari',
   haas: 'Haas',
   mclaren: 'McLaren',
@@ -292,33 +291,109 @@ const getStateAgeSeconds = (state, field = 'last_changed') => {
   return Math.max(0, (Date.now() - timestamp.getTime()) / 1000);
 };
 
-const resolveLiveDelaySeconds = (hass, entityIds = []) => {
-  const candidates = new Set(['number.f1_live_delay']);
-  entityIds.forEach((entityId) => {
-    if (typeof entityId !== 'string' || !entityId.includes('.')) return;
-    const [, objectId] = entityId.split('.', 2);
-    if (!objectId) return;
-    [
-      '_session_status',
-      '_current_session',
-      '_driver_positions',
-      '_race_lap_count',
-    ].forEach((suffix) => {
-      if (!objectId.endsWith(suffix)) return;
-      const prefix = objectId.slice(0, -suffix.length);
-      if (prefix) candidates.add(`number.${prefix}_live_delay`);
-    });
-  });
+const POST_SESSION_RETENTION_SECONDS = 600;
+const TERMINAL_SESSION_STATUSES = new Set(['finished', 'finalised', 'ended']);
 
-  for (const candidate of candidates) {
-    const state = getEntityStateWithFallback(hass, candidate);
-    const parsed = Number.parseFloat(state?.state);
-    if (Number.isFinite(parsed) && parsed >= 0) {
-      return Math.round(parsed);
-    }
+const isTerminalSessionStatus = (sessionStatusState) => (
+  TERMINAL_SESSION_STATUSES.has(String(sessionStatusState?.state || '').trim().toLowerCase())
+);
+
+const getPostSessionAgeSeconds = (sessionState, sessionStatusState, stateMatchesLabel) => {
+  const primaryState = stateMatchesLabel ? sessionStatusState : sessionState;
+  const fallbackState = stateMatchesLabel ? sessionState : sessionStatusState;
+  const primaryAge = getStateAgeSeconds(primaryState, 'last_changed');
+  if (primaryAge !== null) return primaryAge;
+  return getStateAgeSeconds(fallbackState, 'last_changed');
+};
+
+const isSessionWithinPostSessionRetention = (
+  sessionState,
+  sessionStatusState,
+  labelMatcher,
+) => {
+  if (!isTerminalSessionStatus(sessionStatusState)) {
+    return false;
+  }
+  const state = String(sessionState?.state || '').trim().toLowerCase();
+  const stateMatchesLabel = labelMatcher(state);
+  const lastLabel = String(sessionState?.attributes?.last_label || '').trim().toLowerCase();
+  if (!stateMatchesLabel && !labelMatcher(lastLabel)) {
+    return false;
   }
 
-  return 0;
+  const ageSeconds = getPostSessionAgeSeconds(
+    sessionState,
+    sessionStatusState,
+    stateMatchesLabel,
+  );
+  return ageSeconds !== null && ageSeconds <= POST_SESSION_RETENTION_SECONDS;
+};
+
+const meaningfulSessionLabel = (value) => {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const normalized = text.toLowerCase();
+  if (normalized === 'unknown' || normalized === 'unavailable' || normalized === 'none') {
+    return '';
+  }
+  return text;
+};
+
+const resolveSessionSnapshotKey = (sessionState, fallbackLabel = '') => {
+  const attrs = sessionState?.attributes || {};
+  const label = meaningfulSessionLabel(sessionState?.state)
+    || meaningfulSessionLabel(attrs.last_label)
+    || meaningfulSessionLabel(attrs.resolved_label)
+    || meaningfulSessionLabel(attrs.name)
+    || meaningfulSessionLabel(fallbackLabel);
+  if (!label) return null;
+  const meeting = attrs.meeting_key
+    || attrs.meeting_name
+    || attrs.meeting_location
+    || attrs.circuit_short_name
+    || '';
+  const start = attrs.start
+    || attrs.start_time
+    || attrs.start_time_utc
+    || attrs.start_utc
+    || '';
+  return [label, meeting, start].map((part) => String(part || '').trim()).join('|');
+};
+
+const cloneTimingSnapshotRows = (rows) => (
+  Array.isArray(rows)
+    ? rows.map((row) => ({
+      ...row,
+      team_logo: row?.team_logo ? { ...row.team_logo } : row?.team_logo,
+    }))
+    : []
+);
+
+const syncTimingSnapshotSession = (card, sessionKey) => {
+  if (!card) return;
+  if (!sessionKey || card._postSessionSnapshot?.key !== sessionKey) {
+    card._postSessionSnapshot = null;
+  }
+};
+
+const rememberTimingSnapshot = (card, sessionKey, payload) => {
+  const rows = cloneTimingSnapshotRows(payload?.rows);
+  if (!card || !sessionKey || rows.length === 0) return;
+  card._postSessionSnapshot = {
+    ...payload,
+    key: sessionKey,
+    rows,
+  };
+};
+
+const getRetainedTimingSnapshot = (card, sessionKey, retain) => {
+  if (!card || !retain || !sessionKey || card._postSessionSnapshot?.key !== sessionKey) {
+    return null;
+  }
+  return {
+    ...card._postSessionSnapshot,
+    rows: cloneTimingSnapshotRows(card._postSessionSnapshot.rows),
+  };
 };
 
 const shouldKeepSessionCardVisible = (
@@ -327,10 +402,18 @@ const shouldKeepSessionCardVisible = (
   sessionStatusState,
   labelMatcher,
   keepAliveStates = [],
-  entityIds = [],
 ) => {
   const state = String(sessionState?.state || '').trim().toLowerCase();
-  if (labelMatcher(state)) {
+  const stateMatchesLabel = labelMatcher(state);
+  const terminalRetention = isSessionWithinPostSessionRetention(
+    sessionState,
+    sessionStatusState,
+    labelMatcher,
+  );
+  if (stateMatchesLabel) {
+    if (isTerminalSessionStatus(sessionStatusState)) {
+      return terminalRetention;
+    }
     return true;
   }
 
@@ -344,22 +427,7 @@ const shouldKeepSessionCardVisible = (
     return true;
   }
 
-  if (sessionStatus !== 'finished' && sessionStatus !== 'finalised') {
-    return false;
-  }
-
-  const stateAgeSeconds = getStateAgeSeconds(sessionState, 'last_changed');
-  if (stateAgeSeconds === null) {
-    return false;
-  }
-
-  // Keep timing cards around briefly after the session label drops so delayed
-  // broadcasts can still show the finish without stale cards lingering.
-  const graceSeconds = Math.min(
-    300,
-    Math.max(90, resolveLiveDelaySeconds(hass, entityIds) + 15),
-  );
-  return stateAgeSeconds <= graceSeconds;
+  return terminalRetention;
 };
 
 const asEntityList = (value) => {
@@ -15477,6 +15545,7 @@ class F1QualifyingTimingCard extends LitElement {
       ? getEntityStateWithFallback(this.hass, this.config.session_status_entity)
       : null;
     if (this.config.session_entity && !sessionState) {
+      syncTimingSnapshotSession(this, null);
       return html`
         <ha-card>
           <div class="qt-card">
@@ -15486,7 +15555,15 @@ class F1QualifyingTimingCard extends LitElement {
       `;
     }
 
+    const sessionKey = resolveSessionSnapshotKey(sessionState, 'qualifying');
+    syncTimingSnapshotSession(this, sessionKey);
+    const terminalRetention = isSessionWithinPostSessionRetention(
+      sessionState,
+      sessionStatusState,
+      (label) => this._isQualifyingLikeLabel(label),
+    );
     if (!this._isQualifyingSession(sessionState, sessionStatusState)) {
+      syncTimingSnapshotSession(this, null);
       return html`
         <ha-card>
           <div class="qt-card">
@@ -15497,36 +15574,61 @@ class F1QualifyingTimingCard extends LitElement {
     }
 
     const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
-    if (!positionsState) {
-      return html`
-        <ha-card>
-          <div class="qt-card">
-            <div class="qt-empty">Positions entity not found</div>
-          </div>
-        </ha-card>
-      `;
+    let rows = [];
+    let sessionPart = null;
+    const positionsMissing = !positionsState;
+    if (positionsState && !isUnavailableLikeEntityState(positionsState)) {
+      const positionDrivers = positionsState?.attributes?.drivers || [];
+      const currentQPart = positionsState?.attributes?.current_qualifying_part;
+
+      const tyresState = this.config.tyres_entity
+        ? getEntityStateWithFallback(this.hass, this.config.tyres_entity)
+        : null;
+      const tyresDrivers = tyresState && !isUnavailableLikeEntityState(tyresState)
+        ? tyresState?.attributes?.drivers || []
+        : [];
+
+      const driversState = this.config.drivers_entity
+        ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
+        : null;
+      const driverList = driversState && !isUnavailableLikeEntityState(driversState)
+        ? driversState?.attributes?.drivers || []
+        : [];
+
+      sessionPart = this._resolveDisplayQualifyingPart(
+        sessionState,
+        currentQPart,
+        positionDrivers,
+      );
+
+      rows = this._buildRows(positionDrivers, tyresDrivers, driverList, sessionPart);
     }
 
-    const positionDrivers = positionsState?.attributes?.drivers || [];
-    const currentQPart = positionsState?.attributes?.current_qualifying_part;
-
-    const tyresState = this.config.tyres_entity
-      ? getEntityStateWithFallback(this.hass, this.config.tyres_entity)
-      : null;
-    const tyresDrivers = tyresState?.attributes?.drivers || [];
-
-    const driversState = this.config.drivers_entity
-      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
-      : null;
-    const driverList = driversState?.attributes?.drivers || [];
-
-    const sessionPart = this._resolveDisplayQualifyingPart(
-      sessionState,
-      currentQPart,
-      positionDrivers,
-    );
-
-    const rows = this._buildRows(positionDrivers, tyresDrivers, driverList, sessionPart);
+    if (rows.length === 0) {
+      const snapshot = getRetainedTimingSnapshot(this, sessionKey, terminalRetention);
+      if (snapshot) {
+        rows = snapshot.rows;
+        sessionPart = snapshot.sessionPart ?? null;
+      } else if (positionsMissing) {
+        return html`
+          <ha-card>
+            <div class="qt-card">
+              <div class="qt-empty">Positions entity not found</div>
+            </div>
+          </ha-card>
+        `;
+      } else {
+        return html`
+          <ha-card>
+            <div class="qt-card">
+              <div class="qt-empty">No qualifying data</div>
+            </div>
+          </ha-card>
+        `;
+      }
+    } else {
+      rememberTimingSnapshot(this, sessionKey, { rows, sessionPart });
+    }
 
     if (rows.length === 0) {
       return html`
@@ -16295,7 +16397,7 @@ class F1QualifyingTimingCardEditor extends LitElement {
         ${this._renderEntityPicker(
           'session_status_entity',
           'Session Status Sensor',
-          'Keeps the card visible during qualifying breaks and for a short delay-aware grace period after the session ends',
+          'Keeps the card visible during qualifying breaks and for 10 minutes after the session ends',
           false,
         )}
       </div>
@@ -16813,6 +16915,7 @@ class F1PracticeTimingCard extends LitElement {
 
     const sessionState = getEntityStateWithFallback(this.hass, this.config.session_entity);
     if (!sessionState) {
+      syncTimingSnapshotSession(this, null);
       return html`
         <ha-card>
           <div class="pt-card">
@@ -16825,7 +16928,15 @@ class F1PracticeTimingCard extends LitElement {
     const sessionStatusState = this.config.session_status_entity
       ? getEntityStateWithFallback(this.hass, this.config.session_status_entity)
       : null;
+    const sessionKey = resolveSessionSnapshotKey(sessionState, 'practice');
+    syncTimingSnapshotSession(this, sessionKey);
+    const terminalRetention = isSessionWithinPostSessionRetention(
+      sessionState,
+      sessionStatusState,
+      (label) => this._isPracticeLikeLabel(label),
+    );
     if (!this._isPracticeSession(sessionState, sessionStatusState)) {
+      syncTimingSnapshotSession(this, null);
       return html`
         <ha-card>
           <div class="pt-card">
@@ -16836,43 +16947,57 @@ class F1PracticeTimingCard extends LitElement {
     }
 
     const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
-    if (!positionsState) {
-      return html`
-        <ha-card>
-          <div class="pt-card">
-            <div class="pt-empty">Positions entity not found</div>
-          </div>
-        </ha-card>
-      `;
+    let rows = [];
+    let title = this._buildTitle(sessionState);
+    const positionsMissing = !positionsState;
+    if (positionsState && !isUnavailableLikeEntityState(positionsState)) {
+      const positionDrivers = this._asDriversList(positionsState?.attributes?.drivers);
+
+      const tyresState = this.config.tyres_entity
+        ? getEntityStateWithFallback(this.hass, this.config.tyres_entity)
+        : null;
+      const tyresDrivers = tyresState && !isUnavailableLikeEntityState(tyresState)
+        ? this._asDriversList(tyresState?.attributes?.drivers)
+        : [];
+
+      const driversState = this.config.drivers_entity
+        ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
+        : null;
+      const driverList = driversState && !isUnavailableLikeEntityState(driversState)
+        ? this._asDriversList(driversState?.attributes?.drivers)
+        : [];
+
+      rows = this._buildRows(positionDrivers, tyresDrivers, driverList);
     }
-
-    const positionDrivers = this._asDriversList(positionsState?.attributes?.drivers);
-
-    const tyresState = this.config.tyres_entity
-      ? getEntityStateWithFallback(this.hass, this.config.tyres_entity)
-      : null;
-    const tyresDrivers = this._asDriversList(tyresState?.attributes?.drivers);
-
-    const driversState = this.config.drivers_entity
-      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
-      : null;
-    const driverList = this._asDriversList(driversState?.attributes?.drivers);
-
-    const rows = this._buildRows(positionDrivers, tyresDrivers, driverList);
     if (rows.length === 0) {
-      return html`
-        <ha-card>
-          <div class="pt-card">
-            <div class="pt-empty">No practice data</div>
-          </div>
-        </ha-card>
-      `;
+      const snapshot = getRetainedTimingSnapshot(this, sessionKey, terminalRetention);
+      if (snapshot) {
+        rows = snapshot.rows;
+        title = snapshot.title || title;
+      } else if (positionsMissing) {
+        return html`
+          <ha-card>
+            <div class="pt-card">
+              <div class="pt-empty">Positions entity not found</div>
+            </div>
+          </ha-card>
+        `;
+      } else {
+        return html`
+          <ha-card>
+            <div class="pt-card">
+              <div class="pt-empty">No practice data</div>
+            </div>
+          </ha-card>
+        `;
+      }
+    } else {
+      rememberTimingSnapshot(this, sessionKey, { rows, title });
     }
 
     const layoutMode = getResponsiveLayoutMode(this);
     const columns = this._columns(layoutMode);
     const gridColumns = columns.map((col) => col.width).join(' ');
-    const title = this._buildTitle(sessionState);
     const colorOverrides = this._timingColorStyles();
 
     return html`
@@ -17530,7 +17655,7 @@ class F1PracticeTimingCardEditor extends LitElement {
         ${this._renderEntityPicker(
           'session_status_entity',
           'Session Status Sensor',
-          'Keeps the card visible during practice suspensions and for a short delay-aware grace period after the session ends.',
+          'Keeps the card visible during practice suspensions and for 10 minutes after the session ends.',
           false,
         )}
         ${this._renderEntityPicker(
@@ -18082,6 +18207,7 @@ class F1RaceLapCard extends LitElement {
 
     const sessionState = getEntityStateWithFallback(this.hass, this.config.session_entity);
     if (!sessionState) {
+      syncTimingSnapshotSession(this, null);
       return html`
         <ha-card>
           <div class="rl-card">
@@ -18094,7 +18220,15 @@ class F1RaceLapCard extends LitElement {
     const sessionStatusState = this.config.session_status_entity
       ? getEntityStateWithFallback(this.hass, this.config.session_status_entity)
       : null;
+    const sessionKey = resolveSessionSnapshotKey(sessionState, 'race');
+    syncTimingSnapshotSession(this, sessionKey);
+    const terminalRetention = isSessionWithinPostSessionRetention(
+      sessionState,
+      sessionStatusState,
+      (label) => this._isRaceLikeLabel(label),
+    );
     if (!this._isRaceSession(sessionState, sessionStatusState)) {
+      syncTimingSnapshotSession(this, null);
       return html`
         <ha-card>
           <div class="rl-card">
@@ -18105,68 +18239,90 @@ class F1RaceLapCard extends LitElement {
     }
 
     const positionsState = getEntityStateWithFallback(this.hass, this.config.positions_entity);
-    if (!positionsState) {
-      return html`
-        <ha-card>
-          <div class="rl-card">
-            <div class="rl-empty">Positions entity not found</div>
-          </div>
-        </ha-card>
-      `;
+    let rows = [];
+    let title = String(this.config.title || 'Race Lap').trim() || 'Race Lap';
+    let suppressPit = false;
+    let pitStopsReplayOnly = false;
+    const positionsMissing = !positionsState;
+    if (positionsState && !isUnavailableLikeEntityState(positionsState)) {
+      const positionDrivers = this._asDriversList(positionsState?.attributes?.drivers);
+      const fastestLap = positionsState?.attributes?.fastest_lap;
+
+      const lapCountState = this.config.lap_count_entity
+        ? getEntityStateWithFallback(this.hass, this.config.lap_count_entity)
+        : null;
+      const tyresState = this.config.tyres_entity
+        ? getEntityStateWithFallback(this.hass, this.config.tyres_entity)
+        : null;
+      const tyresDrivers = tyresState && !isUnavailableLikeEntityState(tyresState)
+        ? this._asDriversList(tyresState?.attributes?.drivers)
+        : [];
+
+      const driversState = this.config.drivers_entity
+        ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
+        : null;
+      const driverList = driversState && !isUnavailableLikeEntityState(driversState)
+        ? this._asDriversList(driversState?.attributes?.drivers)
+        : [];
+
+      const pitState = this.config.pitstops_entity
+        ? getEntityStateWithFallback(this.hass, this.config.pitstops_entity)
+        : null;
+      const pitCars = pitState?.attributes?.cars && typeof pitState.attributes.cars === 'object'
+        ? pitState.attributes.cars
+        : {};
+      const pitDataAvailable = Boolean(pitState && !isUnavailableLikeEntityState(pitState));
+      pitStopsReplayOnly = Boolean(
+        this.config.pitstops_entity && pitState && isUnavailableLikeEntityState(pitState),
+      );
+      suppressPit = Boolean(this.config.pitstops_entity) && !pitDataAvailable;
+
+      rows = this._buildRows(
+        positionDrivers,
+        tyresDrivers,
+        driverList,
+        pitCars,
+        fastestLap,
+        pitDataAvailable,
+      );
+      title = this._buildTitle(lapCountState, positionsState);
     }
-
-    const positionDrivers = this._asDriversList(positionsState?.attributes?.drivers);
-    const fastestLap = positionsState?.attributes?.fastest_lap;
-
-    const lapCountState = this.config.lap_count_entity
-      ? getEntityStateWithFallback(this.hass, this.config.lap_count_entity)
-      : null;
-    const tyresState = this.config.tyres_entity
-      ? getEntityStateWithFallback(this.hass, this.config.tyres_entity)
-      : null;
-    const tyresDrivers = this._asDriversList(tyresState?.attributes?.drivers);
-
-    const driversState = this.config.drivers_entity
-      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
-      : null;
-    const driverList = this._asDriversList(driversState?.attributes?.drivers);
-
-    const pitState = this.config.pitstops_entity
-      ? getEntityStateWithFallback(this.hass, this.config.pitstops_entity)
-      : null;
-    const pitCars = pitState?.attributes?.cars && typeof pitState.attributes.cars === 'object'
-      ? pitState.attributes.cars
-      : {};
-    const pitDataAvailable = Boolean(pitState && !isUnavailableLikeEntityState(pitState));
-    const pitStopsReplayOnly = Boolean(
-      this.config.pitstops_entity && pitState && isUnavailableLikeEntityState(pitState),
-    );
-
-    const rows = this._buildRows(
-      positionDrivers,
-      tyresDrivers,
-      driverList,
-      pitCars,
-      fastestLap,
-      pitDataAvailable,
-    );
     if (rows.length === 0) {
-      return html`
-        <ha-card>
-          <div class="rl-card">
-            <div class="rl-empty">No race data</div>
-          </div>
-        </ha-card>
-      `;
+      const snapshot = getRetainedTimingSnapshot(this, sessionKey, terminalRetention);
+      if (snapshot) {
+        rows = snapshot.rows;
+        title = snapshot.title || title;
+        suppressPit = snapshot.suppressPit === true;
+        pitStopsReplayOnly = snapshot.pitStopsReplayOnly === true;
+      } else if (positionsMissing) {
+        return html`
+          <ha-card>
+            <div class="rl-card">
+              <div class="rl-empty">Positions entity not found</div>
+            </div>
+          </ha-card>
+        `;
+      } else {
+        return html`
+          <ha-card>
+            <div class="rl-card">
+              <div class="rl-empty">No race data</div>
+            </div>
+          </ha-card>
+        `;
+      }
+    } else {
+      rememberTimingSnapshot(this, sessionKey, {
+        rows,
+        title,
+        suppressPit,
+        pitStopsReplayOnly,
+      });
     }
 
     const layoutMode = getResponsiveLayoutMode(this);
-    const columns = this._columns(
-      layoutMode,
-      Boolean(this.config.pitstops_entity) && !pitDataAvailable,
-    );
+    const columns = this._columns(layoutMode, suppressPit);
     const gridColumns = columns.map((col) => col.width).join(' ');
-    const title = this._buildTitle(lapCountState, positionsState);
     const colorOverrides = this._timingColorStyles();
 
     return html`
@@ -18794,7 +18950,7 @@ class F1RaceLapCardEditor extends LitElement {
         ${this._renderEntityPicker(
           'session_status_entity',
           'Session Status Sensor',
-          'Keeps the card visible during race suspensions and for a short delay-aware grace period after the session ends.',
+          'Keeps the card visible during race suspensions and for 10 minutes after the session ends.',
           false,
         )}
         ${this._renderEntityPicker(
