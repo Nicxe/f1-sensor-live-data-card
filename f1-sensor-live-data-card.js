@@ -85,6 +85,7 @@ const TEAM_LOGO_ALIASES = {
   astonmartin: 'Aston Martin',
   audi: 'Audi',
   cadillac: 'Cadillac',
+  'cadillac f1 team': 'Cadillac',
   ferrari: 'Ferrari',
   haas: 'Haas',
   mclaren: 'McLaren',
