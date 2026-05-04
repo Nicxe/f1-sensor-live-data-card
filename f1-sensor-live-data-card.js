@@ -6866,6 +6866,8 @@ class F1LastRaceResultsCardEditor extends LitElement {
   setConfig(config) {
     this._config = {
       entity: 'sensor.f1_last_race_results',
+      drivers_entity: 'sensor.f1_driver_list',
+      no_spoiler_entity: 'switch.f1_no_spoiler_mode',
       show_header: true,
       show_grid: true,
       show_position: true,
@@ -6918,6 +6920,20 @@ class F1LastRaceResultsCardEditor extends LitElement {
           true,
           'sensor'
         )}
+        ${this._renderEntityPicker(
+          'no_spoiler_entity',
+          'No Spoiler Switch',
+          'Masks points and delta columns when the integration no-spoiler mode is active',
+          false,
+          'switch'
+        )}
+        ${this._renderEntityPicker(
+          'drivers_entity',
+          'Driver List Sensor',
+          'Provides TLA, team names, and team colors',
+          false,
+          'sensor'
+        )}
       </div>
     `;
   }
@@ -6932,6 +6948,7 @@ class F1LastRaceResultsCardEditor extends LitElement {
         ></ha-textfield>
 
         ${this._renderSwitch('show_header', 'Show header')}
+        ${this._renderSwitch('show_table_header', 'Show table header')}
         ${this._renderSwitch('show_position', 'Show position')}
         ${this._renderSwitch('show_grid', 'Show grid')}
         ${this._renderSwitch('show_tla', 'Show driver column')}
@@ -6965,7 +6982,6 @@ class F1LastRaceResultsCardEditor extends LitElement {
           )}
         ` : null}
 
-        ${this._renderSwitch('show_current_points', 'Show current points')}
         ${this._renderSwitch(
           'show_delta',
           'Show position delta',
@@ -7259,6 +7275,11 @@ class F1LastRaceResultsCard extends LitElement {
     .cpd-cell.points-secondary {
       color: var(--ts-muted);
     }
+    
+    .cpd-cell.align {
+      justify-content: center;
+      text-align: center;
+    }
 
     .cpd-team-logo {
       width: var(--f1-team-logo-size, 15px);
@@ -7422,7 +7443,10 @@ class F1LastRaceResultsCard extends LitElement {
   setConfig(config) {
     this.config = {
       entity: 'sensor.f1_last_race_results',
+      drivers_entity: 'sensor.f1_driver_list',
+      no_spoiler_entity: 'switch.f1_no_spoiler_mode',
       show_header: true,
+      show_table_header: true,
       show_position: true,
       show_grid: true,
       show_tla: true,
@@ -7465,6 +7489,8 @@ class F1LastRaceResultsCard extends LitElement {
     return {
       type: 'custom:f1-last-race-results-card',
       entity: 'sensor.f1_last_race_results',
+      drivers_entity: 'sensor.f1_driver_list',
+      no_spoiler_entity: 'switch.f1_no_spoiler_mode',
     };
   }
 
@@ -7482,13 +7508,26 @@ class F1LastRaceResultsCard extends LitElement {
     const lastRace = this.config.entity
       ? getEntityStateWithFallback(this.hass, this.config.entity)
       : null;
+    if (!lastRace) {
+      return html`<ha-card><div class="nr-card nr-unavailable">No previous race data available</div></ha-card>`;
+    }
+      
+    const noSpoilerState = this.config.no_spoiler_entity
+      ? getEntityStateWithFallback(this.hass, this.config.no_spoiler_entity)
+      : null;
+    const driverListState = this.config.drivers_entity
+      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
+      : null;
+    const driverList = asEntityList(driverListState?.attributes?.drivers);
+    const driverMap = this._buildDriverMap(driverList);
 
-    const gpName = lastRace.race_name?.replace(' Grand Prix', ' GP') || lastRace.race_name || 'Last race';
+    const gpName = lastRace.attributes.race_name?.replace(' Grand Prix', ' GP') || lastRace.attributes.race_name || 'Last race';
     const results = Array.isArray(lastRace?.attributes?.results)
       ? lastRace.attributes.results
       : [];
 
     const hasCurrentData = results.length > 0;
+    const spoilerBlocked = isNoSpoilerModeActive(noSpoilerState);
 
     const layoutMode = getResponsiveLayoutMode(this);
     let rows = [];
@@ -7498,6 +7537,8 @@ class F1LastRaceResultsCard extends LitElement {
     rows = this._applyTopLimit(
       this._buildCurrentRows(
         results,
+        driverMap,
+        spoilerBlocked,
       ),
     );
     columns = this._columns(layoutMode);
@@ -7520,6 +7561,7 @@ class F1LastRaceResultsCard extends LitElement {
             `
             : null}
           <div class="cpd-table" style="--cpd-columns: ${gridColumns};">
+            ${this.config.show_table_header ? this._renderHeader(columns) : null}
             ${rows.map((row) => this._renderRow(row, columns))}
           </div>
         </div>
@@ -7574,40 +7616,9 @@ class F1LastRaceResultsCard extends LitElement {
     });
     cols.push({
       key: 'status',
-      label: 'STS',
+      label: 'STATUS',
       width: '0.6fr',
-    });
-    return cols;
-  }
-
-  _legacyColumns(layoutMode = 'wide') {
-    const compactLayout = layoutMode !== 'wide';
-    const cols = [];
-    if (this.config.show_position !== false) {
-      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
-    }
-    if (this.config.show_team_logo !== false) {
-      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? '0.18fr' : '0.16fr', hideHeader: true });
-    }
-    if (this.config.show_tla !== false) {
-      cols.push({ key: 'tla', label: 'DRIVER', width: compactLayout ? '1fr' : this._driverColumnWidth(true) });
-    }
-    if (this.config.show_grid !== false) {
-      cols.push({ key: 'grid', label: 'GRD', width: '0.18fr', numeric: true });
-    }
-    if (this.config.show_delta !== false) {
-      cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
-    }
-    cols.push({
-      key: 'points',
-      label: 'PTS',
-      width: '0.28fr',
-      numeric: true,
-    });
-    cols.push({
-      key: 'status',
-      label: 'STS',
-      width: compactLayout ? '0.6fr' : this._statusColumnWidth(),
+      align: true,
     });
     return cols;
   }
@@ -7616,7 +7627,7 @@ class F1LastRaceResultsCard extends LitElement {
     return html`
       <div class="cpd-row header">
         ${columns.map((col) => html`
-          <div class="cpd-cell ${col.numeric ? 'numeric' : ''} ${col.groupStart ? 'group-start' : ''}">
+          <div class="cpd-cell ${col.numeric ? 'numeric' : ''} ${col.align ? 'align' : ''} ${col.groupStart ? 'group-start' : ''}">
             ${col.hideHeader ? '' : col.label}
           </div>
         `)}
@@ -7638,6 +7649,13 @@ class F1LastRaceResultsCard extends LitElement {
     if (col.groupStart) classes.push('group-start');
     if (col.emphasis === 'primary') classes.push('points-primary');
     if (col.emphasis === 'secondary') classes.push('points-secondary');
+    if (col.align) classes.push('align');
+
+    if (
+      row.spoiler_blocked
+    ) {
+      return html`<div class="${classes.join(' ')}">${row.spoiler_placeholder}</div>`;
+    }
 
     if (col.key === 'logo') {
       return html`
@@ -7684,28 +7702,31 @@ class F1LastRaceResultsCard extends LitElement {
     }
 
     let value = '--';
+    if (col.key === 'position') value = row.position ?? '--';
+    if (col.key === 'grid') value = row.grid ?? '--';
     if (col.key === 'points') value = row.points_display;
+    if (col.key === 'status') value = row.status ?? '--';
     return html`<div class="${classes.join(' ')}">${value}</div>`;
   }
 
-  _buildCurrentRows(results) {
+  _buildCurrentRows(results, driverMap, spoilerBlocked) {
     const rows = [];
     results.forEach((result) => {
       if (!result || typeof result !== 'object') return;
-      const driver = result?.Driver || {};
-      const constructors = Array.isArray(result?.Constructors) ? result.Constructors : [];
-      const constructor = constructors[0] || result?.Constructor || {};
+      const driver = result?.driver || {};
+      const constructor = result?.constructor || {};
       const rn = String(driver?.permanentNumber ?? '').trim();
       const tla = this._normalizeTla(driver?.code);
-      const identity = (rn && driverMap.get(rn)) || (tla ? this._findDriverByTla(driverMap, tla) : null) || {};
+      const identity = (tla ? this._findDriverByTla(driverMap, tla) : null) || {};
       const position = this._toNumber(result?.position);
       const grid = this._toNumber(result?.grid);
       const points = this._toNumber(result?.points);
       const delta = Number.isFinite(position) && Number.isFinite(grid)
         ? grid - position
         : null;
-      const teamName = identity?.team || constructor?.name || prediction?.team_name || null;
-      const teamColor = this._normalizeColor(identity?.team_color || prediction?.team_color);
+      const status = result?.status;
+      const teamName = identity?.team || constructor?.name || null;
+      const teamColor = this._normalizeColor(identity?.team_color);
       const displayTla = tla || this._normalizeTla(identity?.tla) || (rn ? `#${rn}` : '--');
       const fullName = this._formatDriverName(driver, identity, rn, displayTla);
       const useFullName = this.config.show_full_name === true && fullName !== displayTla;
@@ -7726,53 +7747,12 @@ class F1LastRaceResultsCard extends LitElement {
         points_display: this._formatPoints(points),
         delta: delta,
         delta_display: this._formatDelta(delta),
-        status: status
+        status: status,
+        spoiler_blocked: spoilerBlocked
       });
     });
 
-    return this._sortDriverRows(rows, { spoilerBlocked, showProjection });
-  }
-
-  _buildLegacyRows(predictions, driverMap, spoilerBlocked) {
-    const rows = [];
-    Object.entries(predictions || {}).forEach(([key, entry]) => {
-      if (!entry || typeof entry !== 'object') return;
-      const rn = String(entry?.RacingNumber ?? key).trim();
-      const identity = driverMap.get(rn) || {};
-      const position = this._parsePosition(entry?.PredictedPosition);
-      const points = this._toNumber(entry?.points);
-      const delta = Number.isFinite(position) && Number.isFinite(grid)
-        ? position - grid
-        : null;
-
-      const tla = this._normalizeTla(entry?.Tla || identity?.tla);
-      const teamName = entry?.TeamName || identity?.team || null;
-      const teamColor = this._normalizeColor(entry?.TeamColor || identity?.team_color);
-      const displayTla = tla || (rn ? `#${rn}` : '--');
-      const fullName = this._formatDriverName(entry, identity, rn, displayTla);
-      const useFullName = this.config.show_full_name === true && fullName !== displayTla;
-      const displayDriver = useFullName ? fullName : displayTla;
-
-      rows.push({
-        rn,
-        position: position,
-        grid: grid,
-        display_tla: displayTla,
-        display_driver: displayDriver,
-        identity_sort: displayDriver,
-        use_full_name: useFullName,
-        driver_media: this._resolveDriverMedia(identity, teamName),
-        team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style),
-        team_color: teamColor,
-        points: points,
-        points_display: this._formatPoints(points),
-        delta: delta,
-        delta_display: this._formatDelta(delta),
-        status: status
-      });
-    });
-
-    return this._sortDriverRows(rows);
+    return this._sortDriverRows(rows, { spoilerBlocked });
   }
 
   _applyTopLimit(rows) {
@@ -7908,14 +7888,8 @@ class F1LastRaceResultsCard extends LitElement {
 
   _sortDriverRows(rows) {
     rows.sort((a, b) => {
-      const primaryPointsDiff = this._comparePointsDescending(a.points, b.points);
-      if (primaryPointsDiff !== 0) return primaryPointsDiff;
-
       const positionDiff = this._comparePositionAscending(a.position, b.position);
       if (positionDiff !== 0) return positionDiff;
-
-      const fallbackPointsDiff = this._comparePointsDescending(a.points, b.points);
-      if (fallbackPointsDiff !== 0) return fallbackPointsDiff;
 
       return this._compareDriverIdentity(a, b);
     });
@@ -7929,16 +7903,6 @@ class F1LastRaceResultsCard extends LitElement {
     return this._compareRacingNumber(a.rn, b.rn);
   }
 
-  _comparePointsDescending(a, b) {
-    if (Number.isFinite(a) && Number.isFinite(b)) {
-      const diff = b - a;
-      return Math.abs(diff) < 0.0001 ? 0 : diff;
-    }
-    if (Number.isFinite(a)) return -1;
-    if (Number.isFinite(b)) return 1;
-    return 0;
-  }
-
   _comparePositionAscending(a, b) {
     if (Number.isFinite(a) && Number.isFinite(b)) {
       const diff = a - b;
@@ -7947,6 +7911,21 @@ class F1LastRaceResultsCard extends LitElement {
     if (Number.isFinite(a)) return -1;
     if (Number.isFinite(b)) return 1;
     return 0;
+  }
+
+  _getPositionMovement(currentPosition, predictedPosition) {
+    if (!Number.isFinite(currentPosition) || !Number.isFinite(predictedPosition)) {
+      return null;
+    }
+    const change = currentPosition - predictedPosition;
+    if (change > 0) {
+      return { symbol: '▲', className: 'up', title: `Improves by ${change} position${change > 1 ? 's' : ''}` };
+    }
+    if (change < 0) {
+      const loss = Math.abs(change);
+      return { symbol: '▼', className: 'down', title: `Drops by ${loss} position${loss > 1 ? 's' : ''}` };
+    }
+    return null;
   }
 
   _normalizeTla(value) {
