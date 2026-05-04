@@ -6757,6 +6757,1233 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
 }
 
 // ============================================================================
+// F1 Last Race Results Card Editor
+// ============================================================================
+
+class F1LastRaceResultsCardEditor extends LitElement {
+  static properties = {
+    hass: {},
+    _config: {},
+    _activeTab: { state: true },
+  };
+
+  static styles = css`
+    .card-config {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--divider-color);
+      margin-bottom: 16px;
+    }
+
+    .tabs button {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary-text-color);
+      font-size: 14px;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+
+    .tabs button:hover {
+      color: var(--primary-color);
+    }
+
+    .tabs button.active {
+      color: var(--primary-color);
+      border-bottom: 2px solid var(--primary-color);
+      margin-bottom: -1px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--secondary-text-color);
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .helper {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      padding-left: 16px;
+      line-height: 1.4;
+    }
+
+    .warning {
+      font-size: 12px;
+      color: var(--error-color);
+      padding-left: 16px;
+    }
+
+    .display-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    ha-textfield {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    ha-formfield {
+      display: flex;
+      align-items: center;
+      padding: 4px 0;
+    }
+
+    ha-form {
+      width: 100%;
+    }
+  `;
+
+  constructor() {
+    super();
+    this._activeTab = 'sources';
+  }
+
+  setConfig(config) {
+    this._config = {
+      entity: 'sensor.f1_last_race_results',
+      show_header: true,
+      show_grid: true,
+      show_position: true,
+      show_tla: true,
+      show_full_name: false,
+      show_team_logo: true,
+      driver_image_type: 'team_logo',
+      team_logo_style: 'color',
+      show_delta: true,
+      top_limit: 0,
+      ...config,
+    };
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    return html`
+      <div class="card-config">
+        <div class="tabs">
+          <button
+            class=${this._activeTab === 'sources' ? 'active' : ''}
+            @click=${() => this._activeTab = 'sources'}
+          >
+            Data Sources
+          </button>
+          <button
+            class=${this._activeTab === 'display' ? 'active' : ''}
+            @click=${() => this._activeTab = 'display'}
+          >
+            Display
+          </button>
+        </div>
+
+        ${this._activeTab === 'sources'
+          ? this._renderDataSourcesTab()
+          : this._renderDisplayTab()}
+      </div>
+    `;
+  }
+
+  _renderDataSourcesTab() {
+    return html`
+      <div class="section">
+        <div class="section-header">RESULTS SOURCE</div>
+        ${this._renderEntityPicker(
+          'entity',
+          'Last Race Results Sensor',
+          'Provides the last race results shown as the base result view',
+          true,
+          'sensor'
+        )}
+      </div>
+    `;
+  }
+
+  _renderDisplayTab() {
+    return html`
+      <div class="display-section">
+        <ha-textfield
+          .label=${'Title'}
+          .value=${this._config.title || ''}
+          @input=${(e) => this._valueChanged('title', e.target.value)}
+        ></ha-textfield>
+
+        ${this._renderSwitch('show_header', 'Show header')}
+        ${this._renderSwitch('show_position', 'Show position')}
+        ${this._renderSwitch('show_grid', 'Show grid')}
+        ${this._renderSwitch('show_tla', 'Show driver column')}
+        ${this._renderSwitch(
+          'show_full_name',
+          'Use full driver name',
+          'Shows full driver names instead of TLA when the driver column is visible'
+        )}
+        ${this._renderSwitch('show_team_logo', 'Show driver image')}
+
+        ${this._config.show_team_logo !== false ? html`
+          ${this._renderSelect(
+            'driver_image_type',
+            'Driver image type',
+            [
+              { value: 'team_logo', label: 'Team logo' },
+              { value: 'headshot', label: 'Driver headshot' },
+            ],
+          )}
+          <div class="helper">Headshots come from the driver list sensor and fall back to team logo if unavailable</div>
+        ` : null}
+
+        ${this._config.show_team_logo !== false && (this._config.driver_image_type || 'team_logo') === 'team_logo' ? html`
+          ${this._renderSelect(
+            'team_logo_style',
+            'Team logo style',
+            [
+              { value: 'color', label: 'Color (fallback to white)' },
+              { value: 'white', label: 'White' },
+            ],
+          )}
+        ` : null}
+
+        ${this._renderSwitch('show_current_points', 'Show current points')}
+        ${this._renderSwitch(
+          'show_delta',
+          'Show position delta',
+          'Shows delta between starting grid and finishing position when grid column is visible'
+        )}
+
+        <ha-textfield
+          .label=${'Top entries to show'}
+          .value=${String(this._config.top_limit ?? 0)}
+          type="number"
+          min="0"
+          @input=${(e) => this._valueChanged('top_limit', Number.parseInt(e.target.value, 10) || 0)}
+        ></ha-textfield>
+        <div class="helper">0 = show all entries</div>
+      </div>
+    `;
+  }
+
+  _renderEntityPicker(name, label, helper, required, domain) {
+    const value = this._config[name];
+    const showWarning = required && !value;
+    const schema = [{ name, label, required, selector: { entity: { domain } } }];
+
+    return html`
+      <div class="field">
+        <ha-form
+          .hass=${this.hass}
+          .data=${this._config}
+          .schema=${schema}
+          .computeLabel=${() => label}
+          @value-changed=${this._formValueChanged}
+        ></ha-form>
+        <div class="helper">${helper}</div>
+        ${showWarning ? html`
+          <div class="warning">This sensor is required for the card to function</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  _renderSwitch(name, label, helper = null) {
+    const schema = [{ name, label, selector: { boolean: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _renderSelect(name, label, options, helper = null) {
+    const schema = [{
+      name,
+      label,
+      selector: {
+        select: {
+          mode: 'dropdown',
+          options,
+        },
+      },
+    }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _formValueChanged(ev) {
+    if (!this._config) return;
+    const value = ev.detail?.value || {};
+    const newConfig = { ...this._config, ...value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+
+  _valueChanged(name, value) {
+    if (!this._config) return;
+    const newConfig = { ...this._config, [name]: value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+}
+
+// ============================================================================
+// F1 Last Race Results Card
+// ============================================================================
+
+class F1LastRaceResultsCard extends LitElement {
+  static properties = {
+    hass: {},
+    config: {},
+  };
+
+  static styles = css`
+    /* Animation keyframes */
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    :host {
+      --ts-bg: #0b0b0d;
+      --ts-bg-soft: #131315;
+      --ts-border: rgba(255, 255, 255, 0.08);
+      --ts-text: #f5f5f5;
+      --ts-muted: rgba(255, 255, 255, 0.65);
+      --ts-chip: rgba(255, 255, 255, 0.06);
+      --ts-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      display: block;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+    }
+
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+    }
+
+    .cpd-card {
+      position: relative;
+      padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
+        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
+      border: 1px solid var(--ts-border);
+      box-shadow: var(--ts-shadow);
+      overflow: hidden;
+      color: var(--ts-text);
+      container-type: inline-size;
+    }
+
+    .cpd-header {
+      text-align: center;
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(16px, 2.4vw, 20px);
+      font-weight: 700;
+      letter-spacing: clamp(0.03em, 0.06em, 0.08em);
+      text-transform: uppercase;
+      margin: 0;
+      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      white-space: normal;
+      text-wrap: balance;
+      line-height: 1.1;
+      padding-right: 0;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .cpd-header-row {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: clamp(8px, 1.4vw, 12px);
+    }
+
+    .cpd-header-badges {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-width: 100%;
+    }
+
+    .cpd-mode-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px 10px 4px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: var(--f1-table-meta-font-size, 10px);
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--ts-text);
+    }
+
+    .cpd-mode-pill.current {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--ts-text);
+    }
+
+    .cpd-mode-pill.live {
+      background: rgba(239, 68, 68, 0.16);
+      color: #fca5a5;
+      border-color: rgba(248, 113, 113, 0.28);
+    }
+
+    .cpd-mode-pill.live-current {
+      background: rgba(59, 130, 246, 0.16);
+      color: #bfdbfe;
+      border-color: rgba(96, 165, 250, 0.28);
+    }
+
+    .cpd-mode-pill.legacy {
+      background: rgba(245, 158, 11, 0.16);
+      color: #fcd34d;
+      border-color: rgba(251, 191, 36, 0.24);
+    }
+
+    .cpd-mode-pill.masked {
+      background: rgba(250, 204, 21, 0.16);
+      color: #fde68a;
+      border-color: rgba(250, 204, 21, 0.26);
+    }
+
+    .cpd-mode-pill.replay-only {
+      background: rgba(251, 191, 36, 0.10);
+      color: rgba(251, 191, 36, 0.85);
+      border-color: rgba(251, 191, 36, 0.20);
+    }
+
+    .cpd-table {
+      display: grid;
+      gap: 6px;
+    }
+
+    .cpd-row {
+      display: grid;
+      grid-template-columns: var(--cpd-columns);
+      align-items: center;
+      column-gap: 4px;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
+      border-radius: 10px;
+      background: var(--ts-chip);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
+      color: var(--ts-text);
+      animation: fadeSlideIn 0.25s ease-out backwards;
+      transition: background 0.2s ease;
+    }
+
+    .cpd-row.header {
+      background: transparent;
+      padding: 4px 6px 2px;
+      font-size: var(--f1-table-header-font-size, clamp(9px, 1.4vw, 10px));
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--ts-muted);
+    }
+
+    .cpd-cell {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+    }
+
+    .cpd-cell.numeric {
+      justify-content: center;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .cpd-cell.group-start {
+      padding-left: 6px;
+      border-left: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .cpd-cell.points-primary {
+      font-weight: 700;
+      color: var(--ts-text);
+    }
+
+    .cpd-cell.points-secondary {
+      color: var(--ts-muted);
+    }
+
+    .cpd-team-logo {
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
+      object-fit: contain;
+      filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
+    }
+
+    .cpd-driver-image {
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
+      object-fit: contain;
+      filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
+    }
+
+    .cpd-driver-image.headshot {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      object-fit: cover;
+      object-position: center top;
+      filter: none;
+      background: rgba(255, 255, 255, 0.05);
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.12),
+        0 3px 8px rgba(0, 0, 0, 0.35);
+    }
+
+    .cpd-driver {
+      font-weight: 700;
+      color: var(--driver-color, var(--ts-text));
+    }
+
+    .cpd-driver.compact {
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .cpd-driver.full {
+      letter-spacing: 0.01em;
+      text-transform: none;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-weight: 600;
+    }
+
+    .cpd-delta.positive {
+      color: #34d399;
+    }
+
+    .cpd-delta.negative {
+      color: #f87171;
+    }
+
+    .cpd-delta.neutral {
+      color: var(--ts-muted);
+    }
+
+    .cpd-delta-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .cpd-delta-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-width: 52px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
+    .cpd-delta-pill.positive {
+      background: rgba(52, 211, 153, 0.14);
+      border-color: rgba(52, 211, 153, 0.22);
+    }
+
+    .cpd-delta-pill.negative {
+      background: rgba(248, 113, 113, 0.14);
+      border-color: rgba(248, 113, 113, 0.22);
+    }
+
+    .cpd-card[data-layout='medium'] .cpd-cell:not(.numeric),
+    .cpd-card[data-layout='narrow'] .cpd-cell:not(.numeric) {
+      white-space: normal;
+      align-items: flex-start;
+    }
+
+    .cpd-pos-arrow {
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 700;
+    }
+
+    .cpd-pos-arrow.up {
+      color: #34d399;
+    }
+
+    .cpd-pos-arrow.down {
+      color: #f87171;
+    }
+
+    .cpd-empty {
+      padding: 16px;
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: var(--ts-chip);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      color: var(--ts-muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .cpd-replay-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      background: rgba(251, 191, 36, 0.06);
+      border: 1px solid rgba(251, 191, 36, 0.15);
+      color: rgba(251, 191, 36, 0.85);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-align: center;
+      line-height: 1.4;
+    }
+
+    @media (max-width: 720px) {
+      .cpd-card {
+        padding: 12px 10px 12px;
+      }
+
+      .cpd-header {
+        font-size: 16px;
+        letter-spacing: 0.03em;
+      }
+
+      .cpd-header-row {
+        gap: 8px;
+      }
+
+      .cpd-mode-pill {
+        font-size: 8px;
+        padding: 5px 8px 4px;
+      }
+
+      .cpd-row {
+        font-size: 9px;
+        padding: 5px 6px;
+      }
+    }
+  `;
+
+  setConfig(config) {
+    this.config = {
+      entity: 'sensor.f1_last_race_results',
+      show_header: true,
+      show_position: true,
+      show_grid: true,
+      show_tla: true,
+      show_full_name: false,
+      show_team_logo: true,
+      driver_image_type: 'team_logo',
+      team_logo_style: 'color',
+      show_delta: true,
+      top_limit: 0,
+      ...config,
+    };
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    ensureF1Fonts();
+  }
+
+  getCardSize() {
+    return 6;
+  }
+
+  getGridOptions() {
+    return {
+      columns: 12,
+      min_columns: 4,
+      max_columns: 12,
+      min_rows: 5,
+    };
+  }
+
+  _responsiveLayoutBreakpoints() {
+    return {
+      narrow: 540,
+      medium: 780,
+    };
+  }
+
+  static getStubConfig() {
+    return {
+      type: 'custom:f1-last-race-results-card',
+      entity: 'sensor.f1_last_race_results',
+    };
+  }
+
+  static getConfigElement() {
+    return document.createElement('f1-last-race-results-card-editor');
+  }
+
+  render() {
+    if (!this.hass || !this.config) return html``;
+
+    if (!this.config.current_entity && !this.config.entity) {
+      return this._renderEmpty('Select entities in the editor');
+    }
+
+    const lastRace = this.config.entity
+      ? getEntityStateWithFallback(this.hass, this.config.entity)
+      : null;
+
+    const gpName = lastRace.race_name?.replace(' Grand Prix', ' GP') || lastRace.race_name || 'Last race';
+    const results = Array.isArray(lastRace?.attributes?.results)
+      ? lastRace.attributes.results
+      : [];
+
+    const hasCurrentData = results.length > 0;
+
+    const layoutMode = getResponsiveLayoutMode(this);
+    let rows = [];
+    let columns = [];
+    let emptyMessage = 'No results data';
+
+    rows = this._applyTopLimit(
+      this._buildCurrentRows(
+        results,
+      ),
+    );
+    columns = this._columns(layoutMode);
+    this._actionEntityId = this.config.entity;
+
+    const gridColumns = columns.map((col) => col.width).join(' ');
+
+    if (rows.length === 0) {
+      return this._renderEmpty(emptyMessage);
+    }
+
+    return html`
+      <ha-card @click=${this._handleCardAction}>
+        <div class="cpd-card" data-layout=${layoutMode}>
+          ${this.config.show_header
+            ? html`
+              <div class="cpd-header-row">
+                <div class="cpd-header">${gpName}</div>
+              </div>
+            `
+            : null}
+          <div class="cpd-table" style="--cpd-columns: ${gridColumns};">
+            ${rows.map((row) => this._renderRow(row, columns))}
+          </div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _renderEmpty(message) {
+    return html`
+      <ha-card>
+        <div class="cpd-card" data-layout=${getResponsiveLayoutMode(this)}>
+          ${this.config.show_header
+            ? html`
+              <div class="cpd-header-row">
+                <div class="cpd-header">${gpName}</div>
+              </div>
+            `
+            : null}
+          <div class="cpd-empty">${message}</div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _columns(layoutMode = 'wide') {
+    const compactLayout = layoutMode !== 'wide';
+    const cols = [];
+    if (this.config.show_position !== false) {
+      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
+    }
+    if (this.config.show_team_logo !== false) {
+      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? '0.18fr' : '0.16fr', hideHeader: true });
+    }
+    if (this.config.show_tla !== false) {
+      cols.push({
+        key: 'tla',
+        label: 'DRIVER',
+        width: compactLayout ? '1fr' : this._driverColumnWidth(),
+      });
+    }
+    if (this.config.show_grid !== false) {
+      cols.push({ key: 'grid', label: 'GRD', width: '0.18fr', numeric: true });
+    }
+    if (this.config.show_delta !== false) {
+      cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
+    }
+    cols.push({
+      key: 'points',
+      label: 'PTS',
+      width: '0.28fr',
+      numeric: true,
+    });
+    cols.push({
+      key: 'status',
+      label: 'STS',
+      width: '0.6fr',
+    });
+    return cols;
+  }
+
+  _legacyColumns(layoutMode = 'wide') {
+    const compactLayout = layoutMode !== 'wide';
+    const cols = [];
+    if (this.config.show_position !== false) {
+      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
+    }
+    if (this.config.show_team_logo !== false) {
+      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? '0.18fr' : '0.16fr', hideHeader: true });
+    }
+    if (this.config.show_tla !== false) {
+      cols.push({ key: 'tla', label: 'DRIVER', width: compactLayout ? '1fr' : this._driverColumnWidth(true) });
+    }
+    if (this.config.show_grid !== false) {
+      cols.push({ key: 'grid', label: 'GRD', width: '0.18fr', numeric: true });
+    }
+    if (this.config.show_delta !== false) {
+      cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
+    }
+    cols.push({
+      key: 'points',
+      label: 'PTS',
+      width: '0.28fr',
+      numeric: true,
+    });
+    cols.push({
+      key: 'status',
+      label: 'STS',
+      width: compactLayout ? '0.6fr' : this._statusColumnWidth(),
+    });
+    return cols;
+  }
+
+  _renderHeader(columns) {
+    return html`
+      <div class="cpd-row header">
+        ${columns.map((col) => html`
+          <div class="cpd-cell ${col.numeric ? 'numeric' : ''} ${col.groupStart ? 'group-start' : ''}">
+            ${col.hideHeader ? '' : col.label}
+          </div>
+        `)}
+      </div>
+    `;
+  }
+
+  _renderRow(row, columns) {
+    return html`
+      <div class="cpd-row">
+        ${columns.map((col) => this._renderCell(row, col))}
+      </div>
+    `;
+  }
+
+  _renderCell(row, col) {
+    const classes = ['cpd-cell'];
+    if (col.numeric) classes.push('numeric');
+    if (col.groupStart) classes.push('group-start');
+    if (col.emphasis === 'primary') classes.push('points-primary');
+    if (col.emphasis === 'secondary') classes.push('points-secondary');
+
+    if (col.key === 'logo') {
+      return html`
+        <div class="${classes.join(' ')}">
+          ${row.driver_media ? html`
+            <img
+              class="cpd-driver-image ${row.driver_media.kind === 'headshot' ? 'headshot' : 'team-logo'}"
+              src="${row.driver_media.src}"
+              data-fallback="${row.driver_media.fallback || ''}"
+              loading="lazy"
+              @error=${handleTeamLogoError}
+              alt=""
+            />
+          ` : html`<span>--</span>`}
+        </div>
+      `;
+    }
+
+    if (col.key === 'tla') {
+      const style = row.team_color ? `--driver-color: ${row.team_color};` : '';
+      const driverClass = row.use_full_name ? 'full' : 'compact';
+      return html`
+        <div class="${classes.join(' ')} cpd-driver ${driverClass}" style="${style}">
+          ${row.display_driver || '--'}
+        </div>
+      `;
+    }
+
+    if (col.key === 'delta') {
+      const deltaClass = row.delta > 0 ? 'positive' : row.delta < 0 ? 'negative' : 'neutral';
+      const positionMove = this._getPositionMovement(row.current_position, row.predicted_position);
+      return html`
+        <div class="${classes.join(' ')} cpd-delta ${deltaClass}">
+          <span class="cpd-delta-pill ${deltaClass}">
+            <span>${row.delta_display}</span>
+            ${positionMove ? html`
+              <span class="cpd-pos-arrow ${positionMove.className}" title="${positionMove.title}">
+                ${positionMove.symbol}
+              </span>
+            ` : null}
+          </span>
+        </div>
+      `;
+    }
+
+    let value = '--';
+    if (col.key === 'points') value = row.points_display;
+    return html`<div class="${classes.join(' ')}">${value}</div>`;
+  }
+
+  _buildCurrentRows(results) {
+    const rows = [];
+    results.forEach((result) => {
+      if (!result || typeof result !== 'object') return;
+      const driver = result?.Driver || {};
+      const constructors = Array.isArray(result?.Constructors) ? result.Constructors : [];
+      const constructor = constructors[0] || result?.Constructor || {};
+      const rn = String(driver?.permanentNumber ?? '').trim();
+      const tla = this._normalizeTla(driver?.code);
+      const identity = (rn && driverMap.get(rn)) || (tla ? this._findDriverByTla(driverMap, tla) : null) || {};
+      const position = this._toNumber(result?.position);
+      const grid = this._toNumber(result?.grid);
+      const points = this._toNumber(result?.points);
+      const delta = Number.isFinite(position) && Number.isFinite(grid)
+        ? grid - position
+        : null;
+      const teamName = identity?.team || constructor?.name || prediction?.team_name || null;
+      const teamColor = this._normalizeColor(identity?.team_color || prediction?.team_color);
+      const displayTla = tla || this._normalizeTla(identity?.tla) || (rn ? `#${rn}` : '--');
+      const fullName = this._formatDriverName(driver, identity, rn, displayTla);
+      const useFullName = this.config.show_full_name === true && fullName !== displayTla;
+      const displayDriver = useFullName ? fullName : displayTla;
+
+      rows.push({
+        rn,
+        position: position,
+        grid: grid,
+        display_tla: displayTla,
+        display_driver: displayDriver,
+        identity_sort: displayDriver,
+        use_full_name: useFullName,
+        driver_media: this._resolveDriverMedia(identity, teamName),
+        team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style),
+        team_color: teamColor,
+        points: points,
+        points_display: this._formatPoints(points),
+        delta: delta,
+        delta_display: this._formatDelta(delta),
+        status: status
+      });
+    });
+
+    return this._sortDriverRows(rows, { spoilerBlocked, showProjection });
+  }
+
+  _buildLegacyRows(predictions, driverMap, spoilerBlocked) {
+    const rows = [];
+    Object.entries(predictions || {}).forEach(([key, entry]) => {
+      if (!entry || typeof entry !== 'object') return;
+      const rn = String(entry?.RacingNumber ?? key).trim();
+      const identity = driverMap.get(rn) || {};
+      const position = this._parsePosition(entry?.PredictedPosition);
+      const points = this._toNumber(entry?.points);
+      const delta = Number.isFinite(position) && Number.isFinite(grid)
+        ? position - grid
+        : null;
+
+      const tla = this._normalizeTla(entry?.Tla || identity?.tla);
+      const teamName = entry?.TeamName || identity?.team || null;
+      const teamColor = this._normalizeColor(entry?.TeamColor || identity?.team_color);
+      const displayTla = tla || (rn ? `#${rn}` : '--');
+      const fullName = this._formatDriverName(entry, identity, rn, displayTla);
+      const useFullName = this.config.show_full_name === true && fullName !== displayTla;
+      const displayDriver = useFullName ? fullName : displayTla;
+
+      rows.push({
+        rn,
+        position: position,
+        grid: grid,
+        display_tla: displayTla,
+        display_driver: displayDriver,
+        identity_sort: displayDriver,
+        use_full_name: useFullName,
+        driver_media: this._resolveDriverMedia(identity, teamName),
+        team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style),
+        team_color: teamColor,
+        points: points,
+        points_display: this._formatPoints(points),
+        delta: delta,
+        delta_display: this._formatDelta(delta),
+        status: status
+      });
+    });
+
+    return this._sortDriverRows(rows);
+  }
+
+  _applyTopLimit(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const limit = this._parseTopLimit(this.config?.top_limit);
+    if (limit <= 0) return list;
+    return list.slice(0, limit);
+  }
+
+  _buildDriverMap(drivers) {
+    const map = new Map();
+    (Array.isArray(drivers) ? drivers : []).forEach((driver) => {
+      const rn = String(driver?.racing_number ?? '').trim();
+      if (!rn) return;
+      map.set(rn, {
+        tla: driver?.tla,
+        name: this._normalizeDriverName(
+          driver?.full_name,
+          driver?.name,
+          driver?.broadcast_name,
+          [driver?.given_name, driver?.family_name].filter(Boolean).join(' '),
+        ),
+        headshot_small: this._normalizeMediaUrl(driver?.headshot_small),
+        headshot_large: this._normalizeMediaUrl(driver?.headshot_large),
+        team: driver?.team || driver?.team_name,
+        team_color: driver?.team_color,
+      });
+    });
+    return map;
+  }
+
+  _findDriverByTla(driverMap, tla) {
+    if (!tla) return null;
+    for (const entry of driverMap.values()) {
+      if (this._normalizeTla(entry?.tla) === tla) return entry;
+    }
+    return null;
+  }
+
+  _resolveDriverMedia(identity, teamName) {
+    const imageType = this.config?.driver_image_type === 'headshot' ? 'headshot' : 'team_logo';
+    const teamLogo = getTeamLogoMeta(teamName, 24, this.config.team_logo_style);
+
+    if (imageType === 'headshot') {
+      const headshot = this._normalizeMediaUrl(identity?.headshot_large, identity?.headshot_small);
+      if (headshot) {
+        return {
+          src: headshot,
+          fallback: teamLogo?.src || teamLogo?.fallback || '',
+          kind: 'headshot',
+        };
+      }
+    }
+
+    return teamLogo ? { ...teamLogo, kind: 'team-logo' } : null;
+  }
+
+  _driverColumnWidth() {
+    if (this.config.show_full_name === true) {
+      return '1.18fr';
+    }
+    return '0.78fr';
+  }
+
+  _normalizeDriverName(...values) {
+    for (const value of values) {
+      const text = String(value || '').replace(/\s+/g, ' ').trim();
+      if (text) return text;
+    }
+    return null;
+  }
+
+  _normalizeMediaUrl(...values) {
+    for (const value of values) {
+      const text = String(value || '').trim();
+      if (text) return text;
+    }
+    return null;
+  }
+
+  _formatDriverName(driver, identity, rn, fallback) {
+    const explicitName = this._normalizeDriverName(
+      [driver?.givenName, driver?.familyName].filter(Boolean).join(' '),
+      identity?.name,
+      driver?.FullName,
+      driver?.full_name,
+      driver?.name,
+      driver?.BroadcastName,
+      driver?.broadcast_name,
+      driver?.familyName,
+      driver?.givenName,
+    );
+    if (explicitName) return explicitName;
+    if (rn) return `#${rn}`;
+    return fallback || '--';
+  }
+
+  _parseTopLimit(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) return 0;
+    return parsed;
+  }
+
+  _parsePosition(value) {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const match = text.match(/\d+/);
+    if (!match) return null;
+    const num = Number(match[0]);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  _toNumber(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  _formatPoints(value) {
+    if (!Number.isFinite(value)) return '--';
+    if (Math.abs(value - Math.round(value)) < 0.0001) {
+      return String(Math.round(value));
+    }
+    return Number(value).toFixed(1);
+  }
+
+  _formatDelta(value) {
+    if (!Number.isFinite(value)) return '--';
+    const sign = value < 0 ? '-' : '+';
+    const abs = Math.abs(value);
+    return `${sign}${this._formatPoints(abs)}`;
+  }
+
+  _sortDriverRows(rows) {
+    rows.sort((a, b) => {
+      const primaryPointsDiff = this._comparePointsDescending(a.points, b.points);
+      if (primaryPointsDiff !== 0) return primaryPointsDiff;
+
+      const positionDiff = this._comparePositionAscending(a.position, b.position);
+      if (positionDiff !== 0) return positionDiff;
+
+      const fallbackPointsDiff = this._comparePointsDescending(a.points, b.points);
+      if (fallbackPointsDiff !== 0) return fallbackPointsDiff;
+
+      return this._compareDriverIdentity(a, b);
+    });
+
+    return rows;
+  }
+
+  _compareDriverIdentity(a, b) {
+    const labelDiff = String(a.identity_sort || '').localeCompare(String(b.identity_sort || ''));
+    if (labelDiff !== 0) return labelDiff;
+    return this._compareRacingNumber(a.rn, b.rn);
+  }
+
+  _comparePointsDescending(a, b) {
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      const diff = b - a;
+      return Math.abs(diff) < 0.0001 ? 0 : diff;
+    }
+    if (Number.isFinite(a)) return -1;
+    if (Number.isFinite(b)) return 1;
+    return 0;
+  }
+
+  _comparePositionAscending(a, b) {
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      const diff = a - b;
+      return diff === 0 ? 0 : diff;
+    }
+    if (Number.isFinite(a)) return -1;
+    if (Number.isFinite(b)) return 1;
+    return 0;
+  }
+
+  _normalizeTla(value) {
+    if (!value) return null;
+    const tla = String(value).trim().toUpperCase();
+    return tla || null;
+  }
+
+  _normalizeColor(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (text.startsWith('#') || text.startsWith('rgb')) return text;
+    if (/^[0-9a-fA-F]{6}$/.test(text)) return `#${text}`;
+    return text;
+  }
+
+  _compareRacingNumber(a, b) {
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (Number.isFinite(aNum) && Number.isFinite(bNum)) return aNum - bNum;
+    return String(a).localeCompare(String(b));
+  }
+
+  _handleCardAction() {
+    const action = this.config?.tap_action || { action: 'more-info' };
+    if (action.action === 'none') return;
+    if (action.action === 'more-info') {
+      this.dispatchEvent(new CustomEvent('hass-more-info', {
+        bubbles: true,
+        composed: true,
+        detail: { entityId: this._actionEntityId || this.config.current_entity || this.config.entity },
+      }));
+    }
+  }
+}
+
+// ============================================================================
 // F1 Investigations Card
 // ============================================================================
 
@@ -19105,6 +20332,13 @@ installSectionsAutoHeight(F1ChampionshipPredictionDriversCard, {
   min_rows: 5,
 });
 
+installSectionsAutoHeight(F1LastRaceResultsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 5,
+});
+
 installSectionsAutoHeight(F1ChampionshipPredictionTeamsCard, {
   columns: 12,
   min_columns: 4,
@@ -19198,6 +20432,14 @@ if (!customElements.get('f1-driver-lap-times-card')) {
 
 if (!customElements.get('f1-driver-lap-times-card-editor')) {
   customElements.define('f1-driver-lap-times-card-editor', F1DriverLapTimesCardEditor);
+}
+
+if (!customElements.get('f1-last-race-results-card')) {
+  customElements.define('f1-last-race-results-card', F1LastRaceResultsCard);
+}
+
+if (!customElements.get('f1-last-race-results-card-editor')) {
+  customElements.define('f1-last-race-results-card-editor', F1LastRaceResultsCardEditor);
 }
 
 if (!customElements.get('f1-championship-prediction-drivers-card')) {
