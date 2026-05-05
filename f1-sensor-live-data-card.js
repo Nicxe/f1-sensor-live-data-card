@@ -11742,8 +11742,8 @@ class F1ReplayControlCard extends LitElement {
       font-family: 'Formula1 Display', 'Titillium Web', Arial, sans-serif;
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      padding: 14px;
+      gap: 10px;
+      padding: 12px;
       border-radius: var(--ha-card-border-radius, 12px);
       background:
         linear-gradient(90deg, rgba(225, 6, 0, 0.18), transparent 34%) top left / 100% 2px no-repeat,
@@ -11756,15 +11756,15 @@ class F1ReplayControlCard extends LitElement {
     }
 
     .rc-card.compact {
-      gap: 10px;
-      padding: 12px;
+      gap: 6px;
+      padding: 8px 10px 10px;
     }
 
     .rc-header {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 10px;
-      align-items: start;
+      align-items: center;
     }
 
     .rc-title-group {
@@ -11777,9 +11777,9 @@ class F1ReplayControlCard extends LitElement {
     .rc-title {
       font-family: 'Formula1 Wide', 'Formula1 Display', Arial, sans-serif;
       font-weight: 600;
-      font-size: 15px;
-      letter-spacing: 0.02em;
-      line-height: 1.18;
+      font-size: 14px;
+      letter-spacing: 0.018em;
+      line-height: 1.14;
       overflow-wrap: anywhere;
     }
 
@@ -11795,8 +11795,8 @@ class F1ReplayControlCard extends LitElement {
       align-items: center;
       justify-content: center;
       gap: 6px;
-      min-height: 28px;
-      padding: 5px 10px;
+      min-height: 24px;
+      padding: 3px 9px;
       border-radius: 999px;
       border: 1px solid color-mix(in srgb, var(--rc-status-color, var(--rc-soft)) 46%, transparent);
       background: color-mix(in srgb, var(--rc-status-color, var(--rc-soft)) 14%, transparent);
@@ -11809,7 +11809,38 @@ class F1ReplayControlCard extends LitElement {
     }
 
     .rc-status-pill ha-icon {
-      --mdc-icon-size: 16px;
+      --mdc-icon-size: 15px;
+    }
+
+    .rc-card.compact .rc-header {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .rc-card.compact .rc-title {
+      font-size: 12px;
+      line-height: 1.08;
+    }
+
+    .rc-card.compact .rc-subtitle {
+      font-size: 10px;
+      line-height: 1.18;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rc-card.compact .rc-status-pill {
+      min-height: 20px;
+      padding: 2px 6px;
+      gap: 4px;
+      font-size: 8px;
+      letter-spacing: 0.04em;
+    }
+
+    .rc-card.compact .rc-status-pill ha-icon {
+      --mdc-icon-size: 13px;
     }
 
     .rc-status-pill.playing {
@@ -11837,37 +11868,43 @@ class F1ReplayControlCard extends LitElement {
 
     .rc-field-grid {
       display: grid;
-      grid-template-columns: minmax(110px, 0.45fr) minmax(170px, 1fr);
-      gap: 8px;
+      grid-template-columns: minmax(88px, 0.34fr) minmax(170px, 0.82fr) minmax(300px, 1.18fr);
+      gap: 7px;
+      align-items: end;
     }
 
     .rc-card.compact .rc-field-grid {
       grid-template-columns: 1fr;
+      gap: 6px;
+    }
+
+    .rc-field-grid.primary-only {
+      grid-template-columns: minmax(0, 1fr) auto;
     }
 
     .rc-select-field {
       display: flex;
       flex-direction: column;
-      gap: 5px;
+      gap: 4px;
       min-width: 0;
     }
 
     .rc-select-field.session {
-      grid-column: span 1;
+      grid-column: auto;
     }
 
     .rc-start-group {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
+      gap: 7px;
       align-items: end;
-      grid-column: 1 / -1;
+      grid-column: auto;
       min-width: 0;
     }
 
     .rc-start-actions {
       display: grid;
-      grid-template-columns: repeat(2, minmax(76px, auto));
+      grid-template-columns: repeat(2, minmax(68px, auto));
       gap: 6px;
     }
 
@@ -11883,6 +11920,18 @@ class F1ReplayControlCard extends LitElement {
       width: 100%;
       justify-self: stretch;
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .rc-compact-replay-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      align-items: end;
+      min-width: 0;
+    }
+
+    .rc-compact-replay-row .rc-start-actions {
+      grid-template-columns: repeat(2, 34px);
     }
 
     .rc-field-label {
@@ -11913,16 +11962,16 @@ class F1ReplayControlCard extends LitElement {
 
     select {
       width: 100%;
-      height: 42px;
+      height: 38px;
       appearance: none;
       border: 1px solid var(--rc-divider);
       border-radius: 8px;
       background: color-mix(in srgb, var(--rc-panel) 76%, transparent);
       color: var(--rc-text);
       font: inherit;
-      font-size: 13px;
+      font-size: 12px;
       line-height: 1.2;
-      padding: 0 34px 0 12px;
+      padding: 0 32px 0 10px;
       outline: none;
       min-width: 0;
       text-overflow: ellipsis;
@@ -11939,11 +11988,34 @@ class F1ReplayControlCard extends LitElement {
       cursor: not-allowed;
     }
 
+    .rc-card.compact .rc-select-field {
+      gap: 3px;
+    }
+
+    .rc-card.compact .rc-field-label {
+      font-size: 8px;
+    }
+
+    .rc-card.compact select {
+      height: 34px;
+      border-radius: 6px;
+      font-size: 11px;
+      padding-left: 8px;
+      padding-right: 26px;
+    }
+
+    .rc-card.compact .rc-select-wrap::after {
+      right: 9px;
+      width: 5px;
+      height: 5px;
+      border-width: 1.5px;
+    }
+
     .rc-status-details {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-      padding: 9px 10px;
+      gap: 7px;
+      padding: 7px 9px;
       border: 1px solid var(--rc-divider);
       border-radius: 8px;
       background: var(--rc-panel);
@@ -11966,7 +12038,7 @@ class F1ReplayControlCard extends LitElement {
 
     .rc-detail-value {
       color: var(--rc-text);
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
       line-height: 1.22;
       overflow: hidden;
@@ -11977,20 +12049,20 @@ class F1ReplayControlCard extends LitElement {
     .rc-progress {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) auto;
-      gap: 8px;
+      gap: 7px;
       align-items: center;
     }
 
     .rc-progress-time {
       color: var(--rc-muted);
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 700;
       white-space: nowrap;
       font-variant-numeric: tabular-nums;
     }
 
     .rc-progress-track {
-      height: 5px;
+      height: 4px;
       border-radius: 999px;
       background: var(--rc-chip);
       overflow: hidden;
@@ -12007,16 +12079,17 @@ class F1ReplayControlCard extends LitElement {
     .rc-controls {
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 6px;
+      gap: 5px;
     }
 
     .rc-card.compact .rc-controls {
       grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 4px;
     }
 
     .rc-button {
       min-width: 0;
-      min-height: 40px;
+      min-height: 36px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -12026,7 +12099,7 @@ class F1ReplayControlCard extends LitElement {
       background: var(--rc-panel);
       color: var(--rc-text);
       font: inherit;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
       line-height: 1;
       cursor: pointer;
@@ -12034,8 +12107,42 @@ class F1ReplayControlCard extends LitElement {
     }
 
     .rc-button ha-icon {
-      --mdc-icon-size: 18px;
+      --mdc-icon-size: 17px;
       flex: 0 0 auto;
+    }
+
+    .rc-card.compact .rc-button {
+      min-height: 32px;
+      border-radius: 6px;
+      padding: 0 6px;
+      gap: 4px;
+      font-size: 10px;
+    }
+
+    .rc-card.compact .rc-button ha-icon {
+      --mdc-icon-size: 16px;
+    }
+
+    .rc-card.compact .rc-start-actions .rc-button {
+      width: 34px;
+      min-height: 34px;
+      padding: 0;
+    }
+
+    .rc-card.compact .rc-progress {
+      gap: 5px;
+    }
+
+    .rc-card.compact .rc-progress-time {
+      font-size: 8px;
+    }
+
+    .rc-card.compact .rc-progress-track {
+      height: 3px;
+    }
+
+    .rc-card.compact .rc-button-label {
+      display: none;
     }
 
     .rc-button:hover:not(:disabled) {
@@ -12088,6 +12195,24 @@ class F1ReplayControlCard extends LitElement {
       line-height: 1.4;
     }
 
+    @container (max-width: 760px) {
+      .rc-card:not(.compact) .rc-field-grid {
+        grid-template-columns: minmax(100px, 0.44fr) minmax(170px, 1fr);
+      }
+
+      .rc-card:not(.compact) .rc-field-grid.primary-only {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .rc-card:not(.compact) .rc-start-group {
+        grid-column: 1 / -1;
+      }
+
+      .rc-card:not(.compact) .rc-field-grid.primary-only .rc-start-group {
+        grid-column: auto;
+      }
+    }
+
     @container (max-width: 620px) {
       .rc-field-grid,
       .rc-status-details {
@@ -12109,21 +12234,42 @@ class F1ReplayControlCard extends LitElement {
     }
 
     @container (max-width: 420px) {
-      .rc-header {
+      .rc-card:not(.compact) .rc-header {
         grid-template-columns: 1fr;
       }
 
-      .rc-status-pill {
+      .rc-card:not(.compact) .rc-status-pill {
         justify-self: start;
       }
 
-      .rc-controls,
-      .rc-card.compact .rc-controls {
+      .rc-controls {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .rc-card.compact .rc-controls {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
       }
 
       .rc-button-label {
         display: none;
+      }
+    }
+
+    @container (max-width: 320px) {
+      .rc-card.compact {
+        padding-inline: 10px;
+      }
+
+      .rc-compact-replay-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .rc-compact-replay-row .rc-start-actions {
+        grid-template-columns: repeat(2, 32px);
+      }
+
+      .rc-card.compact .rc-start-actions .rc-button {
+        width: 32px;
       }
     }
   `];
@@ -12406,6 +12552,17 @@ class F1ReplayControlCard extends LitElement {
     `;
   }
 
+  _renderCompactReplaySetup(sessionEntity, state) {
+    return html`
+      <div class="rc-compact-replay-row">
+        ${this._renderSelect('session_entity', 'Replay', sessionEntity, true)}
+        <div class="rc-start-actions">
+          ${this._setupActions().map((action) => this._renderAction(action, state))}
+        </div>
+      </div>
+    `;
+  }
+
   render() {
     if (!this.hass || !this.config) {
       return html`<ha-card><div class="rc-card"><div class="rc-empty">Loading...</div></div></ha-card>`;
@@ -12465,12 +12622,14 @@ class F1ReplayControlCard extends LitElement {
             </div>
           ` : null}
 
-          <div class="rc-field-grid">
+          <div class="rc-field-grid ${showSecondarySelects ? '' : 'primary-only'}">
             ${showSecondarySelects ? this._renderSelect('year_entity', 'Year', yearEntity) : null}
-            ${this._renderSelect('session_entity', 'Replay', sessionEntity, true)}
+            ${compact
+              ? this._renderCompactReplaySetup(sessionEntity, state)
+              : this._renderSelect('session_entity', 'Replay', sessionEntity, true)}
             ${showSecondarySelects
               ? this._renderStartReferenceGroup(startReferenceEntity, state)
-              : this._renderSetupActionsGroup(state)}
+              : compact ? null : this._renderSetupActionsGroup(state)}
           </div>
 
           ${this.config.show_progress !== false ? html`
