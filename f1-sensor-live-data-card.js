@@ -3524,7 +3524,7 @@ class F1DriverLapTimesCard extends LitElement {
       const trend = this.config.show_lap_trend !== false
         ? this._resolveLapTrend(row.laps_by_number, col.lap)
         : '';
-      const trendArrow = trend === 'faster' ? '▲' : trend === 'slower' ? '▼' : '';
+      const trendArrow = trend === 'faster' ? '▼' : trend === 'slower' ? '▲' : '';
       return html`
         <div class="${classes.join(' ')}" style="${style}">
           <span class="dl-lap-value-wrap">
@@ -4051,7 +4051,7 @@ class F1DriverLapTimesCardEditor extends LitElement {
         ${this._renderSwitch('show_status', 'Show status')}
         ${this._renderSwitch('show_last_lap', 'Show last lap time')}
         ${this._renderSwitch('show_best_lap', 'Show best lap time')}
-        ${this._renderSwitch('show_lap_trend', 'Show lap trend arrows', 'Shows ▲/▼ versus previous lap in lap columns')}
+        ${this._renderSwitch('show_lap_trend', 'Show lap trend arrows', 'Shows ▼ for faster laps and ▲ for slower laps versus previous lap in lap columns')}
         ${this._renderSwitch(
           'show_lap_history',
           'Show lap history',
