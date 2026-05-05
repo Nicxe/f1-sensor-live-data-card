@@ -47,6 +47,83 @@ const ensureF1Fonts = () => {
   f1FontsInjected = true;
 };
 
+const F1_THEME_MODES = ['dark', 'light', 'auto'];
+const DEFAULT_F1_THEME_MODE = 'dark';
+
+const normalizeThemeMode = (mode) => {
+  const value = String(mode || DEFAULT_F1_THEME_MODE).toLowerCase();
+  return F1_THEME_MODES.includes(value) ? value : DEFAULT_F1_THEME_MODE;
+};
+
+const applyF1ThemeMode = (element, config) => {
+  const mode = normalizeThemeMode(config?.theme_mode);
+  if (config) config.theme_mode = mode;
+  element.dataset.themeMode = mode;
+};
+
+const isEffectiveLightTheme = (hass, config) => {
+  const mode = normalizeThemeMode(config?.theme_mode);
+  if (mode === 'light') return true;
+  if (mode === 'dark') return false;
+  return hass?.themes?.darkMode === false;
+};
+
+const F1_THEME_STYLES = css`
+  :host {
+    --f1-card-bg: #0b0b0d;
+    --f1-card-bg-soft: #131315;
+    --f1-card-bg-end: #0a0a0a;
+    --f1-card-text: #f5f5f5;
+    --f1-card-muted: rgba(255, 255, 255, 0.65);
+    --f1-card-soft: rgba(255, 255, 255, 0.42);
+    --f1-card-border: rgba(255, 255, 255, 0.08);
+    --f1-card-divider: rgba(255, 255, 255, 0.08);
+    --f1-card-divider-strong: rgba(255, 255, 255, 0.12);
+    --f1-card-chip: rgba(255, 255, 255, 0.06);
+    --f1-card-panel: rgba(255, 255, 255, 0.04);
+    --f1-card-panel-soft: rgba(255, 255, 255, 0.025);
+    --f1-card-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+    --f1-card-compact-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    --f1-card-title-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+  }
+
+  :host([data-theme-mode='light']) {
+    --f1-card-bg: #ffffff;
+    --f1-card-bg-soft: #f7f8fb;
+    --f1-card-bg-end: #eef1f6;
+    --f1-card-text: #111827;
+    --f1-card-muted: rgba(17, 24, 39, 0.68);
+    --f1-card-soft: rgba(17, 24, 39, 0.52);
+    --f1-card-border: rgba(17, 24, 39, 0.14);
+    --f1-card-divider: rgba(17, 24, 39, 0.1);
+    --f1-card-divider-strong: rgba(17, 24, 39, 0.16);
+    --f1-card-chip: rgba(17, 24, 39, 0.055);
+    --f1-card-panel: rgba(17, 24, 39, 0.045);
+    --f1-card-panel-soft: rgba(17, 24, 39, 0.03);
+    --f1-card-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+    --f1-card-compact-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
+    --f1-card-title-shadow: none;
+  }
+
+  :host([data-theme-mode='auto']) {
+    --f1-card-bg: var(--card-background-color, #ffffff);
+    --f1-card-bg-soft: var(--primary-background-color, #f7f8fb);
+    --f1-card-bg-end: var(--secondary-background-color, #eef1f6);
+    --f1-card-text: var(--primary-text-color, #111827);
+    --f1-card-muted: var(--secondary-text-color, rgba(17, 24, 39, 0.68));
+    --f1-card-soft: color-mix(in srgb, var(--primary-text-color, #111827) 55%, transparent);
+    --f1-card-border: var(--ha-card-border-color, var(--divider-color, rgba(17, 24, 39, 0.14)));
+    --f1-card-divider: var(--divider-color, rgba(17, 24, 39, 0.1));
+    --f1-card-divider-strong: color-mix(in srgb, var(--divider-color, rgba(17, 24, 39, 0.16)) 80%, var(--primary-text-color, #111827) 20%);
+    --f1-card-chip: color-mix(in srgb, var(--primary-text-color, #111827) 7%, transparent);
+    --f1-card-panel: color-mix(in srgb, var(--primary-text-color, #111827) 5%, transparent);
+    --f1-card-panel-soft: color-mix(in srgb, var(--primary-text-color, #111827) 3%, transparent);
+    --f1-card-shadow: var(--ha-card-box-shadow, 0 12px 30px rgba(15, 23, 42, 0.14));
+    --f1-card-compact-shadow: var(--ha-card-box-shadow, 0 8px 22px rgba(15, 23, 42, 0.12));
+    --f1-card-title-shadow: none;
+  }
+`;
+
 const DEFAULT_COMPOUNDS = ['SOFT', 'MEDIUM', 'HARD'];
 const WET_COMPOUNDS = ['INTERMEDIATE', 'WET'];
 const COMPOUND_FALLBACK = {
@@ -163,11 +240,11 @@ const getTeamLogoUrl = (team, size = 28, variant = 'white') => {
   return url;
 };
 
-const getTeamLogoMeta = (team, size = 28, style = 'color') => {
+const getTeamLogoMeta = (team, size = 28, style = 'color', preferColor = false) => {
   const key = normalizeTeamName(team);
   const whiteUrl = getTeamLogoUrl(team, size, 'white');
   if (!whiteUrl) return null;
-  if (style === 'white' || (key && TEAM_LOGO_FORCE_WHITE.has(key))) {
+  if (style === 'white' || (!preferColor && key && TEAM_LOGO_FORCE_WHITE.has(key))) {
     return { src: whiteUrl, fallback: null };
   }
   const colorUrl = getTeamLogoUrl(team, size, 'color');
@@ -215,6 +292,19 @@ const renderEditorSelect = (editor, name, label, options, helper = null) => {
     ${helper ? html`<div class="helper">${helper}</div>` : ''}
   `;
 };
+
+const renderThemeModeSelect = (editor) => renderEditorSelect(
+  editor,
+  'theme_mode',
+  'Theme mode',
+  [
+    { value: 'dark', label: 'Dark (default)' },
+    { value: 'light', label: 'Light' },
+    { value: 'auto', label: 'Follow Home Assistant theme' },
+  ],
+  'Default keeps the current dark F1 style for existing cards.',
+);
+
 const DELTA_PILL = {
   HARD: 'linear-gradient(135deg, #6b1b6b, #32133e)',
   SOFT: 'linear-gradient(135deg, #1c7c2f, #0e3b1c)',
@@ -777,7 +867,7 @@ class F1TyreStatisticsCard extends LitElement {
     config: {},
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     /* Animation keyframes */
     @keyframes fadeSlideIn {
       from { opacity: 0; transform: translateY(-8px); }
@@ -803,13 +893,14 @@ class F1TyreStatisticsCard extends LitElement {
     }
 
     :host {
-      --ts-bg: #0b0b0d;
-      --ts-bg-soft: #131315;
-      --ts-border: rgba(255, 255, 255, 0.08);
-      --ts-text: #f5f5f5;
-      --ts-muted: rgba(255, 255, 255, 0.65);
-      --ts-chip: rgba(255, 255, 255, 0.06);
-      --ts-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --ts-bg: var(--f1-card-bg);
+      --ts-bg-soft: var(--f1-card-bg-soft);
+      --ts-bg-end: var(--f1-card-bg-end);
+      --ts-border: var(--f1-card-border);
+      --ts-text: var(--f1-card-text);
+      --ts-muted: var(--f1-card-muted);
+      --ts-chip: var(--f1-card-chip);
+      --ts-shadow: var(--f1-card-shadow);
       display: block;
       font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
     }
@@ -825,8 +916,8 @@ class F1TyreStatisticsCard extends LitElement {
       position: relative;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
-      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
-        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
+      background: radial-gradient(circle at 15% 10%, var(--f1-card-divider), transparent 45%),
+        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, var(--ts-bg-end) 100%);
       border: 1px solid var(--ts-border);
       box-shadow: var(--ts-shadow);
       overflow: hidden;
@@ -842,7 +933,7 @@ class F1TyreStatisticsCard extends LitElement {
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
       margin-bottom: clamp(6px, 1.2vw, 8px);
-      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      text-shadow: var(--f1-card-title-shadow);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
@@ -897,7 +988,7 @@ class F1TyreStatisticsCard extends LitElement {
       text-transform: uppercase;
       color: var(--compound-color);
       margin-top: 2px;
-      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      text-shadow: var(--f1-card-title-shadow);
     }
 
     .ts-section-title {
@@ -978,7 +1069,7 @@ class F1TyreStatisticsCard extends LitElement {
       text-transform: uppercase;
       background: var(--delta-bg);
       color: #fff;
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+      box-shadow: inset 0 0 0 1px var(--f1-card-border);
       overflow: hidden;
       transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
@@ -990,7 +1081,7 @@ class F1TyreStatisticsCard extends LitElement {
       top: 0;
       height: 100%;
       width: var(--delta-bar-width, 0%);
-      background: rgba(255, 255, 255, 0.1);
+      background: var(--f1-card-chip);
       border-radius: inherit;
       transition: width 0.5s ease-out;
     }
@@ -999,7 +1090,7 @@ class F1TyreStatisticsCard extends LitElement {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
-      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border: 1px dashed var(--f1-card-divider-strong);
       color: var(--ts-muted);
       text-align: center;
       font-size: 13px;
@@ -1061,10 +1152,11 @@ class F1TyreStatisticsCard extends LitElement {
         grid-template-columns: minmax(0, 1fr);
       }
     }
-  `;
+  `];
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       title: 'Tyres Statistics',
       show_header: true,
       show_best_times: true,
@@ -1079,6 +1171,7 @@ class F1TyreStatisticsCard extends LitElement {
       max_best_times: 3,
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   connectedCallback() {
@@ -1348,7 +1441,7 @@ class F1TyreStatisticsCard extends LitElement {
     const byTla = new Map();
     drivers.forEach((driver) => {
       const team = driver?.team || driver?.team_name;
-      const logo = getTeamLogoMeta(team, 28, this.config.team_logo_style);
+      const logo = getTeamLogoMeta(team, 28, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config));
       if (!logo) return;
       const rn = String(driver?.racing_number ?? '').trim();
       const tla = String(driver?.tla ?? '').trim();
@@ -1361,7 +1454,7 @@ class F1TyreStatisticsCard extends LitElement {
   _getLogoForEntry(entry, lookup) {
     if (!lookup || !entry) return null;
     const team = entry?.team || entry?.team_name;
-    const direct = getTeamLogoMeta(team, 28, this.config.team_logo_style);
+    const direct = getTeamLogoMeta(team, 28, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config));
     if (direct) return direct;
     const rn = String(entry?.racing_number ?? '').trim();
     const tla = String(entry?.driver_tla ?? '').trim();
@@ -1472,7 +1565,7 @@ class F1PitStopOverviewCard extends LitElement {
     config: {},
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     /* Animation keyframes */
     @keyframes fadeSlideIn {
       from { opacity: 0; transform: translateY(-8px); }
@@ -1493,13 +1586,14 @@ class F1PitStopOverviewCard extends LitElement {
     }
 
     :host {
-      --ts-bg: #0b0b0d;
-      --ts-bg-soft: #131315;
-      --ts-border: rgba(255, 255, 255, 0.08);
-      --ts-text: #f5f5f5;
-      --ts-muted: rgba(255, 255, 255, 0.65);
-      --ts-chip: rgba(255, 255, 255, 0.06);
-      --ts-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --ts-bg: var(--f1-card-bg);
+      --ts-bg-soft: var(--f1-card-bg-soft);
+      --ts-bg-end: var(--f1-card-bg-end);
+      --ts-border: var(--f1-card-border);
+      --ts-text: var(--f1-card-text);
+      --ts-muted: var(--f1-card-muted);
+      --ts-chip: var(--f1-card-chip);
+      --ts-shadow: var(--f1-card-shadow);
       display: block;
       font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
     }
@@ -1519,8 +1613,8 @@ class F1PitStopOverviewCard extends LitElement {
       --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
-      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
-        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
+      background: radial-gradient(circle at 15% 10%, var(--f1-card-divider), transparent 45%),
+        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, var(--ts-bg-end) 100%);
       border: 1px solid var(--ts-border);
       box-shadow: var(--ts-shadow);
       overflow: hidden;
@@ -1536,7 +1630,7 @@ class F1PitStopOverviewCard extends LitElement {
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
       margin-bottom: clamp(8px, 1.4vw, 12px);
-      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      text-shadow: var(--f1-card-title-shadow);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
@@ -1581,14 +1675,14 @@ class F1PitStopOverviewCard extends LitElement {
     }
 
     .ps-row.retired {
-      color: rgba(255, 255, 255, 0.45);
+      color: var(--f1-card-muted);
     }
 
     .ps-row.retired .ps-cell,
     .ps-row.retired .ps-tla,
     .ps-row.retired .ps-tyre,
     .ps-row.retired .ps-status {
-      color: rgba(255, 255, 255, 0.45) !important;
+      color: var(--f1-card-muted) !important;
     }
 
     .ps-row.header {
@@ -1617,7 +1711,7 @@ class F1PitStopOverviewCard extends LitElement {
 
     .ps-cell.group-start {
       padding-left: 6px;
-      border-left: 1px solid rgba(255, 255, 255, 0.12);
+      border-left: 1px solid var(--f1-card-divider-strong);
     }
 
 
@@ -1753,7 +1847,7 @@ class F1PitStopOverviewCard extends LitElement {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
-      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border: 1px dashed var(--f1-card-divider-strong);
       color: var(--ts-muted);
       text-align: center;
       font-size: 13px;
@@ -1791,10 +1885,11 @@ class F1PitStopOverviewCard extends LitElement {
         padding: 5px 6px;
       }
     }
-  `;
+  `];
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       title: 'Pit Stops & Tyres',
       show_header: true,
       show_table_header: true,
@@ -1815,6 +1910,7 @@ class F1PitStopOverviewCard extends LitElement {
       positions_entity: 'sensor.f1_driver_positions',
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   connectedCallback() {
@@ -2169,7 +2265,7 @@ class F1PitStopOverviewCard extends LitElement {
         tyre?.compound_color || COMPOUND_FALLBACK[compoundKey],
       );
       const teamName = driver?.team || driver?.team_name || tyre?.team || pos?.team || pit?.team;
-      const teamLogo = getTeamLogoMeta(teamName, 28, this.config.team_logo_style);
+      const teamLogo = getTeamLogoMeta(teamName, 28, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config));
       const driverDisplay = resolveDriverDisplay(
         [driver, tyre, pos, pit],
         this.config.show_full_name === true,
@@ -2502,6 +2598,7 @@ class F1TyreStatisticsCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${renderThemeModeSelect(this)}
         <ha-textfield
           .label=${'Title'}
           .value=${this._config.title || ''}
@@ -2754,6 +2851,7 @@ class F1PitStopOverviewCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${renderThemeModeSelect(this)}
         <ha-textfield
           .label=${'Title'}
           .value=${this._config.title || ''}
@@ -2848,7 +2946,7 @@ class F1DriverLapTimesCard extends LitElement {
     config: {},
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     /* Animation keyframes */
     @keyframes fadeSlideIn {
       from { opacity: 0; transform: translateY(-8px); }
@@ -2869,13 +2967,14 @@ class F1DriverLapTimesCard extends LitElement {
     }
 
     :host {
-      --ts-bg: #0b0b0d;
-      --ts-bg-soft: #131315;
-      --ts-border: rgba(255, 255, 255, 0.08);
-      --ts-text: #f5f5f5;
-      --ts-muted: rgba(255, 255, 255, 0.65);
-      --ts-chip: rgba(255, 255, 255, 0.06);
-      --ts-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --ts-bg: var(--f1-card-bg);
+      --ts-bg-soft: var(--f1-card-bg-soft);
+      --ts-bg-end: var(--f1-card-bg-end);
+      --ts-border: var(--f1-card-border);
+      --ts-text: var(--f1-card-text);
+      --ts-muted: var(--f1-card-muted);
+      --ts-chip: var(--f1-card-chip);
+      --ts-shadow: var(--f1-card-shadow);
       display: block;
       font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
     }
@@ -2896,8 +2995,8 @@ class F1DriverLapTimesCard extends LitElement {
       --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
-      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
-        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
+      background: radial-gradient(circle at 15% 10%, var(--f1-card-divider), transparent 45%),
+        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, var(--ts-bg-end) 100%);
       border: 1px solid var(--ts-border);
       box-shadow: var(--ts-shadow);
       overflow: hidden;
@@ -2913,7 +3012,7 @@ class F1DriverLapTimesCard extends LitElement {
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
       margin-bottom: clamp(8px, 1.4vw, 12px);
-      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      text-shadow: var(--f1-card-title-shadow);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
@@ -2958,13 +3057,13 @@ class F1DriverLapTimesCard extends LitElement {
     }
 
     .dl-row.retired {
-      color: rgba(255, 255, 255, 0.45);
+      color: var(--f1-card-muted);
     }
 
     .dl-row.retired .dl-cell,
     .dl-row.retired .dl-tla,
     .dl-row.retired .dl-status {
-      color: rgba(255, 255, 255, 0.45) !important;
+      color: var(--f1-card-muted) !important;
     }
 
     .dl-row.header {
@@ -3006,7 +3105,7 @@ class F1DriverLapTimesCard extends LitElement {
 
     .dl-cell.group-start {
       padding-left: 6px;
-      border-left: 1px solid rgba(255, 255, 255, 0.12);
+      border-left: 1px solid var(--f1-card-divider-strong);
     }
 
     .dl-cell.lap-column {
@@ -3123,7 +3222,7 @@ class F1DriverLapTimesCard extends LitElement {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
-      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border: 1px dashed var(--f1-card-divider-strong);
       color: var(--ts-muted);
       text-align: center;
       font-size: 13px;
@@ -3156,10 +3255,11 @@ class F1DriverLapTimesCard extends LitElement {
       max-width: none;
       white-space: nowrap;
     }
-  `;
+  `];
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       title: 'Driver Lap Times',
       show_header: true,
       show_table_header: true,
@@ -3178,6 +3278,7 @@ class F1DriverLapTimesCard extends LitElement {
       positions_entity: 'sensor.f1_driver_positions',
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   connectedCallback() {
@@ -3459,7 +3560,7 @@ class F1DriverLapTimesCard extends LitElement {
       const pos = positionMap.get(rn) || {};
 
       const teamName = driver?.team || driver?.team_name || pos?.team;
-      const teamLogo = getTeamLogoMeta(teamName, 24, this.config.team_logo_style);
+      const teamLogo = getTeamLogoMeta(teamName, 24, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config));
       const teamColor = this._normalizeColor(driver?.team_color || pos?.team_color);
       const driverDisplay = resolveDriverDisplay(
         [driver, pos],
@@ -3924,6 +4025,7 @@ class F1DriverLapTimesCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${renderThemeModeSelect(this)}
         <ha-textfield
           .label=${'Title'}
           .value=${this._config.title || ''}
@@ -4041,7 +4143,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     config: {},
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     /* Animation keyframes */
     @keyframes fadeSlideIn {
       from { opacity: 0; transform: translateY(-8px); }
@@ -4057,13 +4159,14 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     }
 
     :host {
-      --ts-bg: #0b0b0d;
-      --ts-bg-soft: #131315;
-      --ts-border: rgba(255, 255, 255, 0.08);
-      --ts-text: #f5f5f5;
-      --ts-muted: rgba(255, 255, 255, 0.65);
-      --ts-chip: rgba(255, 255, 255, 0.06);
-      --ts-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --ts-bg: var(--f1-card-bg);
+      --ts-bg-soft: var(--f1-card-bg-soft);
+      --ts-bg-end: var(--f1-card-bg-end);
+      --ts-border: var(--f1-card-border);
+      --ts-text: var(--f1-card-text);
+      --ts-muted: var(--f1-card-muted);
+      --ts-chip: var(--f1-card-chip);
+      --ts-shadow: var(--f1-card-shadow);
       display: block;
       font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
     }
@@ -4079,8 +4182,8 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       position: relative;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
-      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
-        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
+      background: radial-gradient(circle at 15% 10%, var(--f1-card-divider), transparent 45%),
+        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, var(--ts-bg-end) 100%);
       border: 1px solid var(--ts-border);
       box-shadow: var(--ts-shadow);
       overflow: hidden;
@@ -4096,7 +4199,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
       margin: 0;
-      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      text-shadow: var(--f1-card-title-shadow);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
@@ -4128,18 +4231,18 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       justify-content: center;
       padding: 5px 10px 4px;
       border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      border: 1px solid var(--f1-card-divider-strong);
       font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 700;
       letter-spacing: 0.14em;
       text-transform: uppercase;
       white-space: nowrap;
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-divider);
       color: var(--ts-text);
     }
 
     .cpd-mode-pill.current {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-divider);
       color: var(--ts-text);
     }
 
@@ -4220,7 +4323,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
 
     .cpd-cell.group-start {
       padding-left: 6px;
-      border-left: 1px solid rgba(255, 255, 255, 0.12);
+      border-left: 1px solid var(--f1-card-divider-strong);
     }
 
     .cpd-cell.points-primary {
@@ -4253,9 +4356,9 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       object-fit: cover;
       object-position: center top;
       filter: none;
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--f1-card-panel);
       box-shadow:
-        0 0 0 1px rgba(255, 255, 255, 0.12),
+        0 0 0 1px var(--f1-card-divider-strong),
         0 3px 8px rgba(0, 0, 0, 0.35);
     }
 
@@ -4302,8 +4405,8 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       min-width: 52px;
       padding: 4px 8px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-chip);
+      border: 1px solid var(--f1-card-divider);
       font-weight: 700;
       letter-spacing: 0.04em;
     }
@@ -4342,7 +4445,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
-      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border: 1px dashed var(--f1-card-divider-strong);
       color: var(--ts-muted);
       text-align: center;
       font-size: 13px;
@@ -4389,10 +4492,11 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
         padding: 5px 6px;
       }
     }
-  `;
+  `];
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       title: 'Driver Championship',
       current_entity: 'sensor.f1_driver_standings',
       entity: 'sensor.f1_championship_prediction_drivers',
@@ -4415,6 +4519,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       top_limit: 0,
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   connectedCallback() {
@@ -4816,7 +4921,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
         identity_sort: displayDriver,
         use_full_name: useFullName,
         driver_media: this._resolveDriverMedia(identity, teamName),
-        team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style),
+        team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config)),
         team_color: teamColor,
         predicted_points: predictedPoints,
         current_points: currentPoints,
@@ -4864,7 +4969,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
         identity_sort: displayDriver,
         use_full_name: useFullName,
         driver_media: this._resolveDriverMedia(identity, teamName),
-        team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style),
+        team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config)),
         team_color: teamColor,
         predicted_points: predictedPoints,
         current_points: currentPoints,
@@ -4951,7 +5056,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
 
   _resolveDriverMedia(identity, teamName) {
     const imageType = this.config?.driver_image_type === 'headshot' ? 'headshot' : 'team_logo';
-    const teamLogo = getTeamLogoMeta(teamName, 24, this.config.team_logo_style);
+    const teamLogo = getTeamLogoMeta(teamName, 24, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config));
 
     if (imageType === 'headshot') {
       const headshot = this._normalizeMediaUrl(identity?.headshot_large, identity?.headshot_small);
@@ -5166,7 +5271,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     config: {},
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     /* Animation keyframes */
     @keyframes fadeSlideIn {
       from { opacity: 0; transform: translateY(-8px); }
@@ -5182,13 +5287,14 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     }
 
     :host {
-      --ts-bg: #0b0b0d;
-      --ts-bg-soft: #131315;
-      --ts-border: rgba(255, 255, 255, 0.08);
-      --ts-text: #f5f5f5;
-      --ts-muted: rgba(255, 255, 255, 0.65);
-      --ts-chip: rgba(255, 255, 255, 0.06);
-      --ts-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --ts-bg: var(--f1-card-bg);
+      --ts-bg-soft: var(--f1-card-bg-soft);
+      --ts-bg-end: var(--f1-card-bg-end);
+      --ts-border: var(--f1-card-border);
+      --ts-text: var(--f1-card-text);
+      --ts-muted: var(--f1-card-muted);
+      --ts-chip: var(--f1-card-chip);
+      --ts-shadow: var(--f1-card-shadow);
       display: block;
       font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
     }
@@ -5204,8 +5310,8 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       position: relative;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
-      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
-        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
+      background: radial-gradient(circle at 15% 10%, var(--f1-card-divider), transparent 45%),
+        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, var(--ts-bg-end) 100%);
       border: 1px solid var(--ts-border);
       box-shadow: var(--ts-shadow);
       overflow: hidden;
@@ -5221,7 +5327,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
       margin: 0;
-      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      text-shadow: var(--f1-card-title-shadow);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
@@ -5253,18 +5359,18 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       justify-content: center;
       padding: 5px 10px 4px;
       border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      border: 1px solid var(--f1-card-divider-strong);
       font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 700;
       letter-spacing: 0.14em;
       text-transform: uppercase;
       white-space: nowrap;
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-divider);
       color: var(--ts-text);
     }
 
     .cpt-mode-pill.current {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-divider);
       color: var(--ts-text);
     }
 
@@ -5345,7 +5451,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
 
     .cpt-cell.group-start {
       padding-left: 6px;
-      border-left: 1px solid rgba(255, 255, 255, 0.12);
+      border-left: 1px solid var(--f1-card-divider-strong);
     }
 
     .cpt-cell.points-primary {
@@ -5389,8 +5495,8 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       min-width: 52px;
       padding: 4px 8px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-chip);
+      border: 1px solid var(--f1-card-divider);
       font-weight: 700;
       letter-spacing: 0.04em;
     }
@@ -5429,7 +5535,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
-      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border: 1px dashed var(--f1-card-divider-strong);
       color: var(--ts-muted);
       text-align: center;
       font-size: 13px;
@@ -5476,10 +5582,11 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
         padding: 5px 6px;
       }
     }
-  `;
+  `];
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       title: 'Constructor Championship',
       current_entity: 'sensor.f1_constructor_standings',
       entity: 'sensor.f1_championship_prediction_teams',
@@ -5499,6 +5606,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       top_limit: 0,
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   connectedCallback() {
@@ -5871,7 +5979,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
         display_position: currentPosition,
         predicted_position: predictedPosition,
         current_position: currentPosition,
-        team_logo: getTeamLogoMeta(displayTeamName, 28, this.config.team_logo_style),
+        team_logo: getTeamLogoMeta(displayTeamName, 28, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config)),
         predicted_points: predictedPoints,
         current_points: currentPoints,
         delta,
@@ -5907,7 +6015,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
         display_position: predictedPosition,
         predicted_position: predictedPosition,
         current_position: currentPosition,
-        team_logo: getTeamLogoMeta(displayTeamName, 28, this.config.team_logo_style),
+        team_logo: getTeamLogoMeta(displayTeamName, 28, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config)),
         predicted_points: predictedPoints,
         current_points: currentPoints,
         delta,
@@ -6316,6 +6424,7 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${renderThemeModeSelect(this)}
         <ha-textfield
           .label=${'Title'}
           .value=${this._config.title || ''}
@@ -6662,6 +6771,7 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${renderThemeModeSelect(this)}
         <ha-textfield
           .label=${'Title'}
           .value=${this._config.title || ''}
@@ -6766,7 +6876,7 @@ class F1InvestigationsCard extends LitElement {
     config: {},
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     /* Animation keyframes */
     @keyframes fadeSlideIn {
       from { opacity: 0; transform: translateY(-8px); }
@@ -6787,13 +6897,14 @@ class F1InvestigationsCard extends LitElement {
     }
 
     :host {
-      --ts-bg: #0b0b0d;
-      --ts-bg-soft: #131315;
-      --ts-border: rgba(255, 255, 255, 0.08);
-      --ts-text: #f5f5f5;
-      --ts-muted: rgba(255, 255, 255, 0.65);
-      --ts-chip: rgba(255, 255, 255, 0.06);
-      --ts-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --ts-bg: var(--f1-card-bg);
+      --ts-bg-soft: var(--f1-card-bg-soft);
+      --ts-bg-end: var(--f1-card-bg-end);
+      --ts-border: var(--f1-card-border);
+      --ts-text: var(--f1-card-text);
+      --ts-muted: var(--f1-card-muted);
+      --ts-chip: var(--f1-card-chip);
+      --ts-shadow: var(--f1-card-shadow);
       display: block;
       font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
     }
@@ -6809,8 +6920,8 @@ class F1InvestigationsCard extends LitElement {
       position: relative;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
-      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
-        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
+      background: radial-gradient(circle at 15% 10%, var(--f1-card-divider), transparent 45%),
+        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, var(--ts-bg-end) 100%);
       border: 1px solid var(--ts-border);
       box-shadow: var(--ts-shadow);
       overflow: hidden;
@@ -6826,7 +6937,7 @@ class F1InvestigationsCard extends LitElement {
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
       margin-bottom: clamp(8px, 1.4vw, 12px);
-      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      text-shadow: var(--f1-card-title-shadow);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
@@ -6928,9 +7039,9 @@ class F1InvestigationsCard extends LitElement {
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-divider);
       color: var(--ts-text);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--f1-card-divider);
       white-space: nowrap;
     }
 
@@ -6981,15 +7092,16 @@ class F1InvestigationsCard extends LitElement {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
-      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border: 1px dashed var(--f1-card-divider-strong);
       color: var(--ts-muted);
       text-align: center;
       font-size: 13px;
     }
-  `;
+  `];
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       title: 'Investigations & Penalties',
       show_header: true,
       show_table_header: true,
@@ -7002,6 +7114,7 @@ class F1InvestigationsCard extends LitElement {
       positions_entity: 'sensor.f1_driver_positions',
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   connectedCallback() {
@@ -7203,6 +7316,7 @@ class F1InvestigationsCard extends LitElement {
           driver?.team || driver?.team_name || positionInfo?.team,
           28,
           this.config.team_logo_style,
+          isEffectiveLightTheme(this.hass, this.config),
         ),
         position,
         index: driver?.index ?? 0,
@@ -7548,6 +7662,7 @@ class F1InvestigationsCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${renderThemeModeSelect(this)}
         <ha-textfield
           .label=${'Title'}
           .value=${this._config.title || ''}
@@ -7631,7 +7746,7 @@ class F1TrackLimitsCard extends LitElement {
     config: {},
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     /* Animation keyframes */
     @keyframes fadeSlideIn {
       from { opacity: 0; transform: translateY(-8px); }
@@ -7657,13 +7772,14 @@ class F1TrackLimitsCard extends LitElement {
     }
 
     :host {
-      --ts-bg: #0b0b0d;
-      --ts-bg-soft: #131315;
-      --ts-border: rgba(255, 255, 255, 0.08);
-      --ts-text: #f5f5f5;
-      --ts-muted: rgba(255, 255, 255, 0.65);
-      --ts-chip: rgba(255, 255, 255, 0.06);
-      --ts-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --ts-bg: var(--f1-card-bg);
+      --ts-bg-soft: var(--f1-card-bg-soft);
+      --ts-bg-end: var(--f1-card-bg-end);
+      --ts-border: var(--f1-card-border);
+      --ts-text: var(--f1-card-text);
+      --ts-muted: var(--f1-card-muted);
+      --ts-chip: var(--f1-card-chip);
+      --ts-shadow: var(--f1-card-shadow);
       display: block;
       font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
     }
@@ -7679,8 +7795,8 @@ class F1TrackLimitsCard extends LitElement {
       position: relative;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
-      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
-        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
+      background: radial-gradient(circle at 15% 10%, var(--f1-card-divider), transparent 45%),
+        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, var(--ts-bg-end) 100%);
       border: 1px solid var(--ts-border);
       box-shadow: var(--ts-shadow);
       overflow: hidden;
@@ -7696,7 +7812,7 @@ class F1TrackLimitsCard extends LitElement {
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
       margin-bottom: clamp(8px, 1.4vw, 12px);
-      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      text-shadow: var(--f1-card-title-shadow);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
@@ -7845,9 +7961,9 @@ class F1TrackLimitsCard extends LitElement {
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-divider);
       color: var(--ts-text);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--f1-card-divider);
     }
 
     .tl-badge.del {
@@ -7872,15 +7988,16 @@ class F1TrackLimitsCard extends LitElement {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
-      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border: 1px dashed var(--f1-card-divider-strong);
       color: var(--ts-muted);
       text-align: center;
       font-size: 13px;
     }
-  `;
+  `];
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       title: 'Track Limits',
       show_header: true,
       show_table_header: true,
@@ -7893,6 +8010,7 @@ class F1TrackLimitsCard extends LitElement {
       positions_entity: 'sensor.f1_driver_positions',
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   connectedCallback() {
@@ -8064,6 +8182,7 @@ class F1TrackLimitsCard extends LitElement {
           driver?.team || driver?.team_name || positionInfo?.team,
           28,
           this.config.team_logo_style,
+          isEffectiveLightTheme(this.hass, this.config),
         ),
         position,
         index: driver?.index ?? 0,
@@ -8345,6 +8464,7 @@ class F1TrackLimitsCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${renderThemeModeSelect(this)}
         <ha-textfield
           .label=${'Title'}
           .value=${this._config.title || ''}
@@ -8436,7 +8556,7 @@ class F1LiveSessionCard extends LitElement {
     this._clockSnapshotKey = null;
   }
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     /* Animation keyframes */
     @keyframes pulse {
       0%, 100% { opacity: 1; }
@@ -8457,12 +8577,13 @@ class F1LiveSessionCard extends LitElement {
     }
 
     :host {
-      --ls-bg: #0b0b0d;
-      --ls-bg-soft: #131315;
-      --ls-border: rgba(255, 255, 255, 0.08);
-      --ls-text: #f5f5f5;
-      --ls-muted: rgba(255, 255, 255, 0.65);
-      --ls-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --ls-bg: var(--f1-card-bg);
+      --ls-bg-soft: var(--f1-card-bg-soft);
+      --ls-bg-end: var(--f1-card-bg-end);
+      --ls-border: var(--f1-card-border);
+      --ls-text: var(--f1-card-text);
+      --ls-muted: var(--f1-card-muted);
+      --ls-shadow: var(--f1-card-shadow);
     }
 
     ha-card {
@@ -8480,8 +8601,8 @@ class F1LiveSessionCard extends LitElement {
       padding: clamp(10px, 1.5vw, 14px) clamp(14px, 2vw, 20px);
       border-radius: var(--ha-card-border-radius, 12px);
       background:
-        radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.06), transparent 45%),
-        linear-gradient(160deg, var(--ls-bg) 0%, var(--ls-bg-soft) 60%, #0a0a0a 100%);
+        radial-gradient(circle at 15% 10%, var(--f1-card-chip), transparent 45%),
+        linear-gradient(160deg, var(--ls-bg) 0%, var(--ls-bg-soft) 60%, var(--ls-bg-end) 100%);
       border: 1px solid var(--ls-border);
       box-shadow: var(--ls-shadow);
       color: var(--ls-text);
@@ -8558,7 +8679,7 @@ class F1LiveSessionCard extends LitElement {
     .ls-lap-progress-container {
       width: 100%;
       height: 4px;
-      background: rgba(255, 255, 255, 0.1);
+      background: var(--f1-card-chip);
       border-radius: 2px;
       overflow: hidden;
       margin-top: 4px;
@@ -8651,8 +8772,8 @@ class F1LiveSessionCard extends LitElement {
     }
 
     .ls-straight-disabled-pill {
-      --status-color: rgba(255, 255, 255, 0.4);
-      --status-bg: rgba(255, 255, 255, 0.08);
+      --status-color: var(--f1-card-soft);
+      --status-bg: var(--f1-card-divider);
     }
 
     .ls-aero-pill {
@@ -8803,7 +8924,7 @@ class F1LiveSessionCard extends LitElement {
         text-align: left;
       }
     }
-  `;
+  `];
 
   connectedCallback() {
     super.connectedCallback();
@@ -8818,6 +8939,7 @@ class F1LiveSessionCard extends LitElement {
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       show_flag: true,
       show_lap_progress: true,
       show_track_status: true,
@@ -8826,6 +8948,7 @@ class F1LiveSessionCard extends LitElement {
       show_time_elapsed: false,
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   static getConfigElement() {
@@ -9860,6 +9983,7 @@ class F1LiveSessionCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${renderThemeModeSelect(this)}
         ${this._renderSwitch('show_flag', 'Show country flag')}
         ${this._renderSwitch('show_lap_progress', 'Show lap progress')}
         ${this._renderSwitch('show_track_status', 'Show track status pill')}
@@ -9939,7 +10063,7 @@ class F1NextRaceCard extends LitElement {
     this._historyExpanded = false;
   }
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     @keyframes nrPulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.74; }
@@ -9954,16 +10078,17 @@ class F1NextRaceCard extends LitElement {
     }
 
     :host {
-      --nr-bg: #0b0b0d;
-      --nr-bg-soft: #131315;
-      --nr-border: rgba(255, 255, 255, 0.08);
-      --nr-panel: rgba(255, 255, 255, 0.04);
-      --nr-panel-soft: rgba(255, 255, 255, 0.025);
-      --nr-text: #f5f5f5;
-      --nr-muted: rgba(255, 255, 255, 0.65);
-      --nr-soft: rgba(255, 255, 255, 0.42);
+      --nr-bg: var(--f1-card-bg);
+      --nr-bg-soft: var(--f1-card-bg-soft);
+      --nr-bg-end: var(--f1-card-bg-end);
+      --nr-border: var(--f1-card-border);
+      --nr-panel: var(--f1-card-panel);
+      --nr-panel-soft: var(--f1-card-panel-soft);
+      --nr-text: var(--f1-card-text);
+      --nr-muted: var(--f1-card-muted);
+      --nr-soft: var(--f1-card-soft);
       --nr-accent: #e10600;
-      --nr-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --nr-shadow: var(--f1-card-shadow);
     }
 
     ha-card {
@@ -9983,8 +10108,8 @@ class F1NextRaceCard extends LitElement {
       padding: clamp(8px, 1.2vw, 12px) clamp(10px, 1.4vw, 14px);
       border-radius: var(--ha-card-border-radius, 12px);
       background:
-        radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.06), transparent 45%),
-        linear-gradient(160deg, var(--nr-bg) 0%, var(--nr-bg-soft) 60%, #0a0a0a 100%);
+        radial-gradient(circle at 15% 10%, var(--f1-card-chip), transparent 45%),
+        linear-gradient(160deg, var(--nr-bg) 0%, var(--nr-bg-soft) 60%, var(--nr-bg-end) 100%);
       border: 1px solid var(--nr-border);
       box-shadow: var(--nr-shadow);
       color: var(--nr-text);
@@ -9997,7 +10122,7 @@ class F1NextRaceCard extends LitElement {
       gap: 10px;
       min-width: 0;
       padding-bottom: 10px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid var(--f1-card-divider);
     }
 
     .nr-hero-top {
@@ -10061,8 +10186,8 @@ class F1NextRaceCard extends LitElement {
       min-width: min(188px, 100%);
       padding: 8px 10px;
       border-radius: 12px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-panel);
+      border: 1px solid var(--f1-card-divider);
     }
 
     .nr-countdown-head,
@@ -10126,8 +10251,8 @@ class F1NextRaceCard extends LitElement {
       min-width: 0;
       padding: 8px 10px;
       border-radius: 12px;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.07);
+      background: var(--f1-card-panel-soft);
+      border: 1px solid var(--f1-card-divider);
     }
 
     .nr-glance-value {
@@ -10144,7 +10269,7 @@ class F1NextRaceCard extends LitElement {
     .nr-history-block,
     .nr-metric-card,
     .nr-weather-card {
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--f1-card-divider);
       border-radius: 12px;
       background: linear-gradient(180deg, var(--nr-panel), var(--nr-panel-soft));
     }
@@ -10190,7 +10315,7 @@ class F1NextRaceCard extends LitElement {
       gap: 6px 12px;
       grid-template-columns: repeat(var(--nr-summary-columns, 2), minmax(0, 1fr));
       padding-top: 6px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      border-top: 1px solid var(--f1-card-divider);
     }
 
     .nr-summary-countdown {
@@ -10200,8 +10325,8 @@ class F1NextRaceCard extends LitElement {
       min-width: 0;
       padding: 7px 8px 8px;
       border-radius: 10px;
-      background: rgba(255, 255, 255, 0.035);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-panel-soft);
+      border: 1px solid var(--f1-card-divider);
     }
 
     .nr-summary-countdown-head {
@@ -10262,7 +10387,7 @@ class F1NextRaceCard extends LitElement {
       flex-direction: column;
       gap: 5px;
       padding-top: 6px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      border-top: 1px solid var(--f1-card-divider);
     }
 
     .nr-summary-definition-row {
@@ -10300,7 +10425,7 @@ class F1NextRaceCard extends LitElement {
 
     .nr-schedule-head {
       padding: 0 0 4px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid var(--f1-card-divider);
       font-size: 8px;
       font-weight: 700;
       letter-spacing: 0.12em;
@@ -10316,7 +10441,7 @@ class F1NextRaceCard extends LitElement {
     .nr-schedule-row {
       position: relative;
       padding: 6px 0 6px 8px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid var(--f1-card-chip);
     }
 
     .nr-schedule-row:last-child {
@@ -10331,7 +10456,7 @@ class F1NextRaceCard extends LitElement {
       bottom: 6px;
       width: 2px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.12);
+      background: var(--f1-card-divider-strong);
     }
 
     .nr-schedule-row.live::before {
@@ -10522,7 +10647,7 @@ class F1NextRaceCard extends LitElement {
       gap: 8px;
       align-items: baseline;
       padding: 3px 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid var(--f1-card-chip);
     }
 
     .nr-weather-row:last-child {
@@ -10602,9 +10727,9 @@ class F1NextRaceCard extends LitElement {
       min-height: 88px;
       overflow: hidden;
       border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--f1-card-divider);
       background:
-        radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.05), transparent 36%),
+        radial-gradient(circle at 18% 16%, var(--f1-card-panel), transparent 36%),
         linear-gradient(155deg, #111218 0%, #090a0e 100%);
       display: grid;
       place-items: center;
@@ -10655,8 +10780,8 @@ class F1NextRaceCard extends LitElement {
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: var(--nr-text);
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-chip);
+      border: 1px solid var(--f1-card-divider);
       white-space: nowrap;
     }
 
@@ -10687,8 +10812,8 @@ class F1NextRaceCard extends LitElement {
       min-width: 0;
       padding: 8px 10px;
       border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--f1-card-divider);
+      background: var(--f1-card-panel-soft);
       transition: border-color 0.2s ease, background 0.2s ease;
     }
 
@@ -10696,14 +10821,14 @@ class F1NextRaceCard extends LitElement {
       border-color: rgba(245, 158, 11, 0.28);
       background:
         linear-gradient(90deg, rgba(245, 158, 11, 0.12), transparent 40%),
-        rgba(255, 255, 255, 0.03);
+        var(--f1-card-panel-soft);
     }
 
     .nr-session-row.live {
       border-color: rgba(225, 6, 0, 0.28);
       background:
         linear-gradient(90deg, rgba(225, 6, 0, 0.12), transparent 42%),
-        rgba(255, 255, 255, 0.04);
+        var(--f1-card-panel);
     }
 
     .nr-session-label-wrap {
@@ -10781,8 +10906,8 @@ class F1NextRaceCard extends LitElement {
       width: 24px;
       height: 24px;
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-chip);
+      border: 1px solid var(--f1-card-divider);
       color: var(--nr-text);
       flex: 0 0 auto;
     }
@@ -10809,7 +10934,7 @@ class F1NextRaceCard extends LitElement {
       gap: 2px;
       min-width: 0;
       padding: 4px 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid var(--f1-card-chip);
     }
 
     .nr-weather-metric:last-child {
@@ -10842,8 +10967,8 @@ class F1NextRaceCard extends LitElement {
       gap: 4px;
       padding: 5px 9px;
       border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(255, 255, 255, 0.045);
+      border: 1px solid var(--f1-card-divider);
+      background: var(--f1-card-panel);
       color: var(--nr-text);
       font: inherit;
       font-size: 9px;
@@ -10893,7 +11018,7 @@ class F1NextRaceCard extends LitElement {
       gap: 1px;
       border-radius: 12px;
       overflow: hidden;
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-divider);
     }
 
     .nr-history-row {
@@ -10901,7 +11026,7 @@ class F1NextRaceCard extends LitElement {
       align-items: flex-start;
       min-width: 0;
       padding: 7px 8px;
-      background: rgba(255, 255, 255, 0.035);
+      background: var(--f1-card-panel-soft);
     }
 
     .nr-history-copy,
@@ -10933,7 +11058,7 @@ class F1NextRaceCard extends LitElement {
       gap: 7px;
       min-width: 0;
       padding: 5px 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid var(--f1-card-chip);
     }
 
     .nr-rank-row:last-child,
@@ -10948,7 +11073,7 @@ class F1NextRaceCard extends LitElement {
       width: 18px;
       height: 18px;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-divider);
       font-size: 8px;
       font-weight: 700;
       flex: 0 0 auto;
@@ -10998,7 +11123,7 @@ class F1NextRaceCard extends LitElement {
       position: relative;
       height: 5px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-divider);
       overflow: hidden;
     }
 
@@ -11015,8 +11140,8 @@ class F1NextRaceCard extends LitElement {
       text-align: center;
       color: var(--nr-muted);
       font-size: 11px;
-      border: 1px dashed rgba(255, 255, 255, 0.12);
-      background: rgba(255, 255, 255, 0.025);
+      border: 1px dashed var(--f1-card-divider-strong);
+      background: var(--f1-card-panel-soft);
     }
 
     .nr-unavailable {
@@ -11148,7 +11273,7 @@ class F1NextRaceCard extends LitElement {
     .nr-card[data-layout='narrow'] .nr-stat-row span {
       text-align: left;
     }
-  `;
+  `];
 
   connectedCallback() {
     super.connectedCallback();
@@ -11170,6 +11295,7 @@ class F1NextRaceCard extends LitElement {
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       next_race_entity: 'sensor.f1_next_race',
       weather_entity: 'sensor.f1_weather',
       track_weather_entity: 'sensor.f1_track_weather',
@@ -11186,6 +11312,7 @@ class F1NextRaceCard extends LitElement {
       prefer_live_weather: true,
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   static getConfigElement() {
@@ -12674,6 +12801,7 @@ class F1NextRaceCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${renderThemeModeSelect(this)}
         ${this._renderSwitch('show_header', 'Show race header')}
         ${this._renderSwitch('show_countdown', 'Show countdown block')}
         ${this._renderSwitch('show_overview', 'Show overview highlights')}
@@ -12746,16 +12874,17 @@ class F1SeasonCalendarCard extends LitElement {
     config: {},
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     :host {
-      --sc-bg: #0b0b0d;
-      --sc-bg-soft: #131315;
-      --sc-border: rgba(255, 255, 255, 0.08);
-      --sc-text: #f5f5f5;
-      --sc-muted: rgba(255, 255, 255, 0.68);
-      --sc-soft: rgba(255, 255, 255, 0.5);
-      --sc-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
-      --sc-panel: rgba(255, 255, 255, 0.035);
+      --sc-bg: var(--f1-card-bg);
+      --sc-bg-soft: var(--f1-card-bg-soft);
+      --sc-bg-end: var(--f1-card-bg-end);
+      --sc-border: var(--f1-card-border);
+      --sc-text: var(--f1-card-text);
+      --sc-muted: var(--f1-card-muted);
+      --sc-soft: var(--f1-card-soft);
+      --sc-shadow: var(--f1-card-shadow);
+      --sc-panel: var(--f1-card-panel);
       display: block;
       font-family: 'Formula1 Display', 'Titillium Web', Arial, sans-serif;
     }
@@ -12776,8 +12905,8 @@ class F1SeasonCalendarCard extends LitElement {
       padding: clamp(8px, 1.2vw, 12px) clamp(10px, 1.4vw, 14px);
       border-radius: var(--ha-card-border-radius, 12px);
       background:
-        radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.06), transparent 45%),
-        linear-gradient(160deg, var(--sc-bg) 0%, var(--sc-bg-soft) 60%, #0a0a0a 100%);
+        radial-gradient(circle at 15% 10%, var(--f1-card-chip), transparent 45%),
+        linear-gradient(160deg, var(--sc-bg) 0%, var(--sc-bg-soft) 60%, var(--sc-bg-end) 100%);
       border: 1px solid var(--sc-border);
       box-shadow: var(--sc-shadow);
       color: var(--sc-text);
@@ -12791,8 +12920,8 @@ class F1SeasonCalendarCard extends LitElement {
       padding: 8px 9px;
       min-width: 0;
       border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.025));
+      border: 1px solid var(--f1-card-divider);
+      background: linear-gradient(180deg, var(--f1-card-panel), var(--f1-card-panel-soft));
     }
 
     .sc-header {
@@ -12854,8 +12983,8 @@ class F1SeasonCalendarCard extends LitElement {
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: var(--sc-text);
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-chip);
+      border: 1px solid var(--f1-card-divider);
       white-space: nowrap;
     }
 
@@ -12876,7 +13005,7 @@ class F1SeasonCalendarCard extends LitElement {
       min-width: 0;
       padding: 8px 10px;
       border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--f1-card-divider);
       background: var(--sc-panel);
       transition: border-color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
     }
@@ -12889,14 +13018,14 @@ class F1SeasonCalendarCard extends LitElement {
       bottom: 8px;
       width: 2px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.12);
+      background: var(--f1-card-divider-strong);
     }
 
     .sc-row.next {
       border-color: rgba(245, 158, 11, 0.28);
       background:
         linear-gradient(90deg, rgba(245, 158, 11, 0.12), transparent 42%),
-        rgba(255, 255, 255, 0.04);
+        var(--f1-card-panel);
     }
 
     .sc-row.next::before {
@@ -12946,8 +13075,8 @@ class F1SeasonCalendarCard extends LitElement {
       min-width: 34px;
       padding: 3px 6px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-chip);
+      border: 1px solid var(--f1-card-divider);
       font-size: 8px;
       font-weight: 700;
       letter-spacing: 0.1em;
@@ -13006,8 +13135,8 @@ class F1SeasonCalendarCard extends LitElement {
       text-align: center;
       color: var(--sc-muted);
       font-size: 11px;
-      border: 1px dashed rgba(255, 255, 255, 0.12);
-      background: rgba(255, 255, 255, 0.025);
+      border: 1px dashed var(--f1-card-divider-strong);
+      background: var(--f1-card-panel-soft);
     }
 
     .sc-unavailable {
@@ -13043,12 +13172,13 @@ class F1SeasonCalendarCard extends LitElement {
     .sc-card[data-layout='narrow'] .sc-row-meta {
       align-items: flex-start;
       padding-top: 6px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      border-top: 1px solid var(--f1-card-divider);
     }
-  `;
+  `];
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       current_season_entity: 'sensor.f1_current_season',
       show_header: true,
       show_round: true,
@@ -13060,6 +13190,7 @@ class F1SeasonCalendarCard extends LitElement {
       hide_past_races: false,
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   static getConfigElement() {
@@ -13482,6 +13613,7 @@ class F1SeasonCalendarCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${renderThemeModeSelect(this)}
         ${this._renderSwitch('show_header', 'Show header')}
         ${this._renderSwitch('show_round', 'Show round badge')}
         ${this._renderSwitch('show_country_flag', 'Show country flag')}
@@ -13554,7 +13686,7 @@ class F1RaceControlCard extends LitElement {
     _isClearing: { state: true },
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     /* Animation keyframes */
     @keyframes fadeSlideIn {
       from { opacity: 0; transform: translateX(-8px); }
@@ -13580,13 +13712,14 @@ class F1RaceControlCard extends LitElement {
     }
 
     :host {
-      --rc-bg: #0b0b0d;
-      --rc-bg-soft: #131315;
-      --rc-border: rgba(255, 255, 255, 0.08);
-      --rc-text: #f5f5f5;
-      --rc-muted: rgba(255, 255, 255, 0.6);
+      --rc-bg: var(--f1-card-bg);
+      --rc-bg-soft: var(--f1-card-bg-soft);
+      --rc-bg-end: var(--f1-card-bg-end);
+      --rc-border: var(--f1-card-border);
+      --rc-text: var(--f1-card-text);
+      --rc-muted: var(--f1-card-muted);
       --rc-red: #ff3b30;
-      --rc-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      --rc-shadow: var(--f1-card-compact-shadow);
     }
 
     ha-card {
@@ -13605,7 +13738,7 @@ class F1RaceControlCard extends LitElement {
       padding: clamp(8px, 1.2vw, 12px) clamp(12px, 2vw, 18px);
       border-radius: var(--ha-card-border-radius, 12px);
       background:
-        radial-gradient(circle at 10% 20%, rgba(255, 255, 255, 0.04), transparent 40%),
+        radial-gradient(circle at 10% 20%, var(--f1-card-panel), transparent 40%),
         linear-gradient(160deg, var(--rc-bg) 0%, var(--rc-bg-soft) 100%);
       border: 1px solid var(--rc-border);
       box-shadow: var(--rc-shadow);
@@ -13632,7 +13765,7 @@ class F1RaceControlCard extends LitElement {
       flex-shrink: 0;
       object-fit: contain;
       padding-right: clamp(10px, 1.5vw, 14px);
-      border-right: 1px solid rgba(255, 255, 255, 0.15);
+      border-right: 1px solid var(--f1-card-divider-strong);
     }
 
     .rc-content {
@@ -13715,7 +13848,7 @@ class F1RaceControlCard extends LitElement {
       font-family: 'Formula1 Display', 'Titillium Web', Arial, sans-serif;
       border-radius: var(--ha-card-border-radius, 12px);
       background:
-        radial-gradient(circle at 10% 20%, rgba(255, 255, 255, 0.04), transparent 40%),
+        radial-gradient(circle at 10% 20%, var(--f1-card-panel), transparent 40%),
         linear-gradient(160deg, var(--rc-bg) 0%, var(--rc-bg-soft) 100%);
       border: 1px solid var(--rc-border);
       box-shadow: var(--rc-shadow);
@@ -13730,8 +13863,8 @@ class F1RaceControlCard extends LitElement {
       align-items: flex-start;
       gap: 14px;
       padding: 14px 16px 12px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent);
+      border-bottom: 1px solid var(--f1-card-divider);
+      background: linear-gradient(180deg, var(--f1-card-panel-soft), transparent);
     }
 
     .rc-list-brand {
@@ -13789,15 +13922,15 @@ class F1RaceControlCard extends LitElement {
     }
 
     .rc-live-pill.saved {
-      border-color: rgba(255, 255, 255, 0.14);
-      background: rgba(255, 255, 255, 0.04);
+      border-color: var(--f1-card-divider-strong);
+      background: var(--f1-card-panel);
       color: var(--rc-muted);
     }
 
     .rc-clear-button {
       appearance: none;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--f1-card-divider-strong);
+      background: var(--f1-card-panel);
       color: var(--rc-text);
       border-radius: 10px;
       padding: 7px 12px;
@@ -13832,17 +13965,17 @@ class F1RaceControlCard extends LitElement {
     .rc-list-empty {
       padding: 18px 14px;
       border-radius: 12px;
-      border: 1px dashed rgba(255, 255, 255, 0.1);
+      border: 1px dashed var(--f1-card-chip);
       color: var(--rc-muted);
       text-align: center;
       font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      background: rgba(255, 255, 255, 0.02);
+      background: var(--f1-card-panel-soft);
     }
 
     .rc-list-row {
-      --rc-row-accent: rgba(255, 255, 255, 0.22);
+      --rc-row-accent: var(--f1-card-divider-strong);
       position: relative;
       display: grid;
       grid-template-columns: minmax(74px, auto) 1fr;
@@ -13851,8 +13984,8 @@ class F1RaceControlCard extends LitElement {
       min-height: 44px;
       padding: 8px 14px 8px 16px;
       border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--f1-card-divider);
+      background: var(--f1-card-panel-soft);
       overflow: hidden;
     }
 
@@ -13988,7 +14121,7 @@ class F1RaceControlCard extends LitElement {
         gap: 8px;
       }
     }
-  `;
+  `];
 
   constructor() {
     super();
@@ -14475,12 +14608,14 @@ class F1RaceControlCard extends LitElement {
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       entity: 'sensor.f1_race_control',
       show_fia_logo: true,
       hide_blue_flags: false,
       min_display_time: 0,
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   static getConfigElement() {
@@ -14978,6 +15113,7 @@ class F1RaceControlCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${renderThemeModeSelect(this)}
         ${this._renderSelect(
           'display_mode',
           'Display mode',
@@ -15113,7 +15249,7 @@ class F1QualifyingTimingCard extends LitElement {
     config: {},
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
@@ -15128,13 +15264,14 @@ class F1QualifyingTimingCard extends LitElement {
     }
 
     :host {
-      --qt-bg: #0b0b0d;
-      --qt-bg-soft: #131315;
-      --qt-border: rgba(255, 255, 255, 0.08);
-      --qt-text: #f5f5f5;
-      --qt-muted: rgba(255, 255, 255, 0.55);
-      --qt-chip: rgba(255, 255, 255, 0.06);
-      --qt-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --qt-bg: var(--f1-card-bg);
+      --qt-bg-soft: var(--f1-card-bg-soft);
+      --qt-bg-end: var(--f1-card-bg-end);
+      --qt-border: var(--f1-card-border);
+      --qt-text: var(--f1-card-text);
+      --qt-muted: var(--f1-card-muted);
+      --qt-chip: var(--f1-card-chip);
+      --qt-shadow: var(--f1-card-shadow);
       display: block;
       font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
     }
@@ -15154,8 +15291,8 @@ class F1QualifyingTimingCard extends LitElement {
       --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
-      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
-        linear-gradient(160deg, var(--qt-bg) 0%, var(--qt-bg-soft) 60%, #0a0a0a 100%);
+      background: radial-gradient(circle at 15% 10%, var(--f1-card-divider), transparent 45%),
+        linear-gradient(160deg, var(--qt-bg) 0%, var(--qt-bg-soft) 60%, var(--qt-bg-end) 100%);
       border: 1px solid var(--qt-border);
       box-shadow: var(--qt-shadow);
       overflow: hidden;
@@ -15179,7 +15316,7 @@ class F1QualifyingTimingCard extends LitElement {
       font-weight: 700;
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
-      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      text-shadow: var(--f1-card-title-shadow);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
@@ -15267,7 +15404,7 @@ class F1QualifyingTimingCard extends LitElement {
 
     .qt-cell.group-start {
       padding-left: 6px;
-      border-left: 1px solid rgba(255, 255, 255, 0.12);
+      border-left: 1px solid var(--f1-card-divider-strong);
     }
 
     .qt-tla {
@@ -15414,7 +15551,7 @@ class F1QualifyingTimingCard extends LitElement {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
       background: var(--qt-chip);
-      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border: 1px dashed var(--f1-card-divider-strong);
       color: var(--qt-muted);
       text-align: center;
       font-size: 13px;
@@ -15442,10 +15579,11 @@ class F1QualifyingTimingCard extends LitElement {
       width: 100%;
     }
 
-  `;
+  `];
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       title: 'Qualifying',
       show_header: true,
       show_table_header: true,
@@ -15460,6 +15598,7 @@ class F1QualifyingTimingCard extends LitElement {
       session_status_entity: 'sensor.f1_session_status',
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   connectedCallback() {
@@ -15936,7 +16075,7 @@ class F1QualifyingTimingCard extends LitElement {
       );
       const teamName = pos?.team || dlEntry?.team;
       const teamLogo = this.config.show_team_logo !== false
-        ? getTeamLogoMeta(teamName, 24, this.config.team_logo_style)
+        ? getTeamLogoMeta(teamName, 24, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config))
         : null;
       const teamColor = this._normalizeColor(pos?.team_color || dlEntry?.team_color);
 
@@ -16407,6 +16546,7 @@ class F1QualifyingTimingCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="section">
+        ${renderThemeModeSelect(this)}
         <ha-textfield
           .label=${'Title'}
           .value=${this._config.title || ''}
@@ -16513,7 +16653,7 @@ class F1PracticeTimingCard extends LitElement {
     config: {},
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
@@ -16528,13 +16668,14 @@ class F1PracticeTimingCard extends LitElement {
     }
 
     :host {
-      --pt-bg: #0b0b0d;
-      --pt-bg-soft: #131315;
-      --pt-border: rgba(255, 255, 255, 0.08);
-      --pt-text: #f5f5f5;
-      --pt-muted: rgba(255, 255, 255, 0.55);
-      --pt-chip: rgba(255, 255, 255, 0.06);
-      --pt-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --pt-bg: var(--f1-card-bg);
+      --pt-bg-soft: var(--f1-card-bg-soft);
+      --pt-bg-end: var(--f1-card-bg-end);
+      --pt-border: var(--f1-card-border);
+      --pt-text: var(--f1-card-text);
+      --pt-muted: var(--f1-card-muted);
+      --pt-chip: var(--f1-card-chip);
+      --pt-shadow: var(--f1-card-shadow);
       display: block;
       font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
     }
@@ -16554,8 +16695,8 @@ class F1PracticeTimingCard extends LitElement {
       --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
-      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
-        linear-gradient(160deg, var(--pt-bg) 0%, var(--pt-bg-soft) 60%, #0a0a0a 100%);
+      background: radial-gradient(circle at 15% 10%, var(--f1-card-divider), transparent 45%),
+        linear-gradient(160deg, var(--pt-bg) 0%, var(--pt-bg-soft) 60%, var(--pt-bg-end) 100%);
       border: 1px solid var(--pt-border);
       box-shadow: var(--pt-shadow);
       overflow: hidden;
@@ -16578,7 +16719,7 @@ class F1PracticeTimingCard extends LitElement {
       font-weight: 700;
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
-      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      text-shadow: var(--f1-card-title-shadow);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
@@ -16625,13 +16766,13 @@ class F1PracticeTimingCard extends LitElement {
     }
 
     .pt-row.retired {
-      color: rgba(255, 255, 255, 0.45);
+      color: var(--f1-card-muted);
     }
 
     .pt-row.retired .pt-cell,
     .pt-row.retired .pt-driver,
     .pt-row.retired .pt-status {
-      color: rgba(255, 255, 255, 0.45) !important;
+      color: var(--f1-card-muted) !important;
     }
 
     .pt-cell {
@@ -16655,7 +16796,7 @@ class F1PracticeTimingCard extends LitElement {
 
     .pt-cell.group-start {
       padding-left: 6px;
-      border-left: 1px solid rgba(255, 255, 255, 0.12);
+      border-left: 1px solid var(--f1-card-divider-strong);
     }
 
     .pt-driver {
@@ -16782,7 +16923,7 @@ class F1PracticeTimingCard extends LitElement {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
       background: var(--pt-chip);
-      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border: 1px dashed var(--f1-card-divider-strong);
       color: var(--pt-muted);
       text-align: center;
       font-size: 13px;
@@ -16803,10 +16944,11 @@ class F1PracticeTimingCard extends LitElement {
         padding: 5px 6px;
       }
     }
-  `;
+  `];
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       title: 'Free Practice',
       show_header: true,
       show_table_header: true,
@@ -16827,6 +16969,7 @@ class F1PracticeTimingCard extends LitElement {
       tyres_entity: 'sensor.f1_current_tyres',
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   connectedCallback() {
@@ -17213,7 +17356,7 @@ class F1PracticeTimingCard extends LitElement {
       const dlEntry = driverListMap.get(rn) || driverListMap.get(tla) || null;
       const teamName = pos?.team || dlEntry?.team || dlEntry?.team_name || tyre?.team;
       const teamLogo = this.config.show_team_logo !== false
-        ? getTeamLogoMeta(teamName, 24, this.config.team_logo_style)
+        ? getTeamLogoMeta(teamName, 24, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config))
         : null;
       const teamColor = this._normalizeColor(pos?.team_color || dlEntry?.team_color || tyre?.team_color);
       const driverDisplay = resolveDisplay(
@@ -17677,6 +17820,7 @@ class F1PracticeTimingCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="section">
+        ${renderThemeModeSelect(this)}
         <ha-textfield
           .label=${'Title'}
           .value=${this._config.title || ''}
@@ -17785,7 +17929,7 @@ class F1RaceLapCard extends LitElement {
     config: {},
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
@@ -17800,13 +17944,14 @@ class F1RaceLapCard extends LitElement {
     }
 
     :host {
-      --rl-bg: #0b0b0d;
-      --rl-bg-soft: #131315;
-      --rl-border: rgba(255, 255, 255, 0.08);
-      --rl-text: #f5f5f5;
-      --rl-muted: rgba(255, 255, 255, 0.55);
-      --rl-chip: rgba(255, 255, 255, 0.06);
-      --rl-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --rl-bg: var(--f1-card-bg);
+      --rl-bg-soft: var(--f1-card-bg-soft);
+      --rl-bg-end: var(--f1-card-bg-end);
+      --rl-border: var(--f1-card-border);
+      --rl-text: var(--f1-card-text);
+      --rl-muted: var(--f1-card-muted);
+      --rl-chip: var(--f1-card-chip);
+      --rl-shadow: var(--f1-card-shadow);
       display: block;
       font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
     }
@@ -17826,8 +17971,8 @@ class F1RaceLapCard extends LitElement {
       --f1-live-table-row-height: var(--f1-table-row-min-height, 34px);
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
-      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
-        linear-gradient(160deg, var(--rl-bg) 0%, var(--rl-bg-soft) 60%, #0a0a0a 100%);
+      background: radial-gradient(circle at 15% 10%, var(--f1-card-divider), transparent 45%),
+        linear-gradient(160deg, var(--rl-bg) 0%, var(--rl-bg-soft) 60%, var(--rl-bg-end) 100%);
       border: 1px solid var(--rl-border);
       box-shadow: var(--rl-shadow);
       overflow: hidden;
@@ -17850,7 +17995,7 @@ class F1RaceLapCard extends LitElement {
       font-weight: 700;
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
-      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      text-shadow: var(--f1-card-title-shadow);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
@@ -17897,13 +18042,13 @@ class F1RaceLapCard extends LitElement {
     }
 
     .rl-row.retired {
-      color: rgba(255, 255, 255, 0.45);
+      color: var(--f1-card-muted);
     }
 
     .rl-row.retired .rl-cell,
     .rl-row.retired .rl-driver,
     .rl-row.retired .rl-status {
-      color: rgba(255, 255, 255, 0.45) !important;
+      color: var(--f1-card-muted) !important;
     }
 
     .rl-cell {
@@ -17927,7 +18072,7 @@ class F1RaceLapCard extends LitElement {
 
     .rl-cell.group-start {
       padding-left: 6px;
-      border-left: 1px solid rgba(255, 255, 255, 0.12);
+      border-left: 1px solid var(--f1-card-divider-strong);
     }
 
     .rl-driver {
@@ -18054,7 +18199,7 @@ class F1RaceLapCard extends LitElement {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
       background: var(--rl-chip);
-      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border: 1px dashed var(--f1-card-divider-strong);
       color: var(--rl-muted);
       text-align: center;
       font-size: 13px;
@@ -18092,10 +18237,11 @@ class F1RaceLapCard extends LitElement {
         padding: 5px 6px;
       }
     }
-  `;
+  `];
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       title: 'Race Lap',
       show_header: true,
       show_table_header: true,
@@ -18119,6 +18265,7 @@ class F1RaceLapCard extends LitElement {
       pitstops_entity: 'sensor.f1_pitstops',
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   _timingColorStyles() {
@@ -18529,7 +18676,7 @@ class F1RaceLapCard extends LitElement {
       const pit = pitMap.get(rn) || null;
       const teamName = pos?.team || dlEntry?.team || dlEntry?.team_name || tyre?.team || pit?.team;
       const teamLogo = this.config.show_team_logo !== false
-        ? getTeamLogoMeta(teamName, 24, this.config.team_logo_style)
+        ? getTeamLogoMeta(teamName, 24, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config))
         : null;
       const teamColor = this._normalizeColor(pos?.team_color || dlEntry?.team_color || tyre?.team_color);
       const driverDisplay = resolveDriverDisplay(
@@ -18978,6 +19125,7 @@ class F1RaceLapCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="section">
+        ${renderThemeModeSelect(this)}
         <ha-textfield
           .label=${'Title'}
           .value=${this._config.title || ''}
