@@ -366,6 +366,8 @@ const LEGACY_ENTITY_ID_FALLBACKS = {
   'sensor.f1_session_session_time_remaining': 'sensor.f1_session_time_remaining',
   'sensor.f1_session_session_time_elapsed': 'sensor.f1_session_time_elapsed',
   'sensor.f1_race_next_race': 'sensor.f1_next_race',
+  'sensor.f1_starting_grid': 'sensor.f1_session_f1_starting_grid',
+  'sensor.f1_session_starting_grid': 'sensor.f1_session_f1_starting_grid',
   'binary_sensor.f1_session_formation_start': 'binary_sensor.f1_formation_start',
   'binary_sensor.f1_session_overtake_mode': 'binary_sensor.f1_overtake_mode',
   'sensor.f1_session_straight_mode': 'sensor.f1_straight_mode',
@@ -2575,6 +2577,7 @@ class F1PitStopOverviewCard extends LitElement {
 
   _handleCardAction() {
     const action = this.config?.tap_action || { action: 'more-info' };
+    if (!this.config?.entity) return;
     if (action.action === 'none') return;
     if (action.action === 'more-info') {
       this.dispatchEvent(new CustomEvent('hass-more-info', {
@@ -22298,6 +22301,1394 @@ class F1RaceLapCardEditor extends LitElement {
   }
 }
 
+class F1StartingGridCard extends LitElement {
+  static properties = {
+    hass: {},
+    config: {},
+  };
+
+  static styles = [F1_THEME_STYLES, css`
+    :host {
+      --sg-bg: var(--f1-card-bg);
+      --sg-bg-soft: var(--f1-card-bg-soft);
+      --sg-bg-end: var(--f1-card-bg-end);
+      --sg-border: var(--f1-card-border);
+      --sg-text: var(--f1-card-text);
+      --sg-muted: var(--f1-card-muted);
+      --sg-chip: var(--f1-card-chip);
+      --sg-shadow: var(--f1-card-shadow);
+      display: block;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+    }
+
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+      overflow: hidden;
+    }
+
+    .sg-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
+      border-radius: var(--ha-card-border-radius, 12px);
+      background:
+        radial-gradient(circle at 15% 10%, var(--f1-card-divider), transparent 45%),
+        linear-gradient(160deg, var(--sg-bg) 0%, var(--sg-bg-soft) 60%, var(--sg-bg-end) 100%);
+      border: 1px solid var(--sg-border);
+      box-shadow: var(--sg-shadow);
+      overflow: hidden;
+      color: var(--sg-text);
+      container-type: inline-size;
+    }
+
+    .sg-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px 10px;
+    }
+
+    .sg-title-group {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .sg-header {
+      text-align: center;
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(16px, 2.4vw, 20px);
+      font-weight: 700;
+      letter-spacing: clamp(0.03em, 0.06em, 0.08em);
+      text-transform: uppercase;
+      text-shadow: var(--f1-card-title-shadow);
+      white-space: normal;
+      text-wrap: balance;
+      line-height: 1.1;
+      padding: 0 4px;
+    }
+
+    .sg-badge-row {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .sg-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 20px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--f1-card-divider-strong);
+      background: var(--sg-chip);
+      color: var(--sg-muted);
+      font-size: var(--f1-table-meta-font-size, 10px);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      line-height: 1;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .sg-badge.success {
+      background: rgba(52, 199, 89, 0.16);
+      border-color: rgba(52, 199, 89, 0.34);
+      color: #86efac;
+    }
+
+    .sg-badge.warning {
+      background: rgba(245, 158, 11, 0.16);
+      border-color: rgba(245, 158, 11, 0.34);
+      color: #fcd34d;
+    }
+
+    .sg-badge.info {
+      background: rgba(56, 189, 248, 0.14);
+      border-color: rgba(56, 189, 248, 0.32);
+      color: #bae6fd;
+    }
+
+    .sg-badge.neutral,
+    .sg-badge.muted {
+      background: var(--sg-chip);
+      color: var(--sg-muted);
+    }
+
+    .sg-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .sg-meta-item {
+      flex: 0 1 180px;
+      min-width: 0;
+      padding: 7px 9px;
+      border-radius: 8px;
+      background: var(--f1-card-panel);
+      border: 1px solid var(--f1-card-divider);
+      text-align: center;
+    }
+
+    .sg-meta-label {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--sg-muted);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .sg-meta-value {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--sg-text);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .sg-empty {
+      padding: 16px;
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: var(--sg-chip);
+      border: 1px dashed var(--f1-card-divider-strong);
+      color: var(--sg-muted);
+      text-align: center;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .sg-grid {
+      position: relative;
+      display: grid;
+      gap: 0;
+      padding: 4px 0 0;
+    }
+
+    .sg-grid::before {
+      content: '';
+      position: absolute;
+      top: 8px;
+      bottom: 10px;
+      left: 50%;
+      width: 2px;
+      border-radius: 999px;
+      background: linear-gradient(
+        180deg,
+        transparent,
+        var(--f1-card-divider-strong) 8%,
+        var(--f1-card-divider-strong) 92%,
+        transparent
+      );
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+
+    .sg-grid-line {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
+      align-items: start;
+      gap: 9px;
+      min-height: 86px;
+      min-width: 0;
+    }
+
+    .sg-track-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+      width: 22px;
+      height: 58px;
+      margin-top: 12px;
+      border-radius: 999px;
+      background: var(--f1-card-panel);
+      border: 1px solid var(--f1-card-divider-strong);
+      color: var(--sg-muted);
+      font-size: 10px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sg-slot {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      min-width: 0;
+    }
+
+    .sg-slot.left {
+      justify-content: flex-end;
+      padding-right: 2px;
+    }
+
+    .sg-slot.right {
+      justify-content: flex-start;
+      padding-top: 28px;
+      padding-left: 2px;
+    }
+
+    .sg-driver-card {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto;
+      grid-template-areas:
+        "pos driver delta"
+        "pos qual qual";
+      gap: 3px 8px;
+      width: min(100%, 310px);
+      min-height: 54px;
+      padding: 8px 9px;
+      border-radius: 10px;
+      background:
+        linear-gradient(90deg, var(--driver-color, transparent) 0 3px, transparent 3px),
+        var(--sg-chip);
+      border: 1px solid var(--f1-card-divider);
+      box-sizing: border-box;
+      min-width: 0;
+    }
+
+    .sg-driver-card.changed {
+      border-color: color-mix(in srgb, var(--driver-color, #f59e0b) 50%, var(--f1-card-divider));
+    }
+
+    .sg-position {
+      grid-area: pos;
+      align-self: center;
+      justify-self: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--f1-card-divider-strong);
+      color: var(--sg-text);
+      font-size: 13px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sg-driver-main {
+      grid-area: driver;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-width: 0;
+      gap: 2px;
+    }
+
+    .sg-driver-line {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .sg-team-logo {
+      width: var(--f1-team-logo-size, 16px);
+      height: var(--f1-team-logo-size, 16px);
+      flex: 0 0 auto;
+      object-fit: contain;
+      filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
+    }
+
+    .sg-driver {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--driver-color, var(--sg-text));
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .sg-driver.full-name {
+      font-size: 11px;
+      letter-spacing: 0.01em;
+      text-transform: none;
+    }
+
+    .sg-number,
+    .sg-team {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--sg-muted);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .sg-team {
+      letter-spacing: 0.04em;
+    }
+
+    .sg-qual-line {
+      grid-area: qual;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px;
+      min-width: 0;
+      color: var(--sg-muted);
+      font-size: 10px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.25;
+    }
+
+    .sg-qual-token {
+      display: inline-flex;
+      align-items: center;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sg-qual-token.delta {
+      padding: 1px 5px;
+      border-radius: 5px;
+      background: rgba(59, 130, 246, 0.14);
+      color: #bfdbfe;
+    }
+
+    .sg-delta {
+      grid-area: delta;
+      align-self: center;
+      justify-self: end;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 30px;
+      padding: 3px 6px;
+      border-radius: 6px;
+      background: var(--f1-card-panel);
+      color: var(--sg-muted);
+      font-size: 10px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    .sg-delta.forward {
+      background: rgba(52, 199, 89, 0.16);
+      color: #86efac;
+    }
+
+    .sg-delta.back {
+      background: rgba(255, 59, 48, 0.16);
+      color: #fca5a5;
+    }
+
+    .sg-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .sg-table {
+      display: grid;
+      gap: 4px;
+      min-width: max-content;
+      width: max-content;
+    }
+
+    .sg-row {
+      display: grid;
+      grid-template-columns: var(--sg-columns);
+      align-items: center;
+      column-gap: 0;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
+      border-radius: 10px;
+      background: var(--sg-chip);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
+      color: var(--sg-text);
+    }
+
+    .sg-row.changed {
+      box-shadow: inset 3px 0 0 var(--driver-color, rgba(245, 158, 11, 0.8));
+    }
+
+    .sg-row.header {
+      background: transparent;
+      padding: 4px 6px 2px;
+      font-size: var(--f1-table-header-font-size, clamp(9px, 1.4vw, 10px));
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--sg-muted);
+    }
+
+    .sg-cell {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      padding: 0 2px;
+    }
+
+    .sg-cell.center {
+      justify-content: center;
+      text-align: center;
+    }
+
+    .sg-cell.compact {
+      padding-right: 0;
+    }
+
+    .sg-cell.group-start {
+      padding-left: 6px;
+      border-left: 1px solid var(--f1-card-divider-strong);
+    }
+
+    .sg-table-driver {
+      min-width: 0;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--driver-color, var(--sg-text));
+    }
+
+    .sg-table-driver.full-name {
+      letter-spacing: 0.01em;
+      text-transform: none;
+    }
+
+    @media (max-width: 720px) {
+      .sg-card {
+        padding: 12px 10px 12px;
+      }
+
+      .sg-header {
+        font-size: 16px;
+        letter-spacing: 0.03em;
+      }
+
+      .sg-meta {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .sg-row {
+        font-size: 9px;
+        padding: 5px 6px;
+      }
+    }
+
+    .sg-card[data-layout='medium'] .sg-meta,
+    .sg-card[data-layout='narrow'] .sg-meta {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .sg-card[data-layout='medium'] .sg-table,
+    .sg-card[data-layout='narrow'] .sg-table {
+      min-width: 0;
+      width: 100%;
+    }
+
+    .sg-grid.compact {
+      gap: 5px;
+      padding-top: 0;
+    }
+
+    .sg-grid.compact::before {
+      display: none;
+    }
+
+    .sg-grid.compact .sg-grid-line {
+      display: block;
+      min-height: 0;
+    }
+
+    .sg-grid.compact .sg-driver-card {
+      width: 100%;
+    }
+
+    .sg-card[data-layout='narrow'] .sg-meta {
+      grid-template-columns: 1fr;
+    }
+
+    .sg-card[data-layout='narrow'] .sg-meta-item {
+      flex-basis: 100%;
+    }
+  `];
+
+  setConfig(config) {
+    const displayMode = String(config?.display_mode || 'grid').trim().toLowerCase();
+    this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
+      title: 'Starting Grid',
+      entity: 'sensor.f1_starting_grid',
+      display_mode: displayMode === 'table' ? 'table' : 'grid',
+      show_header: true,
+      show_table_header: true,
+      show_team_logo: true,
+      show_full_name: false,
+      show_qualifying_position: true,
+      show_qualifying_time: true,
+      show_qualifying_delta: false,
+      show_qualifying_segment: true,
+      show_grid_delta: true,
+      show_status_badge: true,
+      show_source_badge: true,
+      show_metadata: true,
+      team_logo_style: 'color',
+      ...config,
+    };
+    this.config.display_mode = this.config.display_mode === 'table' ? 'table' : 'grid';
+    applyF1ThemeMode(this, this.config);
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    ensureF1Fonts();
+  }
+
+  getCardSize() {
+    return 8;
+  }
+
+  getGridOptions() {
+    return {
+      columns: 12,
+      min_columns: 4,
+      max_columns: 12,
+      min_rows: 8,
+    };
+  }
+
+  _responsiveLayoutBreakpoints() {
+    return {
+      narrow: 520,
+      medium: 760,
+    };
+  }
+
+  static getStubConfig() {
+    return {
+      type: 'custom:f1-starting-grid-card',
+      entity: '',
+      title: 'Starting Grid',
+    };
+  }
+
+  static getConfigElement() {
+    return document.createElement('f1-starting-grid-card-editor');
+  }
+
+  render() {
+    if (!this.hass || !this.config) return html``;
+
+    if (!this.config.entity) {
+      return this._renderEmpty('Select starting grid entity in the editor');
+    }
+
+    const stateObj = getEntityStateWithFallback(this.hass, this.config.entity);
+    if (!stateObj) {
+      return this._renderEmpty('Starting grid entity not found');
+    }
+
+    const attrs = stateObj.attributes || {};
+    if (isUnavailableLikeEntityState(stateObj)) {
+      return this._renderEmpty('Starting grid unavailable', attrs);
+    }
+
+    const rows = this._buildRows(attrs.grid);
+    if (rows.length === 0) {
+      return this._renderEmpty(this._emptyMessage(stateObj, attrs), attrs);
+    }
+
+    const layoutMode = getResponsiveLayoutMode(this);
+    return html`
+      <ha-card @click=${this._handleCardAction}>
+        <div class="sg-card" data-layout=${layoutMode}>
+          ${this._renderCardHeader(attrs, rows)}
+          ${this._renderMeta(attrs, rows)}
+          ${this.config.display_mode === 'table'
+            ? this._renderTable(rows, layoutMode)
+            : this._renderGrid(rows, layoutMode)}
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _renderEmpty(message, attrs = {}) {
+    const layoutMode = getResponsiveLayoutMode(this);
+    return html`
+      <ha-card @click=${this._handleCardAction}>
+        <div class="sg-card" data-layout=${layoutMode}>
+          ${this._renderCardHeader(attrs, [])}
+          ${this._renderMeta(attrs, [])}
+          <div class="sg-empty">${message}</div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _renderCardHeader(attrs, rows) {
+    if (this.config.show_header === false) return null;
+    const status = this._statusValue(attrs);
+    const sessionLabel = this._sessionLabel(attrs);
+    const source = String(attrs?.source || '').trim();
+    return html`
+      <div class="sg-header-row">
+        <div class="sg-title-group">
+          <div class="sg-header">${String(this.config.title || 'Starting Grid').trim() || 'Starting Grid'}</div>
+          ${sessionLabel ? html`<div class="sg-badge info">${sessionLabel}</div>` : null}
+        </div>
+        <div class="sg-badge-row">
+          ${this.config.show_status_badge !== false
+            ? html`<div class="sg-badge ${this._statusTone(status)}">${this._statusLabel(status, rows)}</div>`
+            : null}
+          ${this.config.show_source_badge !== false && source
+            ? html`<div class="sg-badge ${this._sourceTone(source)}">${this._sourceLabel(source)}</div>`
+            : null}
+        </div>
+      </div>
+    `;
+  }
+
+  _renderMeta(attrs, rows) {
+    if (this.config.show_metadata === false) return null;
+    const items = [
+      ['Weekend', attrs?.meeting_name],
+      ['Format', this._weekendFormatLabel(attrs?.weekend_format)],
+      ['Updated', this._formatDateTime(attrs?.source_updated_at)],
+    ].filter((item) => item[1]);
+
+    if (items.length === 0) return null;
+
+    return html`
+      <div class="sg-meta">
+        ${items.map(([label, value]) => html`
+          <div class="sg-meta-item">
+            <span class="sg-meta-label">${label}</span>
+            <span class="sg-meta-value">${value}</span>
+          </div>
+        `)}
+      </div>
+    `;
+  }
+
+  _renderGrid(rows, layoutMode) {
+    if (layoutMode === 'narrow') {
+      return html`
+        <div class="sg-grid compact">
+          ${rows.map((row) => html`
+            <div class="sg-grid-line">${this._renderGridSlot(row)}</div>
+          `)}
+        </div>
+      `;
+    }
+
+    const pairs = this._pairRows(rows);
+    if (pairs.length === 0) {
+      return html`
+        <div class="sg-grid compact">
+          ${rows.map((row) => html`
+            <div class="sg-grid-line">${this._renderGridSlot(row)}</div>
+          `)}
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="sg-grid">
+        ${pairs.map((pair) => html`
+          <div class="sg-grid-line">
+            <div class="sg-slot left">${pair.left ? this._renderGridSlot(pair.left) : null}</div>
+            <div class="sg-track-row">${pair.row}</div>
+            <div class="sg-slot right">${pair.right ? this._renderGridSlot(pair.right) : null}</div>
+          </div>
+        `)}
+      </div>
+    `;
+  }
+
+  _renderGridSlot(row) {
+    const classes = ['sg-driver-card'];
+    if (row.changed_from_qualifying) classes.push('changed');
+    const style = row.team_color ? `--driver-color: ${row.team_color};` : '';
+    return html`
+      <div class="${classes.join(' ')}" style="${style}">
+        <div class="sg-position">${row.grid_position ?? '--'}</div>
+        <div class="sg-driver-main">
+          <div class="sg-driver-line">
+            ${this._renderTeamLogo(row)}
+            <span class="sg-driver ${row.use_full_name ? 'full-name' : ''}">${row.display_driver}</span>
+            ${row.racing_number ? html`<span class="sg-number">#${row.racing_number}</span>` : null}
+          </div>
+          ${row.team_name ? html`<div class="sg-team">${row.team_name}</div>` : null}
+        </div>
+        ${this.config.show_grid_delta !== false ? this._renderDelta(row) : null}
+        ${this._renderQualLine(row)}
+      </div>
+    `;
+  }
+
+  _renderTable(rows, layoutMode) {
+    const columns = this._columns(layoutMode);
+    const gridColumns = columns.map((col) => col.width).join(' ');
+    return html`
+      <div class="sg-scroll">
+        <div class="sg-table" style="--sg-columns: ${gridColumns};">
+          ${this.config.show_table_header !== false ? this._renderTableHeader(columns) : null}
+          ${rows.map((row) => this._renderTableRow(row, columns))}
+        </div>
+      </div>
+    `;
+  }
+
+  _columns(layoutMode = 'wide') {
+    const narrowLayout = layoutMode === 'narrow';
+    const driverWidth = this.config.show_full_name === true
+      ? (narrowLayout ? 'minmax(138px, 1.55fr)' : 'minmax(132px, 1.22fr)')
+      : (narrowLayout ? 'minmax(104px, 1.25fr)' : '104px');
+    const columns = [
+      { key: 'grid_position', label: 'Grid', width: '36px', center: true, compact: true },
+    ];
+    if (this.config.show_team_logo !== false) {
+      columns.push({ key: 'logo', label: '', width: '24px', center: true, compact: true, hideHeader: true });
+    }
+    columns.push({ key: 'driver', label: 'Driver', width: driverWidth, compact: true });
+    if (this.config.show_qualifying_position !== false) {
+      columns.push({ key: 'qualifying_position', label: 'Qual', width: '44px', center: true, groupStart: true });
+    }
+    if (this.config.show_grid_delta !== false) {
+      columns.push({ key: 'grid_delta', label: 'Delta', width: '48px', center: true });
+    }
+    if (this.config.show_qualifying_segment !== false && !narrowLayout) {
+      columns.push({ key: 'qualifying_segment', label: 'Seg', width: '48px', center: true, groupStart: true });
+    }
+    if (this.config.show_qualifying_time !== false) {
+      columns.push({ key: 'qualifying_time', label: 'Time', width: narrowLayout ? '86px' : '96px', center: true });
+    }
+    if (this.config.show_qualifying_delta === true) {
+      columns.push({ key: 'qualifying_delta', label: 'Gap', width: '56px', center: true });
+    }
+    return columns;
+  }
+
+  _renderTableHeader(columns) {
+    return html`
+      <div class="sg-row header">
+        ${columns.map((col) => {
+          const classes = ['sg-cell'];
+          if (col.center) classes.push('center');
+          if (col.compact) classes.push('compact');
+          if (col.groupStart) classes.push('group-start');
+          return html`<div class="${classes.join(' ')}">${col.hideHeader ? '' : col.label}</div>`;
+        })}
+      </div>
+    `;
+  }
+
+  _renderTableRow(row, columns) {
+    const classes = ['sg-row'];
+    if (row.changed_from_qualifying) classes.push('changed');
+    const style = row.team_color ? `--driver-color: ${row.team_color};` : '';
+    return html`
+      <div class="${classes.join(' ')}" style="${style}">
+        ${columns.map((col) => this._renderTableCell(row, col))}
+      </div>
+    `;
+  }
+
+  _renderTableCell(row, col) {
+    const classes = ['sg-cell'];
+    if (col.center) classes.push('center');
+    if (col.compact) classes.push('compact');
+    if (col.groupStart) classes.push('group-start');
+
+    if (col.key === 'grid_position') {
+      return html`<div class="${classes.join(' ')}">${row.grid_position ?? '--'}</div>`;
+    }
+    if (col.key === 'logo') {
+      return html`<div class="${classes.join(' ')}">${this._renderTeamLogo(row)}</div>`;
+    }
+    if (col.key === 'driver') {
+      return html`
+        <div class="${classes.join(' ')}">
+          <span class="sg-table-driver ${row.use_full_name ? 'full-name' : ''}">${row.display_driver}</span>
+        </div>
+      `;
+    }
+    if (col.key === 'qualifying_position') {
+      return html`<div class="${classes.join(' ')}">${row.qualifying_position ? `P${row.qualifying_position}` : '--'}</div>`;
+    }
+    if (col.key === 'grid_delta') {
+      return html`<div class="${classes.join(' ')}">${this._renderDelta(row)}</div>`;
+    }
+    if (col.key === 'qualifying_segment') {
+      return html`<div class="${classes.join(' ')}">${row.qualifying_segment || '--'}</div>`;
+    }
+    if (col.key === 'qualifying_time') {
+      return html`<div class="${classes.join(' ')}">${row.qualifying_time || '--:--.---'}</div>`;
+    }
+    if (col.key === 'qualifying_delta') {
+      return html`<div class="${classes.join(' ')}">${this._renderQualifyingDelta(row)}</div>`;
+    }
+
+    return html`<div class="${classes.join(' ')}">--</div>`;
+  }
+
+  _renderTeamLogo(row) {
+    if (this.config.show_team_logo === false || !row.team_logo) return null;
+    return html`
+      <img
+        class="sg-team-logo"
+        src="${row.team_logo.src}"
+        data-fallback="${row.team_logo.fallback || ''}"
+        loading="lazy"
+        @error=${handleTeamLogoError}
+        alt=""
+      />
+    `;
+  }
+
+  _renderDelta(row) {
+    const delta = row.grid_delta;
+    if (delta === null || delta === undefined) {
+      return html`<span class="sg-delta">--</span>`;
+    }
+    if (delta === 0) {
+      return html`<span class="sg-delta">0</span>`;
+    }
+    const className = delta < 0 ? 'forward' : 'back';
+    return html`<span class="sg-delta ${className}">${delta > 0 ? `+${delta}` : delta}</span>`;
+  }
+
+  _renderQualLine(row) {
+    const tokens = [];
+    if (this.config.show_qualifying_position !== false && row.qualifying_position) {
+      tokens.push(`Qual P${row.qualifying_position}`);
+    }
+    if (this.config.show_qualifying_segment !== false && row.qualifying_segment) {
+      tokens.push(row.qualifying_segment);
+    }
+    if (this.config.show_qualifying_time !== false && row.qualifying_time) {
+      tokens.push(row.qualifying_time);
+    }
+    const delta = this._qualifyingDeltaText(row);
+    if (this.config.show_qualifying_delta === true && delta) {
+      tokens.push({ label: delta, delta: true });
+    }
+    if (tokens.length === 0) return null;
+    return html`
+      <div class="sg-qual-line">
+        ${tokens.map((token) => {
+          const normalized = typeof token === 'object' ? token : { label: token };
+          return html`
+            <span class="sg-qual-token ${normalized.delta ? 'delta' : ''}">${normalized.label}</span>
+          `;
+        })}
+      </div>
+    `;
+  }
+
+  _buildRows(grid) {
+    const rows = asEntityList(grid)
+      .map((entry) => this._normalizeRow(entry))
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.grid_position !== null && b.grid_position !== null) {
+          const diff = a.grid_position - b.grid_position;
+          if (diff !== 0) return diff;
+          return this._compareRacingNumber(a.racing_number, b.racing_number);
+        }
+        if (a.grid_position !== null) return -1;
+        if (b.grid_position !== null) return 1;
+        return this._compareRacingNumber(a.racing_number, b.racing_number);
+      });
+    this._applyQualifyingDeltas(rows);
+    return rows;
+  }
+
+  _normalizeRow(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    const gridPosition = this._parsePosition(entry.grid_position);
+    const racingNumber = String(entry.racing_number ?? '').trim();
+    const display = resolveDriverDisplay(entry, this.config.show_full_name === true, racingNumber ? `#${racingNumber}` : '--');
+    const teamName = String(entry.team_name || '').trim();
+    const teamLogo = this.config.show_team_logo !== false && teamName
+      ? getTeamLogoMeta(teamName, 24, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config))
+      : null;
+    const qualifyingPosition = this._parsePosition(entry.qualifying_position);
+    const parsedDelta = this._parseSignedInt(entry.grid_delta);
+    const gridDelta = parsedDelta !== null
+      ? parsedDelta
+      : gridPosition !== null && qualifyingPosition !== null
+        ? gridPosition - qualifyingPosition
+        : null;
+
+    return {
+      grid_position: gridPosition,
+      qualifying_position: qualifyingPosition,
+      racing_number: racingNumber,
+      display_driver: display.label,
+      use_full_name: display.use_full_name,
+      team_name: teamName,
+      team_color: this._normalizeColor(entry.team_color),
+      team_logo: teamLogo,
+      qualifying_time: this._cleanText(entry.qualifying_time),
+      qualifying_time_secs: this._parseLapTimeSeconds(entry.qualifying_time_secs ?? entry.qualifying_time),
+      qualifying_segment: this._cleanText(entry.qualifying_segment),
+      grid_delta: gridDelta,
+      changed_from_qualifying: entry.changed_from_qualifying === true || (gridDelta !== null && gridDelta !== 0),
+    };
+  }
+
+  _applyQualifyingDeltas(rows) {
+    const times = rows
+      .map((row) => row.qualifying_time_secs)
+      .filter((value) => Number.isFinite(value) && value > 0);
+    if (times.length === 0) {
+      rows.forEach((row) => {
+        row.qualifying_delta = null;
+        row.qualifying_delta_secs = null;
+      });
+      return;
+    }
+    const fastest = Math.min(...times);
+    rows.forEach((row) => {
+      if (!Number.isFinite(row.qualifying_time_secs) || row.qualifying_time_secs <= 0) {
+        row.qualifying_delta = null;
+        row.qualifying_delta_secs = null;
+        return;
+      }
+      const delta = row.qualifying_time_secs - fastest;
+      row.qualifying_delta_secs = delta;
+      row.qualifying_delta = formatF1DeltaSeconds(delta, '0.000');
+    });
+  }
+
+  _pairRows(rows) {
+    const pairs = [];
+    rows.forEach((row) => {
+      const position = row.grid_position;
+      if (!Number.isFinite(position) || position <= 0) return;
+      const index = Math.floor((position - 1) / 2);
+      if (!pairs[index]) {
+        pairs[index] = { row: index + 1, left: null, right: null };
+      }
+      if (position % 2 === 1) {
+        pairs[index].left = row;
+      } else {
+        pairs[index].right = row;
+      }
+    });
+    return pairs.filter(Boolean);
+  }
+
+  _statusValue(attrs) {
+    return String(attrs?.status || '').trim().toLowerCase();
+  }
+
+  _statusLabel(status, rows = []) {
+    if (status === 'waiting_for_sprint_qualifying') return 'Waiting for SQ';
+    if (status === 'waiting_for_qualifying') return 'Waiting for Q';
+    if (status === 'collecting') return 'Collecting';
+    if (status === 'provisional') return 'Provisional';
+    if (status === 'confirmed') return 'Confirmed';
+    if (status === 'completed') return 'Completed';
+    return rows.length > 0 ? 'Available' : 'No data';
+  }
+
+  _statusTone(status) {
+    if (status === 'confirmed') return 'success';
+    if (status === 'provisional') return 'warning';
+    if (status === 'collecting') return 'info';
+    if (status === 'completed') return 'neutral';
+    return 'muted';
+  }
+
+  _sourceLabel(source) {
+    if (source === 'live_timing_gridpos') return 'GridPos';
+    if (source === 'live_timing_qualifying') return 'Live qualifying';
+    if (source === 'live_timing_archive') return 'Archive';
+    return source.replace(/_/g, ' ');
+  }
+
+  _sourceTone(source) {
+    if (source === 'live_timing_gridpos') return 'success';
+    if (source === 'live_timing_archive') return 'warning';
+    if (source === 'live_timing_qualifying') return 'info';
+    return 'muted';
+  }
+
+  _sessionLabel(attrs) {
+    const target = this._cleanText(attrs?.target_session_name);
+    if (target) return target;
+    const context = String(attrs?.grid_context || '').trim().toLowerCase();
+    if (context === 'sprint') return 'Sprint';
+    if (context === 'race') return 'Race';
+    return null;
+  }
+
+  _weekendFormatLabel(value) {
+    const format = String(value || '').trim().toLowerCase();
+    if (format === 'sprint') return 'Sprint weekend';
+    if (format === 'normal') return 'Race weekend';
+    return null;
+  }
+
+  _emptyMessage(stateObj, attrs) {
+    const status = this._statusValue(attrs) || String(stateObj?.state || '').trim().toLowerCase();
+    if (status === 'waiting_for_sprint_qualifying') return 'Waiting for Sprint Qualifying before a sprint grid is available';
+    if (status === 'waiting_for_qualifying') return 'Waiting for Qualifying before a race grid is available';
+    if (status === 'collecting') return 'Collecting starting grid data';
+    if (status === 'completed') return 'No active starting grid. The relevant start has completed';
+    if (String(attrs?.grid_context || '').trim().toLowerCase() === 'none') return 'No active starting grid';
+    return 'No starting grid data';
+  }
+
+  _formatDateTime(value) {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString(undefined, {
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  _parsePosition(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return Math.trunc(parsed);
+  }
+
+  _parseSignedInt(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.trunc(parsed);
+  }
+
+  _parseLapTimeSeconds(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const sections = text.split(':');
+    const secPart = sections.pop();
+    if (!secPart || !secPart.includes('.')) return null;
+    const [secWhole, msPart] = secPart.split('.');
+    if (!/^\d+$/.test(secWhole) || !/^\d+$/.test(msPart)) return null;
+    let total = Number(secWhole);
+    total += Number(msPart.padEnd(3, '0').slice(0, 3)) / 1000;
+    let multiplier = 60;
+    for (let i = sections.length - 1; i >= 0; i -= 1) {
+      const unit = sections[i];
+      if (!/^\d+$/.test(unit)) return null;
+      total += Number(unit) * multiplier;
+      multiplier *= 60;
+    }
+    return Number.isFinite(total) && total > 0 ? total : null;
+  }
+
+  _qualifyingDeltaText(row) {
+    if (!row || !Number.isFinite(row.qualifying_delta_secs)) return null;
+    return row.qualifying_delta || formatF1DeltaSeconds(row.qualifying_delta_secs, '0.000');
+  }
+
+  _renderQualifyingDelta(row) {
+    const delta = this._qualifyingDeltaText(row);
+    return delta ? html`<span class="sg-qual-token delta">${delta}</span>` : html`--`;
+  }
+
+  _compareRacingNumber(a, b) {
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (Number.isFinite(aNum) && Number.isFinite(bNum)) return aNum - bNum;
+    return String(a || '').localeCompare(String(b || ''));
+  }
+
+  _normalizeColor(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (text.startsWith('#') || text.startsWith('rgb')) return text;
+    if (/^[0-9a-fA-F]{6}$/.test(text)) return `#${text}`;
+    return text;
+  }
+
+  _cleanText(value) {
+    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    return text || null;
+  }
+
+  _handleCardAction() {
+    const action = this.config?.tap_action || { action: 'more-info' };
+    if (!this.config?.entity) return;
+    if (action.action === 'none') return;
+    if (action.action === 'more-info') {
+      this.dispatchEvent(new CustomEvent('hass-more-info', {
+        bubbles: true,
+        composed: true,
+        detail: { entityId: this.config.entity },
+      }));
+    }
+  }
+}
+
+class F1StartingGridCardEditor extends LitElement {
+  static properties = {
+    hass: {},
+    _config: {},
+    _activeTab: { state: true },
+  };
+
+  static styles = css`
+    .card-config {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--divider-color);
+      margin-bottom: 16px;
+    }
+
+    .tabs button {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary-text-color);
+      font-size: 14px;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+
+    .tabs button:hover {
+      color: var(--primary-color);
+    }
+
+    .tabs button.active {
+      color: var(--primary-color);
+      border-bottom: 2px solid var(--primary-color);
+      margin-bottom: -1px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--secondary-text-color);
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .helper {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      padding-left: 16px;
+      line-height: 1.4;
+    }
+
+    .warning {
+      font-size: 12px;
+      color: var(--error-color);
+      padding-left: 16px;
+    }
+
+    ha-textfield {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    ha-form {
+      width: 100%;
+    }
+  `;
+
+  constructor() {
+    super();
+    this._activeTab = 'sources';
+  }
+
+  setConfig(config) {
+    this._config = { ...config };
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    return html`
+      <div class="card-config">
+        <div class="tabs">
+          <button
+            class=${this._activeTab === 'sources' ? 'active' : ''}
+            @click=${() => { this._activeTab = 'sources'; }}
+          >
+            Data Sources
+          </button>
+          <button
+            class=${this._activeTab === 'display' ? 'active' : ''}
+            @click=${() => { this._activeTab = 'display'; }}
+          >
+            Display
+          </button>
+        </div>
+
+        ${this._activeTab === 'sources'
+          ? this._renderDataSourcesTab()
+          : this._renderDisplayTab()}
+      </div>
+    `;
+  }
+
+  _renderDataSourcesTab() {
+    return html`
+      <div class="section">
+        <div class="section-header">REQUIRED</div>
+        ${this._renderEntityPicker(
+          'entity',
+          'Starting Grid Sensor',
+          'Provides the active Sprint or Race starting grid and data status',
+          true,
+        )}
+      </div>
+    `;
+  }
+
+  _renderDisplayTab() {
+    return html`
+      <div class="section">
+        ${renderThemeModeSelect(this)}
+        <ha-textfield
+          .label=${'Title'}
+          .value=${this._config.title || ''}
+          @input=${(e) => this._valueChanged('title', e.target.value)}
+        ></ha-textfield>
+
+        ${renderEditorSelect(this, 'display_mode', 'Display mode', [
+          { value: 'grid', label: 'Starting grid' },
+          { value: 'table', label: 'Timing table' },
+        ])}
+
+        ${this._renderSwitch('show_header', 'Show header')}
+        ${this._config.display_mode === 'table'
+          ? this._renderSwitch('show_table_header', 'Show column headers')
+          : null}
+        ${this._renderSwitch('show_metadata', 'Show data summary')}
+        ${this._renderSwitch('show_status_badge', 'Show status badge')}
+        ${this._renderSwitch('show_source_badge', 'Show source badge')}
+        ${this._renderSwitch('show_team_logo', 'Show team logo')}
+        ${this._renderSwitch('show_full_name', 'Use full driver name', 'Shows full driver names instead of TLA when available')}
+        ${this._renderSwitch('show_qualifying_position', 'Show qualifying position')}
+        ${this._renderSwitch('show_grid_delta', 'Show grid delta')}
+        ${this._renderSwitch('show_qualifying_segment', 'Show qualifying segment')}
+        ${this._renderSwitch('show_qualifying_time', 'Show qualifying time')}
+        ${this._renderSwitch('show_qualifying_delta', 'Show qualifying delta', 'Shows the gap to the fastest qualifying time when qualifying time is available')}
+
+        ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
+          { value: 'color', label: 'Color (fallback to white)' },
+          { value: 'white', label: 'White' },
+        ])}
+      </div>
+    `;
+  }
+
+  _renderEntityPicker(name, label, helper, required) {
+    const value = this._config[name];
+    const showWarning = required && !value;
+    const schema = [{ name, label, required, selector: { entity: { domain: 'sensor' } } }];
+
+    return html`
+      <div class="field">
+        <ha-form
+          .hass=${this.hass}
+          .data=${this._config}
+          .schema=${schema}
+          .computeLabel=${() => label}
+          @value-changed=${this._formValueChanged}
+        ></ha-form>
+        <div class="helper">${helper}</div>
+        ${showWarning ? html`
+          <div class="warning">This sensor is required for the card to function</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  _renderSwitch(name, label, helper = null) {
+    const schema = [{ name, label, selector: { boolean: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _formValueChanged(ev) {
+    if (!this._config) return;
+    const value = ev.detail?.value || {};
+    const newConfig = { ...this._config, ...value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+
+  _valueChanged(name, value) {
+    if (!this._config) return;
+    const newConfig = { ...this._config, [name]: value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+}
+
 installSectionsAutoHeight(F1TyreStatisticsCard, {
   columns: 12,
   min_columns: 4,
@@ -22408,6 +23799,13 @@ installSectionsAutoHeight(F1RaceLapCard, {
   min_columns: 4,
   max_columns: 12,
   min_rows: 10,
+});
+
+installSectionsAutoHeight(F1StartingGridCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 8,
 });
 
 
@@ -22538,6 +23936,14 @@ if (!customElements.get('f1-race-lap-card-editor')) {
   customElements.define('f1-race-lap-card-editor', F1RaceLapCardEditor);
 }
 
+if (!customElements.get('f1-starting-grid-card')) {
+  customElements.define('f1-starting-grid-card', F1StartingGridCard);
+}
+
+if (!customElements.get('f1-starting-grid-card-editor')) {
+  customElements.define('f1-starting-grid-card-editor', F1StartingGridCardEditor);
+}
+
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'f1-sensor-live-data-card',
@@ -22663,6 +24069,14 @@ window.customCards.push({
   type: 'f1-race-lap-card',
   name: 'F1 Race Lap',
   description: 'Race-only timing table with lap count title, tyre age, fastest lap highlights, and pit stops for Replay Mode or live with F1TV access',
+  configurable: true,
+  preview: true,
+});
+
+window.customCards.push({
+  type: 'f1-starting-grid-card',
+  name: 'F1 Starting Grid',
+  description: 'Starting grid for the active Sprint or Race with source and data status badges',
   configurable: true,
   preview: true,
 });
