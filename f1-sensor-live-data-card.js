@@ -373,6 +373,114 @@ const isUnavailableLikeEntityState = (entityState) => {
   return state === 'unavailable' || state === 'unknown';
 };
 
+const DEFAULT_F1TV_AUTH_STATUS_ENTITY = 'sensor.f1_f1tv_token_status';
+const F1TV_AUTH_ATTENTION_STATES = new Set(['expired', 'invalid', 'rejected']);
+
+const findF1TvAuthStatusEntity = (hass) => {
+  const states = hass?.states || {};
+  const candidates = Object.values(states).filter((entityState) => {
+    const entityId = String(entityState?.entity_id || '').toLowerCase();
+    const attrs = entityState?.attributes || {};
+    return entityId.includes('f1tv_token_status')
+      || attrs.auth_configured !== undefined
+      || attrs.used_for_live_timing !== undefined;
+  });
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => {
+    const aId = String(a?.entity_id || '').toLowerCase();
+    const bId = String(b?.entity_id || '').toLowerCase();
+    if (aId === DEFAULT_F1TV_AUTH_STATUS_ENTITY) return -1;
+    if (bId === DEFAULT_F1TV_AUTH_STATUS_ENTITY) return 1;
+    if (aId.includes('f1tv_token_status') && !bId.includes('f1tv_token_status')) return -1;
+    if (!aId.includes('f1tv_token_status') && bId.includes('f1tv_token_status')) return 1;
+    return aId.localeCompare(bId);
+  });
+  return candidates[0];
+};
+
+const resolveF1TvAuthStatus = (hass, entityId) => {
+  const configuredEntityId = String(entityId || DEFAULT_F1TV_AUTH_STATUS_ENTITY).trim()
+    || DEFAULT_F1TV_AUTH_STATUS_ENTITY;
+  const entityState = getEntityStateWithFallback(hass, configuredEntityId)
+    || findF1TvAuthStatusEntity(hass);
+  if (!entityState || isUnavailableLikeEntityState(entityState)) {
+    return {
+      available: false,
+      configured: false,
+      state: null,
+      usedForLiveTiming: false,
+      needsAttention: false,
+    };
+  }
+
+  const state = String(entityState.state || '').trim().toLowerCase();
+  const attrs = entityState.attributes || {};
+  const configured = attrs.auth_configured === true
+    || (attrs.auth_configured !== false && Boolean(state) && state !== 'not_configured');
+
+  return {
+    available: true,
+    configured,
+    state,
+    usedForLiveTiming: attrs.used_for_live_timing === true,
+    needsAttention: F1TV_AUTH_ATTENTION_STATES.has(state),
+  };
+};
+
+const buildF1DataAvailabilityNotice = (hass, config, feature) => {
+  const isPitStop = feature === 'pit_stops';
+  const authStatus = resolveF1TvAuthStatus(hass, config?.auth_status_entity);
+  const noticeHidden = config?.show_availability_notice === false;
+
+  if (authStatus.needsAttention) {
+    return {
+      tone: 'warning',
+      message: isPitStop
+        ? 'F1TV access needs attention, so live pit stop data is hidden. Replay data remains available.'
+        : 'F1TV access needs attention, so live predicted points are hidden. Replay data remains available.',
+    };
+  }
+
+  if (noticeHidden) return null;
+
+  if (!authStatus.available) {
+    return {
+      tone: 'info',
+      message: isPitStop
+        ? 'Pit stop data is available in Replay Mode or live when F1TV access is active.'
+        : 'Predicted points are available in Replay Mode or live when F1TV access is active.',
+    };
+  }
+
+  if (!authStatus.configured || authStatus.state === 'not_configured') {
+    return {
+      tone: 'info',
+      message: isPitStop
+        ? 'Pit stop data is hidden because F1TV access is not configured. It is still available in Replay Mode.'
+        : 'Predicted points are hidden because F1TV access is not configured. They are still available in Replay Mode.',
+    };
+  }
+
+  return null;
+};
+
+const resolveF1DataAvailabilityNotice = (
+  hass,
+  config,
+  feature,
+  dataUnavailable,
+  featureEnabled = true,
+) => {
+  if (!dataUnavailable || !featureEnabled) return null;
+  return buildF1DataAvailabilityNotice(hass, config, feature);
+};
+
+const renderF1AvailabilityNotice = (notice, className) => (
+  notice
+    ? html`<div class="${className} ${notice.tone}">${notice.message}</div>`
+    : null
+);
+
 const getStateAgeSeconds = (state, field = 'last_changed') => {
   const rawValue = state?.[field] || state?.last_updated || null;
   if (!rawValue) return null;
@@ -1870,6 +1978,18 @@ class F1PitStopOverviewCard extends LitElement {
       line-height: 1.4;
     }
 
+    .ps-replay-note.info {
+      background: rgba(59, 130, 246, 0.08);
+      border-color: rgba(96, 165, 250, 0.20);
+      color: #bfdbfe;
+    }
+
+    .ps-replay-note.warning {
+      background: rgba(251, 191, 36, 0.10);
+      border-color: rgba(251, 191, 36, 0.24);
+      color: #fde68a;
+    }
+
     @media (max-width: 720px) {
       .ps-card {
         padding: 12px 10px 12px;
@@ -1908,6 +2028,8 @@ class F1PitStopOverviewCard extends LitElement {
       tyres_entity: 'sensor.f1_current_tyres',
       pitstops_entity: 'sensor.f1_pitstops',
       positions_entity: 'sensor.f1_driver_positions',
+      auth_status_entity: DEFAULT_F1TV_AUTH_STATUS_ENTITY,
+      show_availability_notice: true,
       ...config,
     };
     applyF1ThemeMode(this, this.config);
@@ -1988,6 +2110,13 @@ class F1PitStopOverviewCard extends LitElement {
     const pitStopsReplayOnly = Boolean(
       this.config.pitstops_entity && (!pitState || isUnavailableLikeEntityState(pitState)),
     );
+    const pitAvailabilityNotice = resolveF1DataAvailabilityNotice(
+      this.hass,
+      this.config,
+      'pit_stops',
+      pitStopsReplayOnly,
+      this._pitColumnsEnabled(),
+    );
     const positionsState = this.config.positions_entity
       ? getEntityStateWithFallback(this.hass, this.config.positions_entity)
       : null;
@@ -2006,9 +2135,7 @@ class F1PitStopOverviewCard extends LitElement {
       return html`
         <ha-card>
           <div class="ps-card">
-            ${pitStopsReplayOnly
-              ? html`<div class="ps-replay-note">Pit stop data is available in Replay Mode only</div>`
-              : null}
+            ${renderF1AvailabilityNotice(pitAvailabilityNotice, 'ps-replay-note')}
             <div class="ps-empty">No driver data</div>
           </div>
         </ha-card>
@@ -2021,9 +2148,7 @@ class F1PitStopOverviewCard extends LitElement {
           ${this.config.show_header
             ? html`<div class="ps-header">${this.config.title || 'Pit Stops & Tyres'}</div>`
             : null}
-          ${pitStopsReplayOnly
-            ? html`<div class="ps-replay-note">Pit stop data is available in Replay Mode only</div>`
-            : null}
+          ${renderF1AvailabilityNotice(pitAvailabilityNotice, 'ps-replay-note')}
           <div class="ps-table" data-layout=${layoutMode} style="--ps-columns: ${gridColumns};">
             ${this.config.show_table_header ? this._renderHeader(columns) : null}
             ${rows.map((row) => this._renderRow(row, columns))}
@@ -2031,6 +2156,13 @@ class F1PitStopOverviewCard extends LitElement {
         </div>
       </ha-card>
     `;
+  }
+
+  _pitColumnsEnabled() {
+    return this.config.show_pit_count !== false
+      || this.config.show_pit_time !== false
+      || this.config.show_pit_lane_time !== false
+      || this.config.show_pit_delta !== false;
   }
 
   _columns(rows, layoutMode = 'wide', suppressPit = false) {
@@ -2779,7 +2911,11 @@ class F1PitStopOverviewCardEditor extends LitElement {
   }
 
   setConfig(config) {
-    this._config = { ...config };
+    this._config = {
+      auth_status_entity: DEFAULT_F1TV_AUTH_STATUS_ENTITY,
+      show_availability_notice: true,
+      ...config,
+    };
   }
 
   render() {
@@ -2829,8 +2965,8 @@ class F1PitStopOverviewCardEditor extends LitElement {
         )}
         ${this._renderEntityPicker(
           'pitstops_entity',
-          'Pit Stops Sensor (Replay Mode only)',
-          'Provides pit stop times, lane times, and deltas. This sensor is only available during Replay Mode sessions.',
+          'Pit Stops Sensor',
+          'Provides pit stop times, lane times, and deltas when data is available in Replay Mode or live with active F1TV access.',
           true,
           'sensor'
         )}
@@ -2841,6 +2977,13 @@ class F1PitStopOverviewCardEditor extends LitElement {
           'positions_entity',
           'Driver Positions Sensor',
           'Provides race positions and status flags. Enables status column.',
+          false,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'auth_status_entity',
+          'F1TV Token Status Sensor',
+          'Optional. Lets the card explain whether live-only data is unavailable because F1TV access is not configured or needs attention.',
           false,
           'sensor'
         )}
@@ -2875,10 +3018,15 @@ class F1PitStopOverviewCardEditor extends LitElement {
 
         ${this._renderSwitch('show_status', 'Show status')}
         ${this._renderSwitch('show_tyre', 'Show tyre')}
-        ${this._renderSwitch('show_pit_count', 'Show pit stop count (Replay Mode only)')}
-        ${this._renderSwitch('show_pit_time', 'Show pit stop time (Replay Mode only)')}
-        ${this._renderSwitch('show_pit_lane_time', 'Show pit lane time (Replay Mode only)')}
-        ${this._renderSwitch('show_pit_delta', 'Show pit stop delta (Replay Mode only)')}
+        ${this._renderSwitch('show_pit_count', 'Show pit stop count')}
+        ${this._renderSwitch('show_pit_time', 'Show pit stop time')}
+        ${this._renderSwitch('show_pit_lane_time', 'Show pit lane time')}
+        ${this._renderSwitch('show_pit_delta', 'Show pit stop delta')}
+        ${this._renderSwitch(
+          'show_availability_notice',
+          'Show data availability notice',
+          'Shows a small note when pit stop data is hidden because live F1TV access is not active.'
+        )}
       </div>
     `;
   }
@@ -4468,6 +4616,18 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       line-height: 1.4;
     }
 
+    .cpd-replay-note.info {
+      background: rgba(59, 130, 246, 0.08);
+      border-color: rgba(96, 165, 250, 0.20);
+      color: #bfdbfe;
+    }
+
+    .cpd-replay-note.warning {
+      background: rgba(251, 191, 36, 0.10);
+      border-color: rgba(251, 191, 36, 0.24);
+      color: #fde68a;
+    }
+
     @media (max-width: 720px) {
       .cpd-card {
         padding: 12px 10px 12px;
@@ -4504,6 +4664,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       session_entity: 'sensor.f1_current_session',
       session_status_entity: 'sensor.f1_session_status',
       no_spoiler_entity: 'switch.f1_no_spoiler_mode',
+      auth_status_entity: DEFAULT_F1TV_AUTH_STATUS_ENTITY,
       show_header: true,
       show_mode_badge: true,
       show_table_header: true,
@@ -4516,6 +4677,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       show_predicted_points: true,
       show_current_points: true,
       show_delta: true,
+      show_availability_notice: true,
       top_limit: 0,
       ...config,
     };
@@ -4605,6 +4767,13 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     const predictionReplayOnly = Boolean(
       this.config.entity && (!predictionState || isUnavailableLikeEntityState(predictionState)),
     );
+    const predictionAvailabilityNotice = resolveF1DataAvailabilityNotice(
+      this.hass,
+      this.config,
+      'predicted_points',
+      predictionReplayOnly,
+      this.config.show_predicted_points !== false,
+    );
     const useLiveRaceBase = hasCurrentData
       && hasPredictionData
       && isRaceSessionActive(sessionState, sessionStatusState);
@@ -4645,7 +4814,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
         return this._renderEmpty('Current standings entity not found', mode, spoilerBlocked);
       }
       if (predictionReplayOnly) {
-        return this._renderEmpty('Predicted points available in Replay Mode only', mode, spoilerBlocked);
+        return this._renderEmpty('Prediction data unavailable', mode, spoilerBlocked, predictionAvailabilityNotice);
       }
       return this._renderEmpty('No standings data', mode, spoilerBlocked);
     }
@@ -4653,7 +4822,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
-      return this._renderEmpty(emptyMessage, mode, spoilerBlocked, predictionReplayOnly);
+      return this._renderEmpty(emptyMessage, mode, spoilerBlocked, predictionAvailabilityNotice);
     }
 
     return html`
@@ -4667,9 +4836,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
               </div>
             `
             : null}
-          ${predictionReplayOnly
-            ? html`<div class="cpd-replay-note">Predicted points available in Replay Mode only</div>`
-            : null}
+          ${renderF1AvailabilityNotice(predictionAvailabilityNotice, 'cpd-replay-note')}
           <div class="cpd-table" style="--cpd-columns: ${gridColumns};">
             ${this.config.show_table_header ? this._renderHeader(columns) : null}
             ${rows.map((row) => this._renderRow(row, columns))}
@@ -4679,7 +4846,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     `;
   }
 
-  _renderEmpty(message, mode = 'current', spoilerBlocked = false, replayOnly = false) {
+  _renderEmpty(message, mode = 'current', spoilerBlocked = false, availabilityNotice = null) {
     return html`
       <ha-card>
         <div class="cpd-card" data-layout=${getResponsiveLayoutMode(this)}>
@@ -4691,9 +4858,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
               </div>
             `
             : null}
-          ${replayOnly
-            ? html`<div class="cpd-replay-note">Predicted points available in Replay Mode only</div>`
-            : null}
+          ${renderF1AvailabilityNotice(availabilityNotice, 'cpd-replay-note')}
           <div class="cpd-empty">${message}</div>
         </div>
       </ha-card>
@@ -4701,8 +4866,8 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
   }
 
   _modeLabel(mode) {
-    if (mode === 'live') return 'LIVE PROJECTION';
-    if (mode === 'live-current') return 'LIVE CURRENT';
+    if (mode === 'live') return 'PROJECTION';
+    if (mode === 'live-current') return 'CURRENT';
     if (mode === 'legacy') return 'PREDICTION ONLY';
     return 'CURRENT';
   }
@@ -5558,6 +5723,18 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       line-height: 1.4;
     }
 
+    .cpt-replay-note.info {
+      background: rgba(59, 130, 246, 0.08);
+      border-color: rgba(96, 165, 250, 0.20);
+      color: #bfdbfe;
+    }
+
+    .cpt-replay-note.warning {
+      background: rgba(251, 191, 36, 0.10);
+      border-color: rgba(251, 191, 36, 0.24);
+      color: #fde68a;
+    }
+
     @media (max-width: 720px) {
       .cpt-card {
         padding: 12px 10px 12px;
@@ -5593,6 +5770,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       session_entity: 'sensor.f1_current_session',
       session_status_entity: 'sensor.f1_session_status',
       no_spoiler_entity: 'switch.f1_no_spoiler_mode',
+      auth_status_entity: DEFAULT_F1TV_AUTH_STATUS_ENTITY,
       show_header: true,
       show_mode_badge: true,
       show_table_header: true,
@@ -5603,6 +5781,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       show_predicted_points: true,
       show_current_points: true,
       show_delta: true,
+      show_availability_notice: true,
       top_limit: 0,
       ...config,
     };
@@ -5686,6 +5865,13 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     const predictionReplayOnly = Boolean(
       this.config.entity && (!predictionState || isUnavailableLikeEntityState(predictionState)),
     );
+    const predictionAvailabilityNotice = resolveF1DataAvailabilityNotice(
+      this.hass,
+      this.config,
+      'predicted_points',
+      predictionReplayOnly,
+      this.config.show_predicted_points !== false,
+    );
     const useLiveRaceBase = hasCurrentData
       && hasPredictionData
       && isRaceSessionActive(sessionState, sessionStatusState);
@@ -5725,7 +5911,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
         return this._renderEmpty('Current standings entity not found', mode, spoilerBlocked);
       }
       if (predictionReplayOnly) {
-        return this._renderEmpty('Predicted points available in Replay Mode only', mode, spoilerBlocked);
+        return this._renderEmpty('Prediction data unavailable', mode, spoilerBlocked, predictionAvailabilityNotice);
       }
       return this._renderEmpty('No standings data', mode, spoilerBlocked);
     }
@@ -5733,7 +5919,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
-      return this._renderEmpty(emptyMessage, mode, spoilerBlocked, predictionReplayOnly);
+      return this._renderEmpty(emptyMessage, mode, spoilerBlocked, predictionAvailabilityNotice);
     }
 
     return html`
@@ -5747,9 +5933,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
               </div>
             `
             : null}
-          ${predictionReplayOnly
-            ? html`<div class="cpt-replay-note">Predicted points available in Replay Mode only</div>`
-            : null}
+          ${renderF1AvailabilityNotice(predictionAvailabilityNotice, 'cpt-replay-note')}
           <div class="cpt-table" style="--cpt-columns: ${gridColumns};">
             ${this.config.show_table_header ? this._renderHeader(columns) : null}
             ${rows.map((row) => this._renderRow(row, columns))}
@@ -5759,7 +5943,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     `;
   }
 
-  _renderEmpty(message, mode = 'current', spoilerBlocked = false, replayOnly = false) {
+  _renderEmpty(message, mode = 'current', spoilerBlocked = false, availabilityNotice = null) {
     return html`
       <ha-card>
         <div class="cpt-card" data-layout=${getResponsiveLayoutMode(this)}>
@@ -5771,9 +5955,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
               </div>
             `
             : null}
-          ${replayOnly
-            ? html`<div class="cpt-replay-note">Predicted points available in Replay Mode only</div>`
-            : null}
+          ${renderF1AvailabilityNotice(availabilityNotice, 'cpt-replay-note')}
           <div class="cpt-empty">${message}</div>
         </div>
       </ha-card>
@@ -5781,8 +5963,8 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
   }
 
   _modeLabel(mode) {
-    if (mode === 'live') return 'LIVE PROJECTION';
-    if (mode === 'live-current') return 'LIVE CURRENT';
+    if (mode === 'live') return 'PROJECTION';
+    if (mode === 'live-current') return 'CURRENT';
     if (mode === 'legacy') return 'PREDICTION ONLY';
     return 'CURRENT';
   }
@@ -6324,6 +6506,7 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
       session_entity: 'sensor.f1_current_session',
       session_status_entity: 'sensor.f1_session_status',
       no_spoiler_entity: 'switch.f1_no_spoiler_mode',
+      auth_status_entity: DEFAULT_F1TV_AUTH_STATUS_ENTITY,
       show_header: true,
       show_mode_badge: true,
       show_table_header: true,
@@ -6336,6 +6519,7 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
       show_predicted_points: true,
       show_current_points: true,
       show_delta: true,
+      show_availability_notice: true,
       top_limit: 0,
       ...config,
     };
@@ -6381,11 +6565,11 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
         )}
       </div>
       <div class="section">
-        <div class="section-header">RACE PROJECTION SOURCES (Replay Mode only)</div>
+        <div class="section-header">RACE PROJECTION SOURCES</div>
         ${this._renderEntityPicker(
           'entity',
-          'Prediction Sensor (Replay Mode only)',
-          'Adds projected points during Race sessions. This sensor is only available during Replay Mode.',
+          'Prediction Sensor',
+          'Adds projected points during race sessions when data is available in Replay Mode or live with active F1TV access.',
           false,
           'sensor'
         )}
@@ -6414,6 +6598,13 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
           'drivers_entity',
           'Driver List Sensor',
           'Provides TLA, team names, and team colors to match prediction data during live race',
+          false,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'auth_status_entity',
+          'F1TV Token Status Sensor',
+          'Optional. Lets the card explain whether live-only data is unavailable because F1TV access is not configured or needs attention.',
           false,
           'sensor'
         )}
@@ -6468,14 +6659,19 @@ class F1ChampionshipPredictionDriversCardEditor extends LitElement {
 
         ${this._renderSwitch(
           'show_predicted_points',
-          'Show projection during race (Replay Mode only)',
-          'Prediction data is only available during Replay Mode sessions. Current standings are always shown regardless of mode.'
+          'Show projection during race',
+          'Prediction data appears when available in Replay Mode or live with active F1TV access. Current standings are always shown regardless of mode.'
         )}
         ${this._renderSwitch('show_current_points', 'Show current points')}
         ${this._renderSwitch(
           'show_delta',
           'Show points delta',
-          'Shown only when projection is visible (Replay Mode only)'
+          'Shown only when projection is visible'
+        )}
+        ${this._renderSwitch(
+          'show_availability_notice',
+          'Show data availability notice',
+          'Shows a small note when projected points are hidden because live F1TV access is not active.'
         )}
 
         <ha-textfield
@@ -6680,6 +6876,7 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
       session_entity: 'sensor.f1_current_session',
       session_status_entity: 'sensor.f1_session_status',
       no_spoiler_entity: 'switch.f1_no_spoiler_mode',
+      auth_status_entity: DEFAULT_F1TV_AUTH_STATUS_ENTITY,
       show_header: true,
       show_mode_badge: true,
       show_table_header: true,
@@ -6690,6 +6887,7 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
       show_predicted_points: true,
       show_current_points: true,
       show_delta: true,
+      show_availability_notice: true,
       top_limit: 0,
       ...config,
     };
@@ -6735,11 +6933,11 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
         )}
       </div>
       <div class="section">
-        <div class="section-header">RACE PROJECTION SOURCES (Replay Mode only)</div>
+        <div class="section-header">RACE PROJECTION SOURCES</div>
         ${this._renderEntityPicker(
           'entity',
-          'Prediction Sensor (Replay Mode only)',
-          'Adds projected points during Race sessions. This sensor is only available during Replay Mode.',
+          'Prediction Sensor',
+          'Adds projected points during race sessions when data is available in Replay Mode or live with active F1TV access.',
           false,
           'sensor'
         )}
@@ -6763,6 +6961,13 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
           'Masks points and delta columns when the integration no-spoiler mode is active',
           false,
           'switch'
+        )}
+        ${this._renderEntityPicker(
+          'auth_status_entity',
+          'F1TV Token Status Sensor',
+          'Optional. Lets the card explain whether live-only data is unavailable because F1TV access is not configured or needs attention.',
+          false,
+          'sensor'
         )}
       </div>
     `;
@@ -6792,14 +6997,19 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
 
         ${this._renderSwitch(
           'show_predicted_points',
-          'Show projection during race (Replay Mode only)',
-          'Prediction data is only available during Replay Mode sessions. Current standings are always shown regardless of mode.'
+          'Show projection during race',
+          'Prediction data appears when available in Replay Mode or live with active F1TV access. Current standings are always shown regardless of mode.'
         )}
         ${this._renderSwitch('show_current_points', 'Show current points')}
         ${this._renderSwitch(
           'show_delta',
           'Show points delta',
-          'Shown only when projection is visible (Replay Mode only)'
+          'Shown only when projection is visible'
+        )}
+        ${this._renderSwitch(
+          'show_availability_notice',
+          'Show data availability notice',
+          'Shows a small note when projected points are hidden because live F1TV access is not active.'
         )}
 
         <ha-textfield
@@ -20544,6 +20754,18 @@ class F1RaceLapCard extends LitElement {
       line-height: 1.4;
     }
 
+    .rl-replay-note.info {
+      background: rgba(59, 130, 246, 0.08);
+      border-color: rgba(96, 165, 250, 0.20);
+      color: #bfdbfe;
+    }
+
+    .rl-replay-note.warning {
+      background: rgba(251, 191, 36, 0.10);
+      border-color: rgba(251, 191, 36, 0.24);
+      color: #fde68a;
+    }
+
     @media (max-width: 720px) {
       .rl-card {
         padding: 12px 10px 12px;
@@ -20585,6 +20807,8 @@ class F1RaceLapCard extends LitElement {
       drivers_entity: 'sensor.f1_driver_list',
       tyres_entity: 'sensor.f1_current_tyres',
       pitstops_entity: 'sensor.f1_pitstops',
+      auth_status_entity: DEFAULT_F1TV_AUTH_STATUS_ENTITY,
+      show_availability_notice: true,
       ...config,
     };
     applyF1ThemeMode(this, this.config);
@@ -20712,6 +20936,7 @@ class F1RaceLapCard extends LitElement {
     let title = String(this.config.title || 'Race Lap').trim() || 'Race Lap';
     let suppressPit = false;
     let pitStopsReplayOnly = false;
+    let pitAvailabilityNotice = null;
     const positionsMissing = !positionsState;
     if (positionsState && !isUnavailableLikeEntityState(positionsState)) {
       const positionDrivers = this._asDriversList(positionsState?.attributes?.drivers);
@@ -20745,6 +20970,13 @@ class F1RaceLapCard extends LitElement {
         this.config.pitstops_entity && pitState && isUnavailableLikeEntityState(pitState),
       );
       suppressPit = Boolean(this.config.pitstops_entity) && !pitDataAvailable;
+      pitAvailabilityNotice = resolveF1DataAvailabilityNotice(
+        this.hass,
+        this.config,
+        'pit_stops',
+        pitStopsReplayOnly,
+        this.config.show_pit_count !== false,
+      );
 
       rows = this._buildRows(
         positionDrivers,
@@ -20763,6 +20995,13 @@ class F1RaceLapCard extends LitElement {
         title = snapshot.title || title;
         suppressPit = snapshot.suppressPit === true;
         pitStopsReplayOnly = snapshot.pitStopsReplayOnly === true;
+        pitAvailabilityNotice = resolveF1DataAvailabilityNotice(
+          this.hass,
+          this.config,
+          'pit_stops',
+          pitStopsReplayOnly,
+          this.config.show_pit_count !== false,
+        );
       } else if (positionsMissing) {
         return html`
           <ha-card>
@@ -20804,9 +21043,7 @@ class F1RaceLapCard extends LitElement {
               </div>
             `
             : null}
-          ${pitStopsReplayOnly
-            ? html`<div class="rl-replay-note">Pit stop data is available in Replay Mode only</div>`
-            : null}
+          ${renderF1AvailabilityNotice(pitAvailabilityNotice, 'rl-replay-note')}
           <div class="rl-scroll">
             <div class="rl-table" style="--rl-columns: ${gridColumns};">
               ${this.config.show_table_header !== false ? this._renderHeader(columns) : null}
@@ -21436,8 +21673,14 @@ class F1RaceLapCardEditor extends LitElement {
         )}
         ${this._renderEntityPicker(
           'pitstops_entity',
-          'Pit Stops Sensor (Replay Mode only)',
-          'Provides the pit stop count column. This sensor is only available during Replay Mode sessions.',
+          'Pit Stops Sensor',
+          'Provides the pit stop count column when data is available in Replay Mode or live with active F1TV access.',
+          false,
+        )}
+        ${this._renderEntityPicker(
+          'auth_status_entity',
+          'F1TV Token Status Sensor',
+          'Optional. Lets the card explain whether live-only data is unavailable because F1TV access is not configured or needs attention.',
           false,
         )}
       </div>
@@ -21462,9 +21705,14 @@ class F1RaceLapCardEditor extends LitElement {
         ${this._renderSwitch('show_status', 'Show inline status')}
         ${this._renderSwitch('show_tyre', 'Show tyre')}
         ${this._renderSwitch('show_tyre_age', 'Show tyre age')}
-        ${this._renderSwitch('show_pit_count', 'Show pit stops (Replay Mode only)')}
+        ${this._renderSwitch('show_pit_count', 'Show pit stops')}
         ${this._renderSwitch('show_last_lap', 'Show last lap')}
         ${this._renderSwitch('show_fastest_lap', 'Show fastest lap')}
+        ${this._renderSwitch(
+          'show_availability_notice',
+          'Show data availability notice',
+          'Shows a small note when pit stop data is hidden because live F1TV access is not active.'
+        )}
 
         ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
           { value: 'color', label: 'Color (fallback to white)' },
@@ -21799,7 +22047,7 @@ window.customCards.push({
 window.customCards.push({
   type: 'f1-pitstop-overview-card',
   name: 'F1 Pit Stops & Tyres',
-  description: 'Pit stop overview with tyre and stop timing columns. Pit stop data is Replay Mode only.',
+  description: 'Pit stop overview with tyre and stop timing columns. Pit stop data works in Replay Mode or live with F1TV access.',
   configurable: true,
   preview: true,
 });
@@ -21815,7 +22063,7 @@ window.customCards.push({
 window.customCards.push({
   type: 'f1-championship-prediction-drivers-card',
   name: 'F1 Championship Standings Drivers',
-  description: 'Current driver championship standings with race projection overlay (predictions Replay Mode only)',
+  description: 'Current driver championship standings with race projection overlay for Replay Mode or live with F1TV access',
   configurable: true,
   preview: true,
 });
@@ -21823,7 +22071,7 @@ window.customCards.push({
 window.customCards.push({
   type: 'f1-championship-prediction-teams-card',
   name: 'F1 Championship Standings Teams',
-  description: 'Current constructor championship standings with race projection overlay (predictions Replay Mode only)',
+  description: 'Current constructor championship standings with race projection overlay for Replay Mode or live with F1TV access',
   configurable: true,
   preview: true,
 });
@@ -21911,7 +22159,7 @@ window.customCards.push({
 window.customCards.push({
   type: 'f1-race-lap-card',
   name: 'F1 Race Lap',
-  description: 'Race-only timing table with lap count title, tyre age, fastest lap highlights, and pit stops (Replay Mode only)',
+  description: 'Race-only timing table with lap count title, tyre age, fastest lap highlights, and pit stops for Replay Mode or live with F1TV access',
   configurable: true,
   preview: true,
 });
