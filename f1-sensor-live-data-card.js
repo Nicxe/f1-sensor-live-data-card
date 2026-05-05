@@ -265,6 +265,24 @@ const handleTeamLogoError = (ev) => {
   img.style.display = 'none';
 };
 
+const normalizeF1GapMode = (value, fallback = 'ahead') => {
+  const mode = String(value || fallback || 'ahead').trim().toLowerCase();
+  return ['ahead', 'leader', 'off'].includes(mode) ? mode : fallback;
+};
+
+const normalizeF1GapValue = (value) => {
+  if (value == null) return null;
+  const text = String(value).trim();
+  if (!text || text === '--') return null;
+  return text;
+};
+
+const formatF1DeltaSeconds = (value, zeroValue = '--') => {
+  if (!Number.isFinite(value)) return '--';
+  if (Math.abs(value) < 0.0005) return zeroValue;
+  return `${value > 0 ? '+' : ''}${value.toFixed(3)}`;
+};
+
 const renderEditorSelect = (editor, name, label, options, helper = null) => {
   const schema = [{
     name,
@@ -3092,6 +3110,7 @@ class F1DriverLapTimesCard extends LitElement {
   static properties = {
     hass: {},
     config: {},
+    _activeGapMode: { state: true },
   };
 
   static styles = [F1_THEME_STYLES, css`
@@ -3152,6 +3171,15 @@ class F1DriverLapTimesCard extends LitElement {
       container-type: inline-size;
     }
 
+    .dl-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: clamp(8px, 1.4vw, 12px);
+    }
+
     .dl-header {
       text-align: center;
       font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
@@ -3159,12 +3187,42 @@ class F1DriverLapTimesCard extends LitElement {
       font-weight: 700;
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
-      margin-bottom: clamp(8px, 1.4vw, 12px);
       text-shadow: var(--f1-card-title-shadow);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
       padding: 0 4px;
+    }
+
+    .dl-gap-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px;
+      border-radius: 7px;
+      border: 1px solid var(--f1-card-divider-strong);
+      background: var(--f1-card-divider);
+    }
+
+    .dl-gap-button {
+      appearance: none;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--ts-muted);
+      cursor: pointer;
+      font: inherit;
+      font-size: var(--f1-table-meta-font-size, 10px);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      line-height: 1;
+      padding: 5px 8px;
+      text-transform: uppercase;
+    }
+
+    .dl-gap-button.active {
+      background: rgba(59, 130, 246, 0.18);
+      color: #bfdbfe;
     }
 
     .dl-table {
@@ -3359,6 +3417,12 @@ class F1DriverLapTimesCard extends LitElement {
       color: #a3a3a3;
     }
 
+    .dl-gap {
+      color: var(--ts-muted);
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+    }
+
     .dl-team-logo {
       width: var(--f1-team-logo-size, 15px);
       height: var(--f1-team-logo-size, 15px);
@@ -3416,6 +3480,9 @@ class F1DriverLapTimesCard extends LitElement {
       show_tla: true,
       show_full_name: false,
       show_status: true,
+      show_gap: true,
+      gap_mode: 'ahead',
+      show_gap_toggle: true,
       show_last_lap: true,
       show_best_lap: true,
       show_lap_history: false,
@@ -3426,6 +3493,7 @@ class F1DriverLapTimesCard extends LitElement {
       positions_entity: 'sensor.f1_driver_positions',
       ...config,
     };
+    this._activeGapMode = normalizeF1GapMode(this.config.gap_mode, 'ahead');
     applyF1ThemeMode(this, this.config);
   }
 
@@ -3502,7 +3570,8 @@ class F1DriverLapTimesCard extends LitElement {
       ? this._resolveLapNumbers(positionsState, rows, lapHistoryLimit)
       : [];
     const layoutMode = getResponsiveLayoutMode(this);
-    const columns = this._columns(lapNumbers, layoutMode);
+    const gapMode = this._currentGapMode();
+    const columns = this._columns(lapNumbers, layoutMode, gapMode);
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
@@ -3519,7 +3588,12 @@ class F1DriverLapTimesCard extends LitElement {
       <ha-card @click=${this._handleCardAction}>
         <div class="dl-card" data-layout=${layoutMode}>
           ${this.config.show_header
-            ? html`<div class="dl-header">${this.config.title || 'Driver Lap Times'}</div>`
+            ? html`
+              <div class="dl-header-row">
+                <div class="dl-header">${this.config.title || 'Driver Lap Times'}</div>
+                ${this._renderGapModeToggle(gapMode)}
+              </div>
+            `
             : null}
           <div class="dl-scroll">
             <div class="dl-table" style="--dl-columns: ${gridColumns};">
@@ -3532,7 +3606,7 @@ class F1DriverLapTimesCard extends LitElement {
     `;
   }
 
-  _columns(lapNumbers = [], layoutMode = 'wide') {
+  _columns(lapNumbers = [], layoutMode = 'wide', gapMode = 'ahead') {
     const compactLayout = layoutMode !== 'wide';
     const narrowLayout = layoutMode === 'narrow';
     const driverWidth = this.config.show_full_name === true
@@ -3562,6 +3636,15 @@ class F1DriverLapTimesCard extends LitElement {
         key: 'tla',
         label: 'Driver',
         width: driverWidth,
+        compact: true,
+      });
+    }
+    if (this.config.show_gap !== false && gapMode !== 'off') {
+      cols.push({
+        key: 'gap',
+        label: gapMode === 'leader' ? 'GAP' : 'INT',
+        width: narrowLayout ? '62px' : '70px',
+        numeric: true,
         compact: true,
       });
     }
@@ -3663,6 +3746,13 @@ class F1DriverLapTimesCard extends LitElement {
     if (col.key === 'last_lap') value = row.last_lap || '--:--.---';
     if (col.key === 'best_lap') value = row.best_lap || '--:--.---';
     if (col.key === 'tla') value = row.display_driver || row.tla || '--';
+    if (col.key === 'gap') {
+      return html`
+        <div class="${classes.join(' ')}" style="${style}" data-col-key=${col.key}>
+          <span class="dl-gap">${this._gapValue(row)}</span>
+        </div>
+      `;
+    }
     if (col.type === 'lap') {
       const lapTime = row.laps_by_number?.[col.lap] || '--';
       value = lapTime;
@@ -3742,6 +3832,8 @@ class F1DriverLapTimesCard extends LitElement {
         laps_by_number: lapSnapshot.laps_by_number,
         max_lap: lapSnapshot.max_lap,
         completed_laps: lapSnapshot.completed_laps,
+        gap_to_leader: normalizeF1GapValue(pos?.gap_to_leader),
+        interval_to_position_ahead: normalizeF1GapValue(pos?.interval_to_position_ahead ?? pos?.interval),
         is_fastest: isFastest,
       };
     });
@@ -3758,6 +3850,50 @@ class F1DriverLapTimesCard extends LitElement {
     });
 
     return rows;
+  }
+
+  _currentGapMode() {
+    if (this.config.show_gap === false) return 'off';
+    return normalizeF1GapMode(this._activeGapMode || this.config.gap_mode, 'ahead');
+  }
+
+  _setGapMode(mode, ev) {
+    ev?.stopPropagation?.();
+    ev?.preventDefault?.();
+    this._activeGapMode = normalizeF1GapMode(mode, 'ahead');
+  }
+
+  _renderGapModeToggle(activeMode) {
+    if (this.config.show_gap === false || this.config.show_gap_toggle === false) return null;
+    const modes = [
+      ['ahead', 'Ahead'],
+      ['leader', 'Leader'],
+    ];
+    return html`
+      <div class="dl-gap-toggle" role="group" aria-label="Gap mode">
+        ${modes.map(([mode, label]) => html`
+          <button
+            class="dl-gap-button ${activeMode === mode ? 'active' : ''}"
+            type="button"
+            aria-pressed=${activeMode === mode}
+            @click=${(ev) => this._setGapMode(mode, ev)}
+          >
+            ${label}
+          </button>
+        `)}
+      </div>
+    `;
+  }
+
+  _gapValue(row) {
+    const mode = this._currentGapMode();
+    if (mode === 'leader') {
+      return row.position === 1 ? 'Leader' : normalizeF1GapValue(row.gap_to_leader) || '--';
+    }
+    if (mode === 'ahead') {
+      return row.position === 1 ? 'Leader' : normalizeF1GapValue(row.interval_to_position_ahead) || '--';
+    }
+    return '--';
   }
 
   _buildPositionMap(positions) {
@@ -4197,6 +4333,12 @@ class F1DriverLapTimesCardEditor extends LitElement {
           'Shows full driver names instead of TLA when the driver column is visible'
         )}
         ${this._renderSwitch('show_status', 'Show status')}
+        ${this._renderSwitch('show_gap', 'Show gap column', 'Uses public live timing data. No F1TV access is required.')}
+        ${renderEditorSelect(this, 'gap_mode', 'Default gap mode', [
+          { value: 'ahead', label: 'Car ahead' },
+          { value: 'leader', label: 'Leader' },
+        ])}
+        ${this._renderSwitch('show_gap_toggle', 'Show live gap toggle', 'Lets viewers switch between car ahead and leader from the card header')}
         ${this._renderSwitch('show_last_lap', 'Show last lap time')}
         ${this._renderSwitch('show_best_lap', 'Show best lap time')}
         ${this._renderSwitch('show_lap_trend', 'Show lap trend arrows', 'Shows ▼ for faster laps and ▲ for slower laps versus previous lap in lap columns')}
@@ -18073,6 +18215,23 @@ class F1QualifyingTimingCard extends LitElement {
       --lap-text: var(--f1-timing-timed-text, #fde047);
     }
 
+    .qt-delta {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 48px;
+      padding: 2px 5px;
+      border-radius: 5px;
+      color: var(--qt-muted);
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+    }
+
+    .qt-delta.timed {
+      background: rgba(59, 130, 246, 0.14);
+      color: #bfdbfe;
+    }
+
     .timing-indicator {
       font-size: 0.75em;
       margin-right: 2px;
@@ -18121,6 +18280,7 @@ class F1QualifyingTimingCard extends LitElement {
       show_table_header: true,
       show_team_logo: true,
       show_full_name: false,
+      show_delta: true,
       show_timing_indicators: false,
       team_logo_style: 'color',
       positions_entity: 'sensor.f1_driver_positions',
@@ -18248,22 +18408,22 @@ class F1QualifyingTimingCard extends LitElement {
     let rows = [];
     let sessionPart = null;
     const positionsMissing = !positionsState;
-    if (positionsState && !isUnavailableLikeEntityState(positionsState)) {
-      const positionDrivers = positionsState?.attributes?.drivers || [];
+    if (positionsState && this._hasUsableDriversEntity(positionsState)) {
+      const positionDrivers = this._asDriversList(positionsState?.attributes?.drivers);
       const currentQPart = positionsState?.attributes?.current_qualifying_part;
 
       const tyresState = this.config.tyres_entity
         ? getEntityStateWithFallback(this.hass, this.config.tyres_entity)
         : null;
-      const tyresDrivers = tyresState && !isUnavailableLikeEntityState(tyresState)
-        ? tyresState?.attributes?.drivers || []
+      const tyresDrivers = tyresState && this._hasUsableDriversEntity(tyresState)
+        ? this._asDriversList(tyresState?.attributes?.drivers)
         : [];
 
       const driversState = this.config.drivers_entity
         ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
         : null;
-      const driverList = driversState && !isUnavailableLikeEntityState(driversState)
-        ? driversState?.attributes?.drivers || []
+      const driverList = driversState && this._hasUsableDriversEntity(driversState)
+        ? this._asDriversList(driversState?.attributes?.drivers)
         : [];
 
       sessionPart = this._resolveDisplayQualifyingPart(
@@ -18312,7 +18472,9 @@ class F1QualifyingTimingCard extends LitElement {
     }
 
     const layoutMode = getResponsiveLayoutMode(this);
-    const columns = this._columns(layoutMode, sessionPart);
+    const hasDelta = this.config.show_delta !== false
+      && rows.some((row) => row.current_segment_delta != null);
+    const columns = this._columns(layoutMode, sessionPart, hasDelta);
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     const colorOverrides = this._timingColorStyles();
@@ -18340,20 +18502,23 @@ class F1QualifyingTimingCard extends LitElement {
     `;
   }
 
-  _columns(layoutMode = 'wide', sessionPart = null) {
+  _columns(layoutMode = 'wide', sessionPart = null, showDelta = false) {
     const showFullName = this.config.show_full_name === true;
+    const deltaColumn = { key: 'delta', label: 'Δ', width: '62px', center: true, groupStart: true };
     if (layoutMode === 'narrow') {
-      return [
+      const columns = [
         { key: 'position', label: 'P', width: '28px', center: true, compact: true },
         { key: 'logo', label: '', width: '24px', compact: true, hideHeader: true },
         { key: 'tla', label: 'Driver', width: showFullName ? 'minmax(132px, 1.45fr)' : 'minmax(104px, 1.2fr)', compact: true },
         { key: 'last_lap', label: 'LAST', width: '88px', center: true, groupStart: true },
         { key: 'best_session', label: sessionPart ? `Q${sessionPart}` : 'BEST', width: '88px', center: true, groupStart: true },
       ];
+      if (showDelta) columns.push({ ...deltaColumn, width: '58px' });
+      return columns;
     }
 
     if (layoutMode === 'medium') {
-      return [
+      const columns = [
         { key: 'position', label: 'P', width: '28px', center: true, compact: true },
         { key: 'logo', label: '', width: '24px', compact: true, hideHeader: true },
         { key: 'tla', label: 'Driver', width: showFullName ? 'minmax(138px, 1.55fr)' : 'minmax(112px, 1.25fr)', compact: true },
@@ -18365,9 +18530,11 @@ class F1QualifyingTimingCard extends LitElement {
         { key: 'last_lap', label: 'LAST', width: '88px', center: true, groupStart: true },
         { key: 'best_session', label: sessionPart ? `Q${sessionPart}` : 'BEST', width: '88px', center: true, groupStart: true },
       ];
+      if (showDelta) columns.push(deltaColumn);
+      return columns;
     }
 
-    return [
+    const columns = [
       { key: 'position', label: 'P', width: '28px', center: true, compact: true },
       { key: 'logo', label: '', width: '24px', compact: true, hideHeader: true },
       { key: 'tla', label: 'Driver', width: showFullName ? '124px' : '104px', compact: true },
@@ -18382,6 +18549,8 @@ class F1QualifyingTimingCard extends LitElement {
       { key: 'q2_lap', label: 'Q2', width: '86px', center: true },
       { key: 'q3_lap', label: 'Q3', width: '86px', center: true },
     ];
+    if (showDelta) columns.push(deltaColumn);
+    return columns;
   }
 
   _renderHeader(columns) {
@@ -18505,6 +18674,16 @@ class F1QualifyingTimingCard extends LitElement {
       return html`
         <div class="${classes.join(' ')}">
           <span class="qt-lap ${bestSession.lapClass}">${indicator}${bestSession.time}</span>
+        </div>
+      `;
+    }
+
+    if (col.key === 'delta') {
+      const delta = row.current_segment_delta;
+      const deltaClass = delta && delta !== '--' ? 'timed' : '';
+      return html`
+        <div class="${classes.join(' ')}">
+          <span class="qt-delta ${deltaClass}">${delta || '--'}</span>
         </div>
       `;
     }
@@ -18752,7 +18931,41 @@ class F1QualifyingTimingCard extends LitElement {
       }
     });
 
+    if (typeof this._applyCurrentSegmentDeltas === 'function') {
+      this._applyCurrentSegmentDeltas(rows);
+    }
+
     return rows;
+  }
+
+  _applyCurrentSegmentDeltas(rows) {
+    const timedRows = rows
+      .map((row) => ({
+        row,
+        seconds: this._parseLapTimeSeconds(row.current_segment_best_lap),
+      }))
+      .filter((entry) => entry.seconds !== null);
+
+    if (timedRows.length === 0) {
+      rows.forEach((row) => {
+        row.current_segment_delta = null;
+        row.current_segment_delta_secs = null;
+      });
+      return;
+    }
+
+    const bestSeconds = Math.min(...timedRows.map((entry) => entry.seconds));
+    rows.forEach((row) => {
+      const seconds = this._parseLapTimeSeconds(row.current_segment_best_lap);
+      if (seconds === null) {
+        row.current_segment_delta = null;
+        row.current_segment_delta_secs = null;
+        return;
+      }
+      const delta = seconds - bestSeconds;
+      row.current_segment_delta_secs = delta;
+      row.current_segment_delta = formatF1DeltaSeconds(delta, '--');
+    });
   }
 
   _resolveDisplayQualifyingPart(sessionState, ...parts) {
@@ -18821,6 +19034,22 @@ class F1QualifyingTimingCard extends LitElement {
         this.config?.session_status_entity,
         this.config?.positions_entity,
       ],
+    );
+  }
+
+  _asDriversList(value) {
+    if (Array.isArray(value)) return value;
+    if (!value || typeof value !== 'object') return [];
+    return Object.values(value).filter((entry) => entry && typeof entry === 'object');
+  }
+
+  _hasUsableDriversEntity(entityState) {
+    return Boolean(
+      entityState
+        && (
+          !isUnavailableLikeEntityState(entityState)
+          || this._asDriversList(entityState?.attributes?.drivers).length > 0
+        ),
     );
   }
 
@@ -19093,6 +19322,7 @@ class F1QualifyingTimingCardEditor extends LitElement {
           'Shows full driver names instead of TLA when the driver column is visible'
         )}
         ${this._renderSwitch('show_team_logo', 'Show team logo')}
+        ${this._renderSwitch('show_delta', 'Show current Q delta', 'Shows the gap to the fastest driver in the active qualifying segment')}
 
         ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
           { value: 'color', label: 'Color (fallback to white)' },
@@ -20365,6 +20595,12 @@ class F1PracticeTimingCardEditor extends LitElement {
         ${this._renderSwitch('show_team_logo', 'Show team logo')}
         ${this._renderSwitch('show_full_name', 'Use full driver name', 'Shows full driver names instead of TLA when the driver column is visible')}
         ${this._renderSwitch('show_status', 'Show inline status')}
+        ${this._renderSwitch('show_gap', 'Show gap column', 'Uses public live timing data. No F1TV access is required.')}
+        ${renderEditorSelect(this, 'gap_mode', 'Default gap mode', [
+          { value: 'ahead', label: 'Car ahead' },
+          { value: 'leader', label: 'Leader' },
+        ])}
+        ${this._renderSwitch('show_gap_toggle', 'Show live gap toggle', 'Lets viewers switch between car ahead and leader from the card header')}
         ${this._renderSwitch('show_tyre', 'Show tyre')}
         ${this._renderSwitch('show_tyre_age', 'Show tyre age')}
         ${this._renderSwitch('show_last_lap', 'Show last lap')}
@@ -20459,6 +20695,7 @@ class F1RaceLapCard extends LitElement {
   static properties = {
     hass: {},
     config: {},
+    _activeGapMode: { state: true },
   };
 
   static styles = [F1_THEME_STYLES, css`
@@ -20517,6 +20754,7 @@ class F1RaceLapCard extends LitElement {
       align-items: center;
       justify-content: center;
       flex-wrap: wrap;
+      gap: 8px;
       margin-bottom: clamp(8px, 1.4vw, 12px);
     }
 
@@ -20532,6 +20770,37 @@ class F1RaceLapCard extends LitElement {
       text-wrap: balance;
       line-height: 1.1;
       padding: 0 4px;
+    }
+
+    .rl-gap-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px;
+      border-radius: 7px;
+      border: 1px solid var(--f1-card-divider-strong);
+      background: var(--f1-card-divider);
+    }
+
+    .rl-gap-button {
+      appearance: none;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--rl-muted);
+      cursor: pointer;
+      font: inherit;
+      font-size: var(--f1-table-meta-font-size, 10px);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      line-height: 1;
+      padding: 5px 8px;
+      text-transform: uppercase;
+    }
+
+    .rl-gap-button.active {
+      background: rgba(59, 130, 246, 0.18);
+      color: #bfdbfe;
     }
 
     .rl-scroll {
@@ -20665,6 +20934,12 @@ class F1RaceLapCard extends LitElement {
       color: #a3a3a3;
     }
 
+    .rl-gap {
+      color: var(--rl-muted);
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+    }
+
     .rl-card[data-layout='medium'] .rl-table,
     .rl-card[data-layout='narrow'] .rl-table {
       min-width: 0;
@@ -20793,6 +21068,9 @@ class F1RaceLapCard extends LitElement {
       show_team_logo: true,
       show_full_name: false,
       show_status: true,
+      show_gap: true,
+      gap_mode: 'ahead',
+      show_gap_toggle: true,
       show_tyre: true,
       show_tyre_age: true,
       show_pit_count: true,
@@ -20811,6 +21089,7 @@ class F1RaceLapCard extends LitElement {
       show_availability_notice: true,
       ...config,
     };
+    this._activeGapMode = normalizeF1GapMode(this.config.gap_mode, 'ahead');
     applyF1ThemeMode(this, this.config);
   }
 
@@ -21029,7 +21308,8 @@ class F1RaceLapCard extends LitElement {
     }
 
     const layoutMode = getResponsiveLayoutMode(this);
-    const columns = this._columns(layoutMode, suppressPit);
+    const gapMode = this._currentGapMode();
+    const columns = this._columns(layoutMode, suppressPit, gapMode);
     const gridColumns = columns.map((col) => col.width).join(' ');
     const colorOverrides = this._timingColorStyles();
 
@@ -21040,6 +21320,7 @@ class F1RaceLapCard extends LitElement {
             ? html`
               <div class="rl-header-row">
                 <div class="rl-header">${title}</div>
+                ${this._renderGapModeToggle(gapMode)}
               </div>
             `
             : null}
@@ -21055,7 +21336,7 @@ class F1RaceLapCard extends LitElement {
     `;
   }
 
-  _columns(layoutMode = 'wide', suppressPit = false) {
+  _columns(layoutMode = 'wide', suppressPit = false, gapMode = 'ahead') {
     const mediumLayout = layoutMode === 'medium';
     const narrowLayout = layoutMode === 'narrow';
     const driverWidth = this.config.show_full_name === true
@@ -21069,6 +21350,15 @@ class F1RaceLapCard extends LitElement {
       columns.push({ key: 'logo', label: '', width: '24px', compact: true, hideHeader: true });
     }
     columns.push({ key: 'driver', label: 'Driver', width: driverWidth, compact: true });
+    if (this.config.show_gap !== false && gapMode !== 'off') {
+      columns.push({
+        key: 'gap',
+        label: gapMode === 'leader' ? 'Gap' : 'Int',
+        width: narrowLayout ? '62px' : '70px',
+        center: true,
+        compact: true,
+      });
+    }
     if (this.config.show_tyre !== false && !narrowLayout) {
       columns.push({ key: 'tyre', label: 'Tyre', width: '32px', center: true, groupStart: true });
     }
@@ -21142,6 +21432,14 @@ class F1RaceLapCard extends LitElement {
               ? html`<span class="${statusClasses.join(' ')}">${row.status_label}</span>`
               : null}
           </span>
+        </div>
+      `;
+    }
+
+    if (col.key === 'gap') {
+      return html`
+        <div class="${classes.join(' ')}">
+          <span class="rl-gap">${this._gapValue(row)}</span>
         </div>
       `;
     }
@@ -21278,6 +21576,8 @@ class F1RaceLapCard extends LitElement {
         pit_count: pitCount,
         last_lap: lapSnapshot.last_lap,
         best_lap: bestLap,
+        gap_to_leader: normalizeF1GapValue(pos?.gap_to_leader),
+        interval_to_position_ahead: normalizeF1GapValue(pos?.interval_to_position_ahead ?? pos?.interval),
         is_fastest: isFastest,
       };
     });
@@ -21294,6 +21594,50 @@ class F1RaceLapCard extends LitElement {
     });
 
     return rows;
+  }
+
+  _currentGapMode() {
+    if (this.config.show_gap === false) return 'off';
+    return normalizeF1GapMode(this._activeGapMode || this.config.gap_mode, 'ahead');
+  }
+
+  _setGapMode(mode, ev) {
+    ev?.stopPropagation?.();
+    ev?.preventDefault?.();
+    this._activeGapMode = normalizeF1GapMode(mode, 'ahead');
+  }
+
+  _renderGapModeToggle(activeMode) {
+    if (this.config.show_gap === false || this.config.show_gap_toggle === false) return null;
+    const modes = [
+      ['ahead', 'Ahead'],
+      ['leader', 'Leader'],
+    ];
+    return html`
+      <div class="rl-gap-toggle" role="group" aria-label="Gap mode">
+        ${modes.map(([mode, label]) => html`
+          <button
+            class="rl-gap-button ${activeMode === mode ? 'active' : ''}"
+            type="button"
+            aria-pressed=${activeMode === mode}
+            @click=${(ev) => this._setGapMode(mode, ev)}
+          >
+            ${label}
+          </button>
+        `)}
+      </div>
+    `;
+  }
+
+  _gapValue(row) {
+    const mode = this._currentGapMode();
+    if (mode === 'leader') {
+      return row.position === 1 ? 'Leader' : normalizeF1GapValue(row.gap_to_leader) || '--';
+    }
+    if (mode === 'ahead') {
+      return row.position === 1 ? 'Leader' : normalizeF1GapValue(row.interval_to_position_ahead) || '--';
+    }
+    return '--';
   }
 
   _buildTitle(lapCountState, positionsState) {
