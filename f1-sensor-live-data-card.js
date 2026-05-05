@@ -6867,6 +6867,1212 @@ class F1ChampionshipPredictionTeamsCardEditor extends LitElement {
 }
 
 // ============================================================================
+// F1 Last Race Results Card Editor
+// ============================================================================
+
+class F1LastRaceResultsCardEditor extends LitElement {
+  static properties = {
+    hass: {},
+    _config: {},
+    _activeTab: { state: true },
+  };
+
+  static styles = css`
+    .card-config {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--divider-color);
+      margin-bottom: 16px;
+    }
+
+    .tabs button {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary-text-color);
+      font-size: 14px;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+
+    .tabs button:hover {
+      color: var(--primary-color);
+    }
+
+    .tabs button.active {
+      color: var(--primary-color);
+      border-bottom: 2px solid var(--primary-color);
+      margin-bottom: -1px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--secondary-text-color);
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .helper {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      padding-left: 16px;
+      line-height: 1.4;
+    }
+
+    .warning {
+      font-size: 12px;
+      color: var(--error-color);
+      padding-left: 16px;
+    }
+
+    .display-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    ha-textfield {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    ha-formfield {
+      display: flex;
+      align-items: center;
+      padding: 4px 0;
+    }
+
+    ha-form {
+      width: 100%;
+    }
+  `;
+
+  constructor() {
+    super();
+    this._activeTab = 'sources';
+  }
+
+  setConfig(config) {
+    this._config = {
+      entity: 'sensor.f1_last_race_results',
+      drivers_entity: 'sensor.f1_driver_list',
+      no_spoiler_entity: 'switch.f1_no_spoiler_mode',
+      show_header: true,
+      show_grid: true,
+      show_position: true,
+      show_tla: true,
+      show_full_name: false,
+      show_team_logo: true,
+      driver_image_type: 'team_logo',
+      team_logo_style: 'color',
+      show_delta: true,
+      top_limit: 0,
+      ...config,
+    };
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    return html`
+      <div class="card-config">
+        <div class="tabs">
+          <button
+            class=${this._activeTab === 'sources' ? 'active' : ''}
+            @click=${() => this._activeTab = 'sources'}
+          >
+            Data Sources
+          </button>
+          <button
+            class=${this._activeTab === 'display' ? 'active' : ''}
+            @click=${() => this._activeTab = 'display'}
+          >
+            Display
+          </button>
+        </div>
+
+        ${this._activeTab === 'sources'
+          ? this._renderDataSourcesTab()
+          : this._renderDisplayTab()}
+      </div>
+    `;
+  }
+
+  _renderDataSourcesTab() {
+    return html`
+      <div class="section">
+        <div class="section-header">RESULTS SOURCE</div>
+        ${this._renderEntityPicker(
+          'entity',
+          'Last Race Results Sensor',
+          'Provides the last race results shown as the base result view',
+          true,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'no_spoiler_entity',
+          'No Spoiler Switch',
+          'Masks points and delta columns when the integration no-spoiler mode is active',
+          false,
+          'switch'
+        )}
+        ${this._renderEntityPicker(
+          'drivers_entity',
+          'Driver List Sensor',
+          'Provides TLA, team names, and team colors',
+          false,
+          'sensor'
+        )}
+      </div>
+    `;
+  }
+
+  _renderDisplayTab() {
+    return html`
+      <div class="display-section">
+        <ha-textfield
+          .label=${'Title'}
+          .value=${this._config.title || ''}
+          @input=${(e) => this._valueChanged('title', e.target.value)}
+        ></ha-textfield>
+
+        ${this._renderSwitch('show_header', 'Show header')}
+        ${this._renderSwitch('show_table_header', 'Show table header')}
+        ${this._renderSwitch('show_position', 'Show position')}
+        ${this._renderSwitch('show_grid', 'Show grid')}
+        ${this._renderSwitch('show_tla', 'Show driver column')}
+        ${this._renderSwitch(
+          'show_full_name',
+          'Use full driver name',
+          'Shows full driver names instead of TLA when the driver column is visible'
+        )}
+        ${this._renderSwitch('show_team_logo', 'Show driver image')}
+
+        ${this._config.show_team_logo !== false ? html`
+          ${this._renderSelect(
+            'driver_image_type',
+            'Driver image type',
+            [
+              { value: 'team_logo', label: 'Team logo' },
+              { value: 'headshot', label: 'Driver headshot' },
+            ],
+          )}
+          <div class="helper">Headshots come from the driver list sensor and fall back to team logo if unavailable</div>
+        ` : null}
+
+        ${this._config.show_team_logo !== false && (this._config.driver_image_type || 'team_logo') === 'team_logo' ? html`
+          ${this._renderSelect(
+            'team_logo_style',
+            'Team logo style',
+            [
+              { value: 'color', label: 'Color (fallback to white)' },
+              { value: 'white', label: 'White' },
+            ],
+          )}
+        ` : null}
+
+        ${this._renderSwitch(
+          'show_delta',
+          'Show position delta',
+          'Shows delta between starting grid and finishing position when grid column is visible'
+        )}
+
+        <ha-textfield
+          .label=${'Top entries to show'}
+          .value=${String(this._config.top_limit ?? 0)}
+          type="number"
+          min="0"
+          @input=${(e) => this._valueChanged('top_limit', Number.parseInt(e.target.value, 10) || 0)}
+        ></ha-textfield>
+        <div class="helper">0 = show all entries</div>
+      </div>
+    `;
+  }
+
+  _renderEntityPicker(name, label, helper, required, domain) {
+    const value = this._config[name];
+    const showWarning = required && !value;
+    const schema = [{ name, label, required, selector: { entity: { domain } } }];
+
+    return html`
+      <div class="field">
+        <ha-form
+          .hass=${this.hass}
+          .data=${this._config}
+          .schema=${schema}
+          .computeLabel=${() => label}
+          @value-changed=${this._formValueChanged}
+        ></ha-form>
+        <div class="helper">${helper}</div>
+        ${showWarning ? html`
+          <div class="warning">This sensor is required for the card to function</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  _renderSwitch(name, label, helper = null) {
+    const schema = [{ name, label, selector: { boolean: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _renderSelect(name, label, options, helper = null) {
+    const schema = [{
+      name,
+      label,
+      selector: {
+        select: {
+          mode: 'dropdown',
+          options,
+        },
+      },
+    }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _formValueChanged(ev) {
+    if (!this._config) return;
+    const value = ev.detail?.value || {};
+    const newConfig = { ...this._config, ...value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+
+  _valueChanged(name, value) {
+    if (!this._config) return;
+    const newConfig = { ...this._config, [name]: value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+}
+
+// ============================================================================
+// F1 Last Race Results Card
+// ============================================================================
+
+class F1LastRaceResultsCard extends LitElement {
+  static properties = {
+    hass: {},
+    config: {},
+  };
+
+  static styles = css`
+    /* Animation keyframes */
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    :host {
+      --ts-bg: #0b0b0d;
+      --ts-bg-soft: #131315;
+      --ts-border: rgba(255, 255, 255, 0.08);
+      --ts-text: #f5f5f5;
+      --ts-muted: rgba(255, 255, 255, 0.65);
+      --ts-chip: rgba(255, 255, 255, 0.06);
+      --ts-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      display: block;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+    }
+
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+    }
+
+    .cpd-card {
+      position: relative;
+      padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
+        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
+      border: 1px solid var(--ts-border);
+      box-shadow: var(--ts-shadow);
+      overflow: hidden;
+      color: var(--ts-text);
+      container-type: inline-size;
+    }
+
+    .cpd-header {
+      text-align: center;
+      font-family: 'Formula1 Wide', 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: clamp(16px, 2.4vw, 20px);
+      font-weight: 700;
+      letter-spacing: clamp(0.03em, 0.06em, 0.08em);
+      text-transform: uppercase;
+      margin: 0;
+      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      white-space: normal;
+      text-wrap: balance;
+      line-height: 1.1;
+      padding-right: 0;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .cpd-header-row {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: clamp(8px, 1.4vw, 12px);
+    }
+
+    .cpd-header-badges {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-width: 100%;
+    }
+
+    .cpd-mode-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px 10px 4px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: var(--f1-table-meta-font-size, 10px);
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--ts-text);
+    }
+
+    .cpd-mode-pill.current {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--ts-text);
+    }
+
+    .cpd-mode-pill.live {
+      background: rgba(239, 68, 68, 0.16);
+      color: #fca5a5;
+      border-color: rgba(248, 113, 113, 0.28);
+    }
+
+    .cpd-mode-pill.live-current {
+      background: rgba(59, 130, 246, 0.16);
+      color: #bfdbfe;
+      border-color: rgba(96, 165, 250, 0.28);
+    }
+
+    .cpd-mode-pill.legacy {
+      background: rgba(245, 158, 11, 0.16);
+      color: #fcd34d;
+      border-color: rgba(251, 191, 36, 0.24);
+    }
+
+    .cpd-mode-pill.masked {
+      background: rgba(250, 204, 21, 0.16);
+      color: #fde68a;
+      border-color: rgba(250, 204, 21, 0.26);
+    }
+
+    .cpd-mode-pill.replay-only {
+      background: rgba(251, 191, 36, 0.10);
+      color: rgba(251, 191, 36, 0.85);
+      border-color: rgba(251, 191, 36, 0.20);
+    }
+
+    .cpd-table {
+      display: grid;
+      gap: 6px;
+    }
+
+    .cpd-row {
+      display: grid;
+      grid-template-columns: var(--cpd-columns);
+      align-items: center;
+      column-gap: 4px;
+      box-sizing: border-box;
+      min-height: var(--f1-table-row-min-height, 34px);
+      padding: var(--f1-table-row-padding, 6px 8px);
+      border-radius: 10px;
+      background: var(--ts-chip);
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
+      color: var(--ts-text);
+      animation: fadeSlideIn 0.25s ease-out backwards;
+      transition: background 0.2s ease;
+    }
+
+    .cpd-row.header {
+      background: transparent;
+      padding: 4px 6px 2px;
+      font-size: var(--f1-table-header-font-size, clamp(9px, 1.4vw, 10px));
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--ts-muted);
+    }
+
+    .cpd-cell {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+    }
+
+    .cpd-cell.numeric {
+      justify-content: center;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .cpd-cell.group-start {
+      padding-left: 6px;
+      border-left: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .cpd-cell.points-primary {
+      font-weight: 700;
+      color: var(--ts-text);
+    }
+
+    .cpd-cell.points-secondary {
+      color: var(--ts-muted);
+    }
+    
+    .cpd-cell.align {
+      justify-content: center;
+      text-align: center;
+    }
+
+    .cpd-team-logo {
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
+      object-fit: contain;
+      filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
+    }
+
+    .cpd-driver-image {
+      width: var(--f1-team-logo-size, 15px);
+      height: var(--f1-team-logo-size, 15px);
+      object-fit: contain;
+      filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
+    }
+
+    .cpd-driver-image.headshot {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      object-fit: cover;
+      object-position: center top;
+      filter: none;
+      background: rgba(255, 255, 255, 0.05);
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.12),
+        0 3px 8px rgba(0, 0, 0, 0.35);
+    }
+
+    .cpd-driver {
+      font-weight: 700;
+      color: var(--driver-color, var(--ts-text));
+    }
+
+    .cpd-driver.compact {
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .cpd-driver.full {
+      letter-spacing: 0.01em;
+      text-transform: none;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-weight: 600;
+    }
+
+    .cpd-delta.positive {
+      color: #34d399;
+    }
+
+    .cpd-delta.negative {
+      color: #f87171;
+    }
+
+    .cpd-delta.neutral {
+      color: var(--ts-muted);
+    }
+
+    .cpd-delta-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .cpd-delta-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-width: 52px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
+    .cpd-delta-pill.positive {
+      background: rgba(52, 211, 153, 0.14);
+      border-color: rgba(52, 211, 153, 0.22);
+    }
+
+    .cpd-delta-pill.negative {
+      background: rgba(248, 113, 113, 0.14);
+      border-color: rgba(248, 113, 113, 0.22);
+    }
+
+    .cpd-card[data-layout='medium'] .cpd-cell:not(.numeric),
+    .cpd-card[data-layout='narrow'] .cpd-cell:not(.numeric) {
+      white-space: normal;
+      align-items: flex-start;
+    }
+
+    .cpd-pos-arrow {
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 700;
+    }
+
+    .cpd-pos-arrow.up {
+      color: #34d399;
+    }
+
+    .cpd-pos-arrow.down {
+      color: #f87171;
+    }
+
+    .cpd-empty {
+      padding: 16px;
+      border-radius: var(--ha-card-border-radius, 12px);
+      background: var(--ts-chip);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      color: var(--ts-muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .cpd-replay-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      background: rgba(251, 191, 36, 0.06);
+      border: 1px solid rgba(251, 191, 36, 0.15);
+      color: rgba(251, 191, 36, 0.85);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-align: center;
+      line-height: 1.4;
+    }
+
+    @media (max-width: 720px) {
+      .cpd-card {
+        padding: 12px 10px 12px;
+      }
+
+      .cpd-header {
+        font-size: 16px;
+        letter-spacing: 0.03em;
+      }
+
+      .cpd-header-row {
+        gap: 8px;
+      }
+
+      .cpd-mode-pill {
+        font-size: 8px;
+        padding: 5px 8px 4px;
+      }
+
+      .cpd-row {
+        font-size: 9px;
+        padding: 5px 6px;
+      }
+    }
+  `;
+
+  setConfig(config) {
+    this.config = {
+      entity: 'sensor.f1_last_race_results',
+      drivers_entity: 'sensor.f1_driver_list',
+      no_spoiler_entity: 'switch.f1_no_spoiler_mode',
+      show_header: true,
+      show_table_header: true,
+      show_position: true,
+      show_grid: true,
+      show_tla: true,
+      show_full_name: false,
+      show_team_logo: true,
+      driver_image_type: 'team_logo',
+      team_logo_style: 'color',
+      show_delta: true,
+      top_limit: 0,
+      ...config,
+    };
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    ensureF1Fonts();
+  }
+
+  getCardSize() {
+    return 6;
+  }
+
+  getGridOptions() {
+    return {
+      columns: 12,
+      min_columns: 4,
+      max_columns: 12,
+      min_rows: 5,
+    };
+  }
+
+  _responsiveLayoutBreakpoints() {
+    return {
+      narrow: 540,
+      medium: 780,
+    };
+  }
+
+  static getStubConfig() {
+    return {
+      type: 'custom:f1-last-race-results-card',
+      entity: 'sensor.f1_last_race_results',
+      drivers_entity: 'sensor.f1_driver_list',
+      no_spoiler_entity: 'switch.f1_no_spoiler_mode',
+    };
+  }
+
+  static getConfigElement() {
+    return document.createElement('f1-last-race-results-card-editor');
+  }
+
+  render() {
+    if (!this.hass || !this.config) return html``;
+
+    if (!this.config.current_entity && !this.config.entity) {
+      return this._renderEmpty('Select entities in the editor');
+    }
+
+    const lastRace = this.config.entity
+      ? getEntityStateWithFallback(this.hass, this.config.entity)
+      : null;
+    if (!lastRace) {
+      return html`<ha-card><div class="nr-card nr-unavailable">No previous race data available</div></ha-card>`;
+    }
+      
+    const noSpoilerState = this.config.no_spoiler_entity
+      ? getEntityStateWithFallback(this.hass, this.config.no_spoiler_entity)
+      : null;
+    const driverListState = this.config.drivers_entity
+      ? getEntityStateWithFallback(this.hass, this.config.drivers_entity)
+      : null;
+    const driverList = asEntityList(driverListState?.attributes?.drivers);
+    const driverMap = this._buildDriverMap(driverList);
+
+    const gpName = lastRace.attributes.race_name?.replace(' Grand Prix', ' GP') || lastRace.attributes.race_name || 'Last race';
+    const results = Array.isArray(lastRace?.attributes?.results)
+      ? lastRace.attributes.results
+      : [];
+
+    const hasCurrentData = results.length > 0;
+    const spoilerBlocked = isNoSpoilerModeActive(noSpoilerState);
+
+    const layoutMode = getResponsiveLayoutMode(this);
+    let rows = [];
+    let columns = [];
+    let emptyMessage = 'No results data';
+
+    rows = this._applyTopLimit(
+      this._buildCurrentRows(
+        results,
+        driverMap,
+        spoilerBlocked,
+      ),
+    );
+    columns = this._columns(layoutMode);
+    this._actionEntityId = this.config.entity;
+
+    const gridColumns = columns.map((col) => col.width).join(' ');
+
+    if (rows.length === 0) {
+      return this._renderEmpty(emptyMessage);
+    }
+
+    return html`
+      <ha-card @click=${this._handleCardAction}>
+        <div class="cpd-card" data-layout=${layoutMode}>
+          ${this.config.show_header
+            ? html`
+              <div class="cpd-header-row">
+                <div class="cpd-header">${gpName}</div>
+              </div>
+            `
+            : null}
+          <div class="cpd-table" style="--cpd-columns: ${gridColumns};">
+            ${this.config.show_table_header ? this._renderHeader(columns) : null}
+            ${rows.map((row) => this._renderRow(row, columns))}
+          </div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _renderEmpty(message) {
+    return html`
+      <ha-card>
+        <div class="cpd-card" data-layout=${getResponsiveLayoutMode(this)}>
+          ${this.config.show_header
+            ? html`
+              <div class="cpd-header-row">
+                <div class="cpd-header">${gpName}</div>
+              </div>
+            `
+            : null}
+          <div class="cpd-empty">${message}</div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _columns(layoutMode = 'wide') {
+    const compactLayout = layoutMode !== 'wide';
+    const cols = [];
+    if (this.config.show_position !== false) {
+      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
+    }
+    if (this.config.show_team_logo !== false) {
+      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? '0.18fr' : '0.16fr', hideHeader: true });
+    }
+    if (this.config.show_tla !== false) {
+      cols.push({
+        key: 'tla',
+        label: 'DRIVER',
+        width: compactLayout ? '1fr' : this._driverColumnWidth(),
+      });
+    }
+    if (this.config.show_grid !== false) {
+      cols.push({ key: 'grid', label: 'GRD', width: '0.18fr', numeric: true });
+    }
+    if (this.config.show_delta !== false) {
+      cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
+    }
+    cols.push({
+      key: 'points',
+      label: 'PTS',
+      width: '0.28fr',
+      numeric: true,
+    });
+    cols.push({
+      key: 'status',
+      label: 'STATUS',
+      width: '0.6fr',
+      align: true,
+    });
+    return cols;
+  }
+
+  _renderHeader(columns) {
+    return html`
+      <div class="cpd-row header">
+        ${columns.map((col) => html`
+          <div class="cpd-cell ${col.numeric ? 'numeric' : ''} ${col.align ? 'align' : ''} ${col.groupStart ? 'group-start' : ''}">
+            ${col.hideHeader ? '' : col.label}
+          </div>
+        `)}
+      </div>
+    `;
+  }
+
+  _renderRow(row, columns) {
+    return html`
+      <div class="cpd-row">
+        ${columns.map((col) => this._renderCell(row, col))}
+      </div>
+    `;
+  }
+
+  _renderCell(row, col) {
+    const classes = ['cpd-cell'];
+    if (col.numeric) classes.push('numeric');
+    if (col.groupStart) classes.push('group-start');
+    if (col.emphasis === 'primary') classes.push('points-primary');
+    if (col.emphasis === 'secondary') classes.push('points-secondary');
+    if (col.align) classes.push('align');
+
+    if (
+      row.spoiler_blocked
+    ) {
+      return html`<div class="${classes.join(' ')}">${row.spoiler_placeholder}</div>`;
+    }
+
+    if (col.key === 'logo') {
+      return html`
+        <div class="${classes.join(' ')}">
+          ${row.driver_media ? html`
+            <img
+              class="cpd-driver-image ${row.driver_media.kind === 'headshot' ? 'headshot' : 'team-logo'}"
+              src="${row.driver_media.src}"
+              data-fallback="${row.driver_media.fallback || ''}"
+              loading="lazy"
+              @error=${handleTeamLogoError}
+              alt=""
+            />
+          ` : html`<span>--</span>`}
+        </div>
+      `;
+    }
+
+    if (col.key === 'tla') {
+      const style = row.team_color ? `--driver-color: ${row.team_color};` : '';
+      const driverClass = row.use_full_name ? 'full' : 'compact';
+      return html`
+        <div class="${classes.join(' ')} cpd-driver ${driverClass}" style="${style}">
+          ${row.display_driver || '--'}
+        </div>
+      `;
+    }
+
+    if (col.key === 'delta') {
+      const deltaClass = row.delta > 0 ? 'positive' : row.delta < 0 ? 'negative' : 'neutral';
+      const positionMove = this._getPositionMovement(row.current_position, row.predicted_position);
+      return html`
+        <div class="${classes.join(' ')} cpd-delta ${deltaClass}">
+          <span class="cpd-delta-pill ${deltaClass}">
+            <span>${row.delta_display}</span>
+            ${positionMove ? html`
+              <span class="cpd-pos-arrow ${positionMove.className}" title="${positionMove.title}">
+                ${positionMove.symbol}
+              </span>
+            ` : null}
+          </span>
+        </div>
+      `;
+    }
+
+    let value = '--';
+    if (col.key === 'position') value = row.position ?? '--';
+    if (col.key === 'grid') value = row.grid ?? '--';
+    if (col.key === 'points') value = row.points_display;
+    if (col.key === 'status') value = row.status ?? '--';
+    return html`<div class="${classes.join(' ')}">${value}</div>`;
+  }
+
+  _buildCurrentRows(results, driverMap, spoilerBlocked) {
+    const rows = [];
+    results.forEach((result) => {
+      if (!result || typeof result !== 'object') return;
+      const driver = result?.driver || {};
+      const constructor = result?.constructor || {};
+      const rn = String(driver?.permanentNumber ?? '').trim();
+      const tla = this._normalizeTla(driver?.code);
+      const identity = (tla ? this._findDriverByTla(driverMap, tla) : null) || {};
+      const position = this._toNumber(result?.position);
+      const grid = this._toNumber(result?.grid);
+      const points = this._toNumber(result?.points);
+      const delta = Number.isFinite(position) && Number.isFinite(grid)
+        ? grid - position
+        : null;
+      const status = result?.status;
+      const teamName = identity?.team || constructor?.name || null;
+      const teamColor = this._normalizeColor(identity?.team_color);
+      const displayTla = tla || this._normalizeTla(identity?.tla) || (rn ? `#${rn}` : '--');
+      const fullName = this._formatDriverName(driver, identity, rn, displayTla);
+      const useFullName = this.config.show_full_name === true && fullName !== displayTla;
+      const displayDriver = useFullName ? fullName : displayTla;
+
+      rows.push({
+        rn,
+        position: position,
+        grid: grid,
+        display_tla: displayTla,
+        display_driver: displayDriver,
+        identity_sort: displayDriver,
+        use_full_name: useFullName,
+        driver_media: this._resolveDriverMedia(identity, teamName),
+        team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style),
+        team_color: teamColor,
+        points: points,
+        points_display: this._formatPoints(points),
+        delta: delta,
+        delta_display: this._formatDelta(delta),
+        status: status,
+        spoiler_blocked: spoilerBlocked
+      });
+    });
+
+    return this._sortDriverRows(rows, { spoilerBlocked });
+  }
+
+  _applyTopLimit(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const limit = this._parseTopLimit(this.config?.top_limit);
+    if (limit <= 0) return list;
+    return list.slice(0, limit);
+  }
+
+  _buildDriverMap(drivers) {
+    const map = new Map();
+    (Array.isArray(drivers) ? drivers : []).forEach((driver) => {
+      const rn = String(driver?.racing_number ?? '').trim();
+      if (!rn) return;
+      map.set(rn, {
+        tla: driver?.tla,
+        name: this._normalizeDriverName(
+          driver?.full_name,
+          driver?.name,
+          driver?.broadcast_name,
+          [driver?.given_name, driver?.family_name].filter(Boolean).join(' '),
+        ),
+        headshot_small: this._normalizeMediaUrl(driver?.headshot_small),
+        headshot_large: this._normalizeMediaUrl(driver?.headshot_large),
+        team: driver?.team || driver?.team_name,
+        team_color: driver?.team_color,
+      });
+    });
+    return map;
+  }
+
+  _findDriverByTla(driverMap, tla) {
+    if (!tla) return null;
+    for (const entry of driverMap.values()) {
+      if (this._normalizeTla(entry?.tla) === tla) return entry;
+    }
+    return null;
+  }
+
+  _resolveDriverMedia(identity, teamName) {
+    const imageType = this.config?.driver_image_type === 'headshot' ? 'headshot' : 'team_logo';
+    const teamLogo = getTeamLogoMeta(teamName, 24, this.config.team_logo_style);
+
+    if (imageType === 'headshot') {
+      const headshot = this._normalizeMediaUrl(identity?.headshot_large, identity?.headshot_small);
+      if (headshot) {
+        return {
+          src: headshot,
+          fallback: teamLogo?.src || teamLogo?.fallback || '',
+          kind: 'headshot',
+        };
+      }
+    }
+
+    return teamLogo ? { ...teamLogo, kind: 'team-logo' } : null;
+  }
+
+  _driverColumnWidth() {
+    if (this.config.show_full_name === true) {
+      return '1.18fr';
+    }
+    return '0.78fr';
+  }
+
+  _normalizeDriverName(...values) {
+    for (const value of values) {
+      const text = String(value || '').replace(/\s+/g, ' ').trim();
+      if (text) return text;
+    }
+    return null;
+  }
+
+  _normalizeMediaUrl(...values) {
+    for (const value of values) {
+      const text = String(value || '').trim();
+      if (text) return text;
+    }
+    return null;
+  }
+
+  _formatDriverName(driver, identity, rn, fallback) {
+    const explicitName = this._normalizeDriverName(
+      [driver?.givenName, driver?.familyName].filter(Boolean).join(' '),
+      identity?.name,
+      driver?.FullName,
+      driver?.full_name,
+      driver?.name,
+      driver?.BroadcastName,
+      driver?.broadcast_name,
+      driver?.familyName,
+      driver?.givenName,
+    );
+    if (explicitName) return explicitName;
+    if (rn) return `#${rn}`;
+    return fallback || '--';
+  }
+
+  _parseTopLimit(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) return 0;
+    return parsed;
+  }
+
+  _parsePosition(value) {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const match = text.match(/\d+/);
+    if (!match) return null;
+    const num = Number(match[0]);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  _toNumber(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  _formatPoints(value) {
+    if (!Number.isFinite(value)) return '--';
+    if (Math.abs(value - Math.round(value)) < 0.0001) {
+      return String(Math.round(value));
+    }
+    return Number(value).toFixed(1);
+  }
+
+  _formatDelta(value) {
+    if (!Number.isFinite(value)) return '--';
+    const sign = value < 0 ? '-' : '+';
+    const abs = Math.abs(value);
+    return `${sign}${this._formatPoints(abs)}`;
+  }
+
+  _sortDriverRows(rows) {
+    rows.sort((a, b) => {
+      const positionDiff = this._comparePositionAscending(a.position, b.position);
+      if (positionDiff !== 0) return positionDiff;
+
+      return this._compareDriverIdentity(a, b);
+    });
+
+    return rows;
+  }
+
+  _compareDriverIdentity(a, b) {
+    const labelDiff = String(a.identity_sort || '').localeCompare(String(b.identity_sort || ''));
+    if (labelDiff !== 0) return labelDiff;
+    return this._compareRacingNumber(a.rn, b.rn);
+  }
+
+  _comparePositionAscending(a, b) {
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      const diff = a - b;
+      return diff === 0 ? 0 : diff;
+    }
+    if (Number.isFinite(a)) return -1;
+    if (Number.isFinite(b)) return 1;
+    return 0;
+  }
+
+  _getPositionMovement(currentPosition, predictedPosition) {
+    if (!Number.isFinite(currentPosition) || !Number.isFinite(predictedPosition)) {
+      return null;
+    }
+    const change = currentPosition - predictedPosition;
+    if (change > 0) {
+      return { symbol: '▲', className: 'up', title: `Improves by ${change} position${change > 1 ? 's' : ''}` };
+    }
+    if (change < 0) {
+      const loss = Math.abs(change);
+      return { symbol: '▼', className: 'down', title: `Drops by ${loss} position${loss > 1 ? 's' : ''}` };
+    }
+    return null;
+  }
+
+  _normalizeTla(value) {
+    if (!value) return null;
+    const tla = String(value).trim().toUpperCase();
+    return tla || null;
+  }
+
+  _normalizeColor(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (text.startsWith('#') || text.startsWith('rgb')) return text;
+    if (/^[0-9a-fA-F]{6}$/.test(text)) return `#${text}`;
+    return text;
+  }
+
+  _compareRacingNumber(a, b) {
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (Number.isFinite(aNum) && Number.isFinite(bNum)) return aNum - bNum;
+    return String(a).localeCompare(String(b));
+  }
+
+  _handleCardAction() {
+    const action = this.config?.tap_action || { action: 'more-info' };
+    if (action.action === 'none') return;
+    if (action.action === 'more-info') {
+      this.dispatchEvent(new CustomEvent('hass-more-info', {
+        bubbles: true,
+        composed: true,
+        detail: { entityId: this._actionEntityId || this.config.current_entity || this.config.entity },
+      }));
+    }
+  }
+}
+
+// ============================================================================
 // F1 Investigations Card
 // ============================================================================
 
@@ -10041,6 +11247,1122 @@ class F1LiveSessionCardEditor extends LitElement {
   _valueChanged(name, value) {
     if (!this._config) return;
     const newConfig = { ...this._config, [name]: value };
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+}
+
+// ============================================================================
+// F1 Replay Control Card
+// ============================================================================
+
+const F1_REPLAY_ENTITY_DEFAULTS = {
+  status_entity: 'sensor.f1_replay_status',
+  year_entity: 'select.f1_replay_year',
+  session_entity: 'select.f1_replay_session',
+  start_reference_entity: 'select.f1_replay_start_reference',
+  load_button_entity: 'button.f1_replay_load',
+  play_button_entity: 'button.f1_replay_play',
+  pause_button_entity: 'button.f1_replay_pause',
+  back_button_entity: 'button.f1_replay_back_30',
+  forward_button_entity: 'button.f1_replay_forward_30',
+  stop_button_entity: 'button.f1_replay_stop',
+  refresh_button_entity: 'button.f1_replay_refresh',
+  player_entity: 'media_player.f1_replay_player',
+};
+
+const F1_REPLAY_STATUS_META = {
+  idle: { label: 'IDLE', tone: 'idle', icon: 'mdi:replay' },
+  selected: { label: 'SELECTED', tone: 'selected', icon: 'mdi:playlist-check' },
+  loading: { label: 'LOADING', tone: 'loading', icon: 'mdi:download' },
+  ready: { label: 'READY', tone: 'ready', icon: 'mdi:play-circle' },
+  seeking: { label: 'SEEKING', tone: 'loading', icon: 'mdi:fast-forward' },
+  playing: { label: 'PLAYING', tone: 'playing', icon: 'mdi:play' },
+  paused: { label: 'PAUSED', tone: 'paused', icon: 'mdi:pause' },
+};
+
+const F1_REPLAY_ACTIONS = [
+  {
+    key: 'load_button_entity',
+    label: 'Load',
+    icon: 'mdi:download',
+    className: 'load',
+    enabledStates: ['selected'],
+  },
+  {
+    key: 'back_button_entity',
+    label: 'Back 30',
+    icon: 'mdi:rewind-30',
+    className: 'secondary',
+    enabledStates: ['ready', 'playing', 'paused'],
+    seek: true,
+  },
+  {
+    key: 'play_button_entity',
+    label: 'Play',
+    icon: 'mdi:play',
+    className: 'primary',
+    enabledStates: ['ready', 'paused'],
+    fallbackService: ['media_player', 'media_play'],
+  },
+  {
+    key: 'pause_button_entity',
+    label: 'Pause',
+    icon: 'mdi:pause',
+    className: 'secondary',
+    enabledStates: ['playing'],
+    fallbackService: ['media_player', 'media_pause'],
+  },
+  {
+    key: 'forward_button_entity',
+    label: 'Forward 30',
+    icon: 'mdi:fast-forward-30',
+    className: 'secondary',
+    enabledStates: ['ready', 'playing', 'paused'],
+    seek: true,
+  },
+  {
+    key: 'stop_button_entity',
+    label: 'Stop',
+    icon: 'mdi:stop',
+    className: 'danger',
+    enabledStates: ['selected', 'loading', 'ready', 'seeking', 'playing', 'paused'],
+    fallbackService: ['media_player', 'media_stop'],
+  },
+  {
+    key: 'refresh_button_entity',
+    label: 'Refresh',
+    icon: 'mdi:refresh',
+    className: 'ghost',
+    enabledStates: ['idle', 'selected', 'ready', 'paused'],
+  },
+];
+
+class F1ReplayControlCard extends LitElement {
+  static properties = {
+    hass: {},
+    config: {},
+    _actionBusy: { state: true },
+  };
+
+  constructor() {
+    super();
+    this._actionBusy = null;
+  }
+
+  static styles = [F1_THEME_STYLES, css`
+    @keyframes replayPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.64; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    :host {
+      --rc-bg: var(--f1-card-bg);
+      --rc-bg-soft: var(--f1-card-bg-soft);
+      --rc-bg-end: var(--f1-card-bg-end);
+      --rc-border: var(--f1-card-border);
+      --rc-divider: var(--f1-card-divider);
+      --rc-text: var(--f1-card-text);
+      --rc-muted: var(--f1-card-muted);
+      --rc-soft: var(--f1-card-soft);
+      --rc-chip: var(--f1-card-chip);
+      --rc-panel: var(--f1-card-panel);
+      --rc-shadow: var(--f1-card-compact-shadow);
+      display: block;
+    }
+
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+    }
+
+    .rc-card {
+      font-family: 'Formula1 Display', 'Titillium Web', Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 14px;
+      border-radius: var(--ha-card-border-radius, 12px);
+      background:
+        linear-gradient(90deg, rgba(225, 6, 0, 0.18), transparent 34%) top left / 100% 2px no-repeat,
+        radial-gradient(circle at 14% 10%, var(--rc-chip), transparent 44%),
+        linear-gradient(160deg, var(--rc-bg) 0%, var(--rc-bg-soft) 58%, var(--rc-bg-end) 100%);
+      border: 1px solid var(--rc-border);
+      box-shadow: var(--rc-shadow);
+      color: var(--rc-text);
+      container-type: inline-size;
+    }
+
+    .rc-card.compact {
+      gap: 10px;
+      padding: 12px;
+    }
+
+    .rc-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .rc-title-group {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .rc-title {
+      font-family: 'Formula1 Wide', 'Formula1 Display', Arial, sans-serif;
+      font-weight: 600;
+      font-size: 15px;
+      letter-spacing: 0.02em;
+      line-height: 1.18;
+      overflow-wrap: anywhere;
+    }
+
+    .rc-subtitle {
+      color: var(--rc-muted);
+      font-size: 11px;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
+    .rc-status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--rc-status-color, var(--rc-soft)) 46%, transparent);
+      background: color-mix(in srgb, var(--rc-status-color, var(--rc-soft)) 14%, transparent);
+      color: var(--rc-status-color, var(--rc-text));
+      font-weight: 700;
+      font-size: 10px;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+      text-transform: uppercase;
+    }
+
+    .rc-status-pill ha-icon {
+      --mdc-icon-size: 16px;
+    }
+
+    .rc-status-pill.playing {
+      --rc-status-color: #34c759;
+      animation: replayPulse 1.6s ease-in-out infinite;
+    }
+
+    .rc-status-pill.paused {
+      --rc-status-color: #f59e0b;
+    }
+
+    .rc-status-pill.ready,
+    .rc-status-pill.selected {
+      --rc-status-color: #38bdf8;
+    }
+
+    .rc-status-pill.loading {
+      --rc-status-color: #f97316;
+      animation: replayPulse 1.1s ease-in-out infinite;
+    }
+
+    .rc-status-pill.idle {
+      --rc-status-color: var(--rc-soft);
+    }
+
+    .rc-field-grid {
+      display: grid;
+      grid-template-columns: minmax(110px, 0.45fr) minmax(170px, 1fr);
+      gap: 8px;
+    }
+
+    .rc-card.compact .rc-field-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .rc-select-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .rc-select-field.session {
+      grid-column: span 1;
+    }
+
+    .rc-start-group {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: end;
+      grid-column: 1 / -1;
+      min-width: 0;
+    }
+
+    .rc-start-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(76px, auto));
+      gap: 6px;
+    }
+
+    .rc-start-group.no-reference {
+      grid-template-columns: 1fr;
+    }
+
+    .rc-start-group.no-reference .rc-start-actions {
+      justify-self: end;
+    }
+
+    .rc-card.compact .rc-start-group.no-reference .rc-start-actions {
+      width: 100%;
+      justify-self: stretch;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .rc-field-label {
+      color: var(--rc-muted);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .rc-select-wrap {
+      position: relative;
+      min-width: 0;
+    }
+
+    .rc-select-wrap::after {
+      content: '';
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      width: 7px;
+      height: 7px;
+      border-right: 2px solid var(--rc-muted);
+      border-bottom: 2px solid var(--rc-muted);
+      transform: translateY(-65%) rotate(45deg);
+      pointer-events: none;
+    }
+
+    select {
+      width: 100%;
+      height: 42px;
+      appearance: none;
+      border: 1px solid var(--rc-divider);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--rc-panel) 76%, transparent);
+      color: var(--rc-text);
+      font: inherit;
+      font-size: 13px;
+      line-height: 1.2;
+      padding: 0 34px 0 12px;
+      outline: none;
+      min-width: 0;
+      text-overflow: ellipsis;
+    }
+
+    select:focus {
+      border-color: color-mix(in srgb, #e10600 70%, var(--rc-divider));
+      box-shadow: 0 0 0 2px rgba(225, 6, 0, 0.16);
+    }
+
+    select:disabled {
+      color: var(--rc-soft);
+      opacity: 0.68;
+      cursor: not-allowed;
+    }
+
+    .rc-status-details {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      padding: 9px 10px;
+      border: 1px solid var(--rc-divider);
+      border-radius: 8px;
+      background: var(--rc-panel);
+    }
+
+    .rc-detail {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .rc-detail-label {
+      color: var(--rc-muted);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .rc-detail-value {
+      color: var(--rc-text);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.22;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .rc-progress {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .rc-progress-time {
+      color: var(--rc-muted);
+      font-size: 10px;
+      font-weight: 700;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .rc-progress-track {
+      height: 5px;
+      border-radius: 999px;
+      background: var(--rc-chip);
+      overflow: hidden;
+    }
+
+    .rc-progress-bar {
+      height: 100%;
+      width: var(--rc-progress, 0%);
+      border-radius: inherit;
+      background: linear-gradient(90deg, #e10600, #ff3b30);
+      transition: width 0.3s ease;
+    }
+
+    .rc-controls {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .rc-card.compact .rc-controls {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .rc-button {
+      min-width: 0;
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: 1px solid var(--rc-divider);
+      border-radius: 8px;
+      background: var(--rc-panel);
+      color: var(--rc-text);
+      font: inherit;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .rc-button ha-icon {
+      --mdc-icon-size: 18px;
+      flex: 0 0 auto;
+    }
+
+    .rc-button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      border-color: color-mix(in srgb, #e10600 45%, var(--rc-divider));
+      background: color-mix(in srgb, #e10600 10%, var(--rc-panel));
+    }
+
+    .rc-button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .rc-button:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+    }
+
+    .rc-button.primary {
+      background: linear-gradient(135deg, #e10600, #9f0500);
+      border-color: rgba(255, 255, 255, 0.14);
+      color: #ffffff;
+    }
+
+    .rc-button.load {
+      background: color-mix(in srgb, #38bdf8 15%, var(--rc-panel));
+      border-color: color-mix(in srgb, #38bdf8 34%, var(--rc-divider));
+      color: color-mix(in srgb, #38bdf8 84%, var(--rc-text));
+    }
+
+    .rc-button.danger {
+      color: #ff6b66;
+      border-color: color-mix(in srgb, #ff3b30 32%, var(--rc-divider));
+    }
+
+    .rc-button.ghost {
+      color: var(--rc-muted);
+    }
+
+    .rc-button-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .rc-empty {
+      color: var(--rc-muted);
+      padding: 18px 12px;
+      text-align: center;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    @container (max-width: 620px) {
+      .rc-field-grid,
+      .rc-status-details {
+        grid-template-columns: 1fr;
+      }
+
+      .rc-start-group {
+        grid-template-columns: 1fr;
+      }
+
+      .rc-start-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        justify-self: stretch;
+      }
+
+      .rc-controls {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+
+    @container (max-width: 420px) {
+      .rc-header {
+        grid-template-columns: 1fr;
+      }
+
+      .rc-status-pill {
+        justify-self: start;
+      }
+
+      .rc-controls,
+      .rc-card.compact .rc-controls {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .rc-button-label {
+        display: none;
+      }
+    }
+  `];
+
+  connectedCallback() {
+    super.connectedCallback();
+    ensureF1Fonts();
+  }
+
+  setConfig(config = {}) {
+    this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
+      title: 'Replay Control',
+      display_mode: 'full',
+      show_title: true,
+      show_status_details: true,
+      show_secondary_selects: true,
+      show_start_reference: true,
+      show_seek_controls: true,
+      show_refresh: true,
+      show_progress: true,
+      show_button_labels: true,
+      ...F1_REPLAY_ENTITY_DEFAULTS,
+      ...config,
+    };
+    applyF1ThemeMode(this, this.config);
+  }
+
+  static getConfigElement() {
+    return document.createElement('f1-replay-control-card-editor');
+  }
+
+  static getStubConfig() {
+    return {
+      type: 'custom:f1-replay-control-card',
+      ...F1_REPLAY_ENTITY_DEFAULTS,
+    };
+  }
+
+  getCardSize() {
+    return this.config?.display_mode === 'compact' ? 3 : 4;
+  }
+
+  getGridOptions() {
+    return {
+      columns: 12,
+      min_columns: 4,
+      max_columns: 12,
+      min_rows: this.config?.display_mode === 'compact' ? 3 : 4,
+    };
+  }
+
+  _configuredEntityId(key) {
+    if (!this.config || typeof this.config !== 'object') return F1_REPLAY_ENTITY_DEFAULTS[key];
+    const hasKey = Object.prototype.hasOwnProperty.call(this.config, key);
+    const value = this.config[key];
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) return trimmed;
+      return hasKey ? null : F1_REPLAY_ENTITY_DEFAULTS[key];
+    }
+    if (value != null) return value;
+    return hasKey ? null : F1_REPLAY_ENTITY_DEFAULTS[key];
+  }
+
+  _entity(key) {
+    const entityId = this._configuredEntityId(key);
+    return entityId ? getEntityStateWithFallback(this.hass, entityId) : null;
+  }
+
+  _isUsableEntity(entity) {
+    return Boolean(entity && entity.state !== 'unavailable' && entity.state !== 'unknown');
+  }
+
+  _stateValue(entity, fallback = '') {
+    return this._isUsableEntity(entity) ? String(entity.state || fallback) : fallback;
+  }
+
+  _statusState(statusEntity, playerEntity) {
+    const fromStatus = this._stateValue(statusEntity, '');
+    if (fromStatus) return fromStatus.toLowerCase();
+    const playerReplayState = playerEntity?.attributes?.replay_state;
+    if (playerReplayState) return String(playerReplayState).toLowerCase();
+    const playerState = this._stateValue(playerEntity, '');
+    return playerState ? playerState.toLowerCase() : 'unknown';
+  }
+
+  _statusMeta(state) {
+    return F1_REPLAY_STATUS_META[state] || {
+      label: state ? state.replace(/_/g, ' ').toUpperCase() : 'UNKNOWN',
+      tone: 'idle',
+      icon: 'mdi:help-circle-outline',
+    };
+  }
+
+  _selectOptions(entity, currentValue) {
+    const raw = Array.isArray(entity?.attributes?.options) ? entity.attributes.options : [];
+    const options = raw.map((option) => String(option));
+    if (currentValue && !options.includes(currentValue)) {
+      return [currentValue, ...options];
+    }
+    return options;
+  }
+
+  _formatTime(seconds) {
+    const value = Number(seconds);
+    if (!Number.isFinite(value) || value < 0) return '--:--:--';
+    const total = Math.floor(value);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    return [h, m, s].map((part) => String(part).padStart(2, '0')).join(':');
+  }
+
+  _playback(statusEntity, playerEntity) {
+    const attrs = statusEntity?.attributes || {};
+    const playerAttrs = playerEntity?.attributes || {};
+    const position = Number(
+      attrs.playback_position_s ?? playerAttrs.playback_position_s ?? playerEntity?.attributes?.media_position ?? 0,
+    );
+    const total = Number(
+      attrs.playback_total_s ?? playerAttrs.playback_total_s ?? playerEntity?.attributes?.media_duration ?? 0,
+    );
+    const downloadProgress = Number(attrs.download_progress ?? 0);
+    const progress = total > 0
+      ? Math.max(0, Math.min(100, (position / total) * 100))
+      : Math.max(0, Math.min(100, downloadProgress));
+    return { position, total, progress };
+  }
+
+  _downloadError(statusEntity) {
+    return statusEntity?.attributes?.download_error || null;
+  }
+
+  _sessionsAvailable(statusEntity, sessionEntity) {
+    const attrValue = statusEntity?.attributes?.sessions_available;
+    if (attrValue !== undefined && attrValue !== null) return attrValue;
+    const options = sessionEntity?.attributes?.options;
+    return Array.isArray(options) ? options.length : '--';
+  }
+
+  _isBusyState(state) {
+    return state === 'loading' || state === 'seeking';
+  }
+
+  _hasActionTarget(action) {
+    const entityId = this._configuredEntityId(action.key);
+    const entity = entityId ? this.hass?.states?.[entityId] : null;
+    if (entity && entity.state !== 'unavailable') return true;
+
+    const playerId = this._configuredEntityId('player_entity');
+    const player = playerId ? this.hass?.states?.[playerId] : null;
+    return Boolean(action.fallbackService && player && player.state !== 'unavailable');
+  }
+
+  _canRunAction(action, state) {
+    if (this._actionBusy) return false;
+    if (this._isBusyState(state) && action.key !== 'stop_button_entity') return false;
+    return action.enabledStates.includes(state) && this._hasActionTarget(action);
+  }
+
+  _visibleActions() {
+    return F1_REPLAY_ACTIONS.filter((action) => {
+      if (action.key === 'load_button_entity' || action.key === 'refresh_button_entity') return false;
+      if (!this.config.show_seek_controls && action.seek) return false;
+      return true;
+    });
+  }
+
+  _setupActions() {
+    return F1_REPLAY_ACTIONS.filter((action) => (
+      action.key === 'load_button_entity'
+      || (this.config.show_refresh !== false && action.key === 'refresh_button_entity')
+    ));
+  }
+
+  async _selectOption(entityId, option) {
+    if (!entityId || !option || typeof this.hass?.callService !== 'function') return;
+    await this.hass.callService('select', 'select_option', {
+      entity_id: entityId,
+      option,
+    });
+  }
+
+  async _pressAction(action) {
+    if (!action || this._actionBusy || typeof this.hass?.callService !== 'function') return;
+    const entityId = this._configuredEntityId(action.key);
+    const entity = entityId ? this.hass.states[entityId] : null;
+    const playerId = this._configuredEntityId('player_entity');
+    const canUseButton = entity && entity.state !== 'unavailable';
+    const fallbackService = action.fallbackService;
+
+    if (!canUseButton && (!fallbackService || !playerId)) return;
+
+    this._actionBusy = action.key;
+    try {
+      if (canUseButton) {
+        await this.hass.callService('button', 'press', { entity_id: entityId });
+      } else {
+        await this.hass.callService(fallbackService[0], fallbackService[1], {
+          entity_id: playerId,
+        });
+      }
+    } finally {
+      this._actionBusy = null;
+    }
+  }
+
+  _renderSelect(key, label, entity, wide = false) {
+    const entityId = this._configuredEntityId(key);
+    const entityExists = Boolean(entity && entity.state !== 'unavailable');
+    const currentValue = entityExists ? String(entity.state || '') : '';
+    const options = this._selectOptions(entity, currentValue);
+    const disabled = !entityId || !entityExists || options.length === 0;
+
+    return html`
+      <label class="rc-select-field ${wide ? 'session' : ''}">
+        <span class="rc-field-label">${label}</span>
+        <span class="rc-select-wrap">
+          <select
+            .value=${currentValue}
+            ?disabled=${disabled}
+            @change=${(ev) => this._selectOption(entityId, ev.target.value)}
+          >
+            ${disabled ? html`<option value="">Unavailable</option>` : options.map((option) => html`
+              <option value=${option}>${option}</option>
+            `)}
+          </select>
+        </span>
+      </label>
+    `;
+  }
+
+  _renderAction(action, state) {
+    const disabled = !this._canRunAction(action, state);
+    const busy = this._actionBusy === action.key;
+    return html`
+      <button
+        class="rc-button ${action.className}"
+        ?disabled=${disabled}
+        title=${action.label}
+        @click=${() => this._pressAction(action)}
+      >
+        <ha-icon icon=${busy ? 'mdi:loading' : action.icon}></ha-icon>
+        ${this.config.show_button_labels !== false ? html`
+          <span class="rc-button-label">${busy ? 'Wait' : action.label}</span>
+        ` : null}
+      </button>
+    `;
+  }
+
+  _renderStartReferenceGroup(startReferenceEntity, state) {
+    if (this.config.show_start_reference === false) {
+      return html`
+        <div class="rc-start-group no-reference">
+          <div class="rc-start-actions">
+            ${this._setupActions().map((action) => this._renderAction(action, state))}
+          </div>
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="rc-start-group">
+        ${this._renderSelect('start_reference_entity', 'Start reference', startReferenceEntity, true)}
+        <div class="rc-start-actions">
+          ${this._setupActions().map((action) => this._renderAction(action, state))}
+        </div>
+      </div>
+    `;
+  }
+
+  _renderSetupActionsGroup(state) {
+    return html`
+      <div class="rc-start-group no-reference">
+        <div class="rc-start-actions">
+          ${this._setupActions().map((action) => this._renderAction(action, state))}
+        </div>
+      </div>
+    `;
+  }
+
+  render() {
+    if (!this.hass || !this.config) {
+      return html`<ha-card><div class="rc-card"><div class="rc-empty">Loading...</div></div></ha-card>`;
+    }
+
+    const compact = this.config.display_mode === 'compact';
+    const statusEntity = this._entity('status_entity');
+    const playerEntity = this._entity('player_entity');
+    const yearEntity = this._entity('year_entity');
+    const sessionEntity = this._entity('session_entity');
+    const startReferenceEntity = this._entity('start_reference_entity');
+    const state = this._statusState(statusEntity, playerEntity);
+    const statusMeta = this._statusMeta(state);
+    const selectedSession = this._stateValue(sessionEntity, '')
+      || statusEntity?.attributes?.selected_session
+      || playerEntity?.attributes?.selected_session
+      || 'No replay selected';
+    const selectedYear = this._stateValue(yearEntity, '')
+      || statusEntity?.attributes?.selected_year
+      || '--';
+    const playback = this._playback(statusEntity, playerEntity);
+    const progressStyle = `--rc-progress: ${playback.progress.toFixed(1)}%;`;
+    const downloadError = this._downloadError(statusEntity);
+    const showSecondarySelects = this.config.show_secondary_selects !== false && !compact;
+    const showStatusDetails = this.config.show_status_details !== false && !compact;
+
+    return html`
+      <ha-card>
+        <div class="rc-card ${compact ? 'compact' : ''}">
+          <div class="rc-header">
+            ${this.config.show_title !== false ? html`
+              <div class="rc-title-group">
+                <div class="rc-title">${this.config.title || 'Replay Control'}</div>
+                <div class="rc-subtitle">${selectedSession}</div>
+              </div>
+            ` : html`<span></span>`}
+            <div class="rc-status-pill ${statusMeta.tone}">
+              <ha-icon icon=${statusMeta.icon}></ha-icon>
+              <span>${statusMeta.label}</span>
+            </div>
+          </div>
+
+          ${showStatusDetails ? html`
+            <div class="rc-status-details">
+              <div class="rc-detail">
+                <span class="rc-detail-label">Sessions</span>
+                <span class="rc-detail-value">${this._sessionsAvailable(statusEntity, sessionEntity)}</span>
+              </div>
+              <div class="rc-detail">
+                <span class="rc-detail-label">Year</span>
+                <span class="rc-detail-value">${selectedYear}</span>
+              </div>
+              <div class="rc-detail">
+                <span class="rc-detail-label">Status</span>
+                <span class="rc-detail-value">${downloadError || statusMeta.label}</span>
+              </div>
+            </div>
+          ` : null}
+
+          <div class="rc-field-grid">
+            ${showSecondarySelects ? this._renderSelect('year_entity', 'Year', yearEntity) : null}
+            ${this._renderSelect('session_entity', 'Replay', sessionEntity, true)}
+            ${showSecondarySelects
+              ? this._renderStartReferenceGroup(startReferenceEntity, state)
+              : this._renderSetupActionsGroup(state)}
+          </div>
+
+          ${this.config.show_progress !== false ? html`
+            <div class="rc-progress">
+              <span class="rc-progress-time">${this._formatTime(playback.position)}</span>
+              <div class="rc-progress-track">
+                <div class="rc-progress-bar" style=${progressStyle}></div>
+              </div>
+              <span class="rc-progress-time">${this._formatTime(playback.total)}</span>
+            </div>
+          ` : null}
+
+          <div class="rc-controls">
+            ${this._visibleActions().map((action) => this._renderAction(action, state))}
+          </div>
+        </div>
+      </ha-card>
+    `;
+  }
+}
+
+class F1ReplayControlCardEditor extends LitElement {
+  static properties = {
+    hass: {},
+    _config: {},
+    _activeTab: { state: true },
+  };
+
+  static styles = css`
+    .card-config {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--divider-color);
+      margin-bottom: 16px;
+    }
+
+    .tabs button {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary-text-color);
+      font-size: 14px;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+
+    .tabs button:hover {
+      color: var(--primary-color);
+    }
+
+    .tabs button.active {
+      color: var(--primary-color);
+      border-bottom: 2px solid var(--primary-color);
+      margin-bottom: -1px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--secondary-text-color);
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .helper {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      padding-left: 16px;
+      line-height: 1.4;
+    }
+
+    .display-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    ha-form {
+      width: 100%;
+    }
+  `;
+
+  constructor() {
+    super();
+    this._activeTab = 'entities';
+  }
+
+  setConfig(config = {}) {
+    this._config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
+      title: 'Replay Control',
+      display_mode: 'full',
+      show_title: true,
+      show_status_details: true,
+      show_secondary_selects: true,
+      show_start_reference: true,
+      show_seek_controls: true,
+      show_refresh: true,
+      show_progress: true,
+      show_button_labels: true,
+      ...F1_REPLAY_ENTITY_DEFAULTS,
+      ...config,
+    };
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    return html`
+      <div class="card-config">
+        <div class="tabs">
+          <button
+            class=${this._activeTab === 'entities' ? 'active' : ''}
+            @click=${() => this._activeTab = 'entities'}
+          >
+            Entities
+          </button>
+          <button
+            class=${this._activeTab === 'display' ? 'active' : ''}
+            @click=${() => this._activeTab = 'display'}
+          >
+            Display
+          </button>
+        </div>
+
+        ${this._activeTab === 'entities'
+          ? this._renderEntitiesTab()
+          : this._renderDisplayTab()}
+      </div>
+    `;
+  }
+
+  _renderEntitiesTab() {
+    return html`
+      <div class="section">
+        <div class="section-header">REPLAY SELECTS</div>
+        ${this._renderEntityPicker('status_entity', 'Replay Status Sensor', 'sensor')}
+        ${this._renderEntityPicker('year_entity', 'Replay Year Select', 'select')}
+        ${this._renderEntityPicker('session_entity', 'Replay Session Select', 'select')}
+        ${this._renderEntityPicker('start_reference_entity', 'Replay Start Reference Select', 'select')}
+      </div>
+      <div class="section">
+        <div class="section-header">REPLAY BUTTONS</div>
+        ${this._renderEntityPicker('load_button_entity', 'Load Session Button', 'button')}
+        ${this._renderEntityPicker('play_button_entity', 'Play Button', 'button')}
+        ${this._renderEntityPicker('pause_button_entity', 'Pause Button', 'button')}
+        ${this._renderEntityPicker('back_button_entity', 'Back 30 Seconds Button', 'button')}
+        ${this._renderEntityPicker('forward_button_entity', 'Forward 30 Seconds Button', 'button')}
+        ${this._renderEntityPicker('stop_button_entity', 'Stop Button', 'button')}
+        ${this._renderEntityPicker('refresh_button_entity', 'Refresh Sessions Button', 'button')}
+      </div>
+      <div class="section">
+        <div class="section-header">OPTIONAL PLAYER</div>
+        ${this._renderEntityPicker('player_entity', 'Replay Media Player', 'media_player')}
+      </div>
+    `;
+  }
+
+  _renderDisplayTab() {
+    return html`
+      <div class="display-section">
+        ${this._renderTextField('title', 'Title')}
+        ${renderThemeModeSelect(this)}
+        ${renderEditorSelect(this, 'display_mode', 'Display mode', [
+          { value: 'full', label: 'Full controls' },
+          { value: 'compact', label: 'Compact controls' },
+        ])}
+        ${this._renderSwitch('show_title', 'Show title')}
+        ${this._renderSwitch('show_status_details', 'Show status details')}
+        ${this._renderSwitch('show_secondary_selects', 'Show year and start reference selects')}
+        ${this._renderSwitch('show_start_reference', 'Show start reference select')}
+        ${this._renderSwitch('show_seek_controls', 'Show back and forward controls')}
+        ${this._renderSwitch('show_refresh', 'Show refresh control')}
+        ${this._renderSwitch('show_progress', 'Show replay progress')}
+        ${this._renderSwitch('show_button_labels', 'Show button labels')}
+      </div>
+    `;
+  }
+
+  _renderEntityPicker(name, label, domain) {
+    const schema = [{ name, label, selector: { entity: { domain } } }];
+    return html`
+      <div class="field">
+        <ha-form
+          .hass=${this.hass}
+          .data=${this._config}
+          .schema=${schema}
+          .computeLabel=${() => label}
+          @value-changed=${this._formValueChanged}
+        ></ha-form>
+      </div>
+    `;
+  }
+
+  _renderSwitch(name, label) {
+    const schema = [{ name, label, selector: { boolean: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+    `;
+  }
+
+  _renderTextField(name, label) {
+    const schema = [{ name, label, selector: { text: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+    `;
+  }
+
+  _formValueChanged(ev) {
+    if (!this._config) return;
+    const value = ev.detail?.value || {};
+    const newConfig = { ...this._config, ...value };
     this._config = newConfig;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
   }
@@ -19260,6 +21582,20 @@ installSectionsAutoHeight(F1ChampionshipPredictionTeamsCard, {
   min_rows: 5,
 });
 
+installSectionsAutoHeight(F1LastRaceResultsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 5,
+});
+
+installSectionsAutoHeight(F1ReplayControlCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 3,
+});
+
 installSectionsAutoHeight(F1InvestigationsCard, {
   columns: 12,
   min_columns: 4,
@@ -19362,6 +21698,22 @@ if (!customElements.get('f1-championship-prediction-teams-card')) {
 
 if (!customElements.get('f1-championship-prediction-teams-card-editor')) {
   customElements.define('f1-championship-prediction-teams-card-editor', F1ChampionshipPredictionTeamsCardEditor);
+}
+
+if (!customElements.get('f1-last-race-results-card')) {
+  customElements.define('f1-last-race-results-card', F1LastRaceResultsCard);
+}
+
+if (!customElements.get('f1-last-race-results-card-editor')) {
+  customElements.define('f1-last-race-results-card-editor', F1LastRaceResultsCardEditor);
+}
+
+if (!customElements.get('f1-replay-control-card')) {
+  customElements.define('f1-replay-control-card', F1ReplayControlCard);
+}
+
+if (!customElements.get('f1-replay-control-card-editor')) {
+  customElements.define('f1-replay-control-card-editor', F1ReplayControlCardEditor);
 }
 
 if (!customElements.get('f1-investigations-card')) {
@@ -19472,6 +21824,22 @@ window.customCards.push({
   type: 'f1-championship-prediction-teams-card',
   name: 'F1 Championship Standings Teams',
   description: 'Current constructor championship standings with race projection overlay (predictions Replay Mode only)',
+  configurable: true,
+  preview: true,
+});
+
+window.customCards.push({
+  type: 'f1-last-race-results-card',
+  name: 'F1 Last Race Results',
+  description: 'Last race results table with finishing position, grid, position delta, points, and status',
+  configurable: true,
+  preview: true,
+});
+
+window.customCards.push({
+  type: 'f1-replay-control-card',
+  name: 'F1 Replay Control',
+  description: 'Replay Mode control panel with session selectors, playback controls, and progress',
   configurable: true,
   preview: true,
 });
