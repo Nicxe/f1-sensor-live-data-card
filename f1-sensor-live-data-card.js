@@ -366,6 +366,11 @@ const LEGACY_ENTITY_ID_FALLBACKS = {
   'sensor.f1_session_session_time_remaining': 'sensor.f1_session_time_remaining',
   'sensor.f1_session_session_time_elapsed': 'sensor.f1_session_time_elapsed',
   'sensor.f1_race_next_race': 'sensor.f1_next_race',
+  'sensor.f1_last_race_results': 'sensor.f1_race_f1_last_race_results',
+  'sensor.f1_season_results': 'sensor.f1_race_f1_season_results',
+  'sensor.f1_sprint_results': 'sensor.f1_race_f1_sprint_results',
+  'sensor.f1_driver_list': 'sensor.f1_drivers_f1_driver_list',
+  'switch.f1_no_spoiler_mode': 'switch.no_spoiler_mode',
   'sensor.f1_starting_grid': 'sensor.f1_session_f1_starting_grid',
   'sensor.f1_session_starting_grid': 'sensor.f1_session_f1_starting_grid',
   'binary_sensor.f1_session_formation_start': 'binary_sensor.f1_formation_start',
@@ -7330,10 +7335,16 @@ class F1LastRaceResultsCardEditor extends LitElement {
 
   setConfig(config) {
     this._config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       entity: 'sensor.f1_last_race_results',
+      season_results_entity: 'sensor.f1_season_results',
+      sprint_results_entity: 'sensor.f1_sprint_results',
       drivers_entity: 'sensor.f1_driver_list',
       no_spoiler_entity: 'switch.f1_no_spoiler_mode',
       show_header: true,
+      show_session_selector: true,
+      show_session_type_badge: true,
+      show_table_header: true,
       show_grid: true,
       show_position: true,
       show_tla: true,
@@ -7342,6 +7353,8 @@ class F1LastRaceResultsCardEditor extends LitElement {
       driver_image_type: 'team_logo',
       team_logo_style: 'color',
       show_delta: true,
+      show_points: true,
+      show_status: true,
       top_limit: 0,
       ...config,
     };
@@ -7381,8 +7394,22 @@ class F1LastRaceResultsCardEditor extends LitElement {
         ${this._renderEntityPicker(
           'entity',
           'Last Race Results Sensor',
-          'Provides the last race results shown as the base result view',
+          'Provides the latest race result and is used as the default selection',
           true,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'season_results_entity',
+          'Season Results Sensor',
+          'Provides previous Grand Prix results for the dropdown',
+          false,
+          'sensor'
+        )}
+        ${this._renderEntityPicker(
+          'sprint_results_entity',
+          'Sprint Results Sensor',
+          'Adds Sprint results to the dropdown when available',
+          false,
           'sensor'
         )}
         ${this._renderEntityPicker(
@@ -7406,6 +7433,7 @@ class F1LastRaceResultsCardEditor extends LitElement {
   _renderDisplayTab() {
     return html`
       <div class="display-section">
+        ${renderThemeModeSelect(this)}
         <ha-textfield
           .label=${'Title'}
           .value=${this._config.title || ''}
@@ -7413,6 +7441,8 @@ class F1LastRaceResultsCardEditor extends LitElement {
         ></ha-textfield>
 
         ${this._renderSwitch('show_header', 'Show header')}
+        ${this._renderSwitch('show_session_selector', 'Show race selector')}
+        ${this._renderSwitch('show_session_type_badge', 'Show Race/Sprint badge')}
         ${this._renderSwitch('show_table_header', 'Show table header')}
         ${this._renderSwitch('show_position', 'Show position')}
         ${this._renderSwitch('show_grid', 'Show grid')}
@@ -7452,6 +7482,8 @@ class F1LastRaceResultsCardEditor extends LitElement {
           'Show position delta',
           'Shows delta between starting grid and finishing position when grid column is visible'
         )}
+        ${this._renderSwitch('show_points', 'Show points')}
+        ${this._renderSwitch('show_status', 'Show status')}
 
         <ha-textfield
           .label=${'Top entries to show'}
@@ -7548,9 +7580,10 @@ class F1LastRaceResultsCard extends LitElement {
   static properties = {
     hass: {},
     config: {},
+    _selectedSessionKey: { state: true },
   };
 
-  static styles = css`
+  static styles = [F1_THEME_STYLES, css`
     /* Animation keyframes */
     @keyframes fadeSlideIn {
       from { opacity: 0; transform: translateY(-8px); }
@@ -7566,13 +7599,14 @@ class F1LastRaceResultsCard extends LitElement {
     }
 
     :host {
-      --ts-bg: #0b0b0d;
-      --ts-bg-soft: #131315;
-      --ts-border: rgba(255, 255, 255, 0.08);
-      --ts-text: #f5f5f5;
-      --ts-muted: rgba(255, 255, 255, 0.65);
-      --ts-chip: rgba(255, 255, 255, 0.06);
-      --ts-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      --ts-bg: var(--f1-card-bg);
+      --ts-bg-soft: var(--f1-card-bg-soft);
+      --ts-bg-end: var(--f1-card-bg-end);
+      --ts-border: var(--f1-card-border);
+      --ts-text: var(--f1-card-text);
+      --ts-muted: var(--f1-card-muted);
+      --ts-chip: var(--f1-card-chip);
+      --ts-shadow: var(--f1-card-shadow);
       display: block;
       font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
     }
@@ -7588,8 +7622,8 @@ class F1LastRaceResultsCard extends LitElement {
       position: relative;
       padding: clamp(12px, 2.2vw, 18px) clamp(12px, 2.2vw, 18px) clamp(12px, 2vw, 16px);
       border-radius: var(--ha-card-border-radius, 12px);
-      background: radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.08), transparent 45%),
-        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, #0a0a0a 100%);
+      background: radial-gradient(circle at 15% 10%, var(--f1-card-divider), transparent 45%),
+        linear-gradient(160deg, var(--ts-bg) 0%, var(--ts-bg-soft) 60%, var(--ts-bg-end) 100%);
       border: 1px solid var(--ts-border);
       box-shadow: var(--ts-shadow);
       overflow: hidden;
@@ -7605,7 +7639,7 @@ class F1LastRaceResultsCard extends LitElement {
       letter-spacing: clamp(0.03em, 0.06em, 0.08em);
       text-transform: uppercase;
       margin: 0;
-      text-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      text-shadow: var(--f1-card-title-shadow);
       white-space: normal;
       text-wrap: balance;
       line-height: 1.1;
@@ -7637,18 +7671,18 @@ class F1LastRaceResultsCard extends LitElement {
       justify-content: center;
       padding: 5px 10px 4px;
       border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      border: 1px solid var(--f1-card-divider-strong);
       font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 700;
       letter-spacing: 0.14em;
       text-transform: uppercase;
       white-space: nowrap;
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-divider);
       color: var(--ts-text);
     }
 
     .cpd-mode-pill.current {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-divider);
       color: var(--ts-text);
     }
 
@@ -7729,7 +7763,7 @@ class F1LastRaceResultsCard extends LitElement {
 
     .cpd-cell.group-start {
       padding-left: 6px;
-      border-left: 1px solid rgba(255, 255, 255, 0.12);
+      border-left: 1px solid var(--f1-card-divider-strong);
     }
 
     .cpd-cell.points-primary {
@@ -7816,8 +7850,8 @@ class F1LastRaceResultsCard extends LitElement {
       min-width: 52px;
       padding: 4px 8px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: var(--f1-card-chip);
+      border: 1px solid var(--f1-card-divider);
       font-weight: 700;
       letter-spacing: 0.04em;
     }
@@ -7856,7 +7890,7 @@ class F1LastRaceResultsCard extends LitElement {
       padding: 16px;
       border-radius: var(--ha-card-border-radius, 12px);
       background: var(--ts-chip);
-      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border: 1px dashed var(--f1-card-divider-strong);
       color: var(--ts-muted);
       text-align: center;
       font-size: 13px;
@@ -7877,6 +7911,34 @@ class F1LastRaceResultsCard extends LitElement {
       letter-spacing: 0.04em;
       text-align: center;
       line-height: 1.4;
+    }
+
+    .cpd-selector-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: min(100%, 460px);
+      margin: 0 auto;
+    }
+
+    .cpd-session-select {
+      width: 100%;
+      min-height: 36px;
+      border-radius: 9px;
+      border: 1px solid var(--f1-card-divider-strong);
+      background: var(--f1-card-chip);
+      color: var(--ts-text);
+      padding: 6px 34px 6px 10px;
+      font-family: 'Formula1 Display', 'Noto Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      outline: none;
+    }
+
+    .cpd-session-select:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 28%, transparent);
     }
 
     @media (max-width: 720px) {
@@ -7903,14 +7965,19 @@ class F1LastRaceResultsCard extends LitElement {
         padding: 5px 6px;
       }
     }
-  `;
+  `];
 
   setConfig(config) {
     this.config = {
+      theme_mode: DEFAULT_F1_THEME_MODE,
       entity: 'sensor.f1_last_race_results',
+      season_results_entity: 'sensor.f1_season_results',
+      sprint_results_entity: 'sensor.f1_sprint_results',
       drivers_entity: 'sensor.f1_driver_list',
       no_spoiler_entity: 'switch.f1_no_spoiler_mode',
       show_header: true,
+      show_session_selector: true,
+      show_session_type_badge: true,
       show_table_header: true,
       show_position: true,
       show_grid: true,
@@ -7920,9 +7987,12 @@ class F1LastRaceResultsCard extends LitElement {
       driver_image_type: 'team_logo',
       team_logo_style: 'color',
       show_delta: true,
+      show_points: true,
+      show_status: true,
       top_limit: 0,
       ...config,
     };
+    applyF1ThemeMode(this, this.config);
   }
 
   connectedCallback() {
@@ -7954,6 +8024,8 @@ class F1LastRaceResultsCard extends LitElement {
     return {
       type: 'custom:f1-last-race-results-card',
       entity: 'sensor.f1_last_race_results',
+      season_results_entity: 'sensor.f1_season_results',
+      sprint_results_entity: 'sensor.f1_sprint_results',
       drivers_entity: 'sensor.f1_driver_list',
       no_spoiler_entity: 'switch.f1_no_spoiler_mode',
     };
@@ -7966,17 +8038,19 @@ class F1LastRaceResultsCard extends LitElement {
   render() {
     if (!this.hass || !this.config) return html``;
 
-    if (!this.config.current_entity && !this.config.entity) {
-      return this._renderEmpty('Select entities in the editor');
+    if (!this.config.entity && !this.config.season_results_entity && !this.config.sprint_results_entity) {
+      return this._renderEmpty('Select result entities in the editor');
     }
 
     const lastRace = this.config.entity
       ? getEntityStateWithFallback(this.hass, this.config.entity)
       : null;
-    if (!lastRace) {
-      return html`<ha-card><div class="nr-card nr-unavailable">No previous race data available</div></ha-card>`;
-    }
-      
+    const seasonResults = this.config.season_results_entity
+      ? getEntityStateWithFallback(this.hass, this.config.season_results_entity)
+      : null;
+    const sprintResults = this.config.sprint_results_entity
+      ? getEntityStateWithFallback(this.hass, this.config.sprint_results_entity)
+      : null;
     const noSpoilerState = this.config.no_spoiler_entity
       ? getEntityStateWithFallback(this.hass, this.config.no_spoiler_entity)
       : null;
@@ -7986,33 +8060,28 @@ class F1LastRaceResultsCard extends LitElement {
     const driverList = asEntityList(driverListState?.attributes?.drivers);
     const driverMap = this._buildDriverMap(driverList);
 
-    const gpName = lastRace.attributes.race_name?.replace(' Grand Prix', ' GP') || lastRace.attributes.race_name || 'Last race';
-    const results = Array.isArray(lastRace?.attributes?.results)
-      ? lastRace.attributes.results
-      : [];
-
-    const hasCurrentData = results.length > 0;
+    const sessions = this._buildResultSessions(lastRace, seasonResults, sprintResults);
+    const selectedSession = this._resolveSelectedSession(sessions);
+    if (!selectedSession) {
+      return this._renderEmpty('No previous race data available');
+    }
+    const results = asEntityList(selectedSession.results);
     const spoilerBlocked = isNoSpoilerModeActive(noSpoilerState);
-
     const layoutMode = getResponsiveLayoutMode(this);
-    let rows = [];
-    let columns = [];
-    let emptyMessage = 'No results data';
-
-    rows = this._applyTopLimit(
+    const rows = this._applyTopLimit(
       this._buildCurrentRows(
         results,
         driverMap,
         spoilerBlocked,
       ),
     );
-    columns = this._columns(layoutMode);
-    this._actionEntityId = this.config.entity;
+    const columns = this._columns(layoutMode);
+    this._actionEntityId = selectedSession.entityId || this.config.entity;
 
     const gridColumns = columns.map((col) => col.width).join(' ');
 
     if (rows.length === 0) {
-      return this._renderEmpty(emptyMessage);
+      return this._renderEmpty('No results data', selectedSession, sessions);
     }
 
     return html`
@@ -8021,7 +8090,9 @@ class F1LastRaceResultsCard extends LitElement {
           ${this.config.show_header
             ? html`
               <div class="cpd-header-row">
-                <div class="cpd-header">${gpName}</div>
+                <div class="cpd-header">${this.config.title || this._sessionDisplayTitle(selectedSession)}</div>
+                ${this._renderHeaderBadges(selectedSession, spoilerBlocked)}
+                ${this._renderSessionSelector(sessions, selectedSession)}
               </div>
             `
             : null}
@@ -8034,14 +8105,16 @@ class F1LastRaceResultsCard extends LitElement {
     `;
   }
 
-  _renderEmpty(message) {
+  _renderEmpty(message, selectedSession = null, sessions = []) {
     return html`
       <ha-card>
         <div class="cpd-card" data-layout=${getResponsiveLayoutMode(this)}>
           ${this.config.show_header
             ? html`
               <div class="cpd-header-row">
-                <div class="cpd-header">${gpName}</div>
+                <div class="cpd-header">${this.config.title || this._sessionDisplayTitle(selectedSession)}</div>
+                ${selectedSession ? this._renderHeaderBadges(selectedSession, false) : null}
+                ${selectedSession ? this._renderSessionSelector(sessions, selectedSession) : null}
               </div>
             `
             : null}
@@ -8049,6 +8122,136 @@ class F1LastRaceResultsCard extends LitElement {
         </div>
       </ha-card>
     `;
+  }
+
+  _buildResultSessions(lastRace, seasonResults, sprintResults) {
+    const sessions = new Map();
+    const addSession = (session, prefer = false) => {
+      if (!session || !hasCollectionEntries(session.results)) return;
+      const key = session.key || `${session.type}:${session.round || session.label}`;
+      if (!key) return;
+      const normalized = {
+        ...session,
+        key,
+        round_number: this._parsePosition(session.round),
+        label: session.label || this._sessionDisplayTitle(session),
+      };
+      if (prefer || !sessions.has(key)) {
+        sessions.set(key, normalized);
+      }
+    };
+
+    const seasonRaces = asEntityList(seasonResults?.attributes?.races);
+    seasonRaces.forEach((race, index) => {
+      addSession({
+        type: 'race',
+        key: `race:${race?.round ?? race?.race_name ?? index}`,
+        round: race?.round,
+        race_name: race?.race_name,
+        results: race?.results,
+        entityId: resolveEntityIdWithFallback(this.hass, this.config.season_results_entity),
+      });
+    });
+
+    const lastAttrs = lastRace?.attributes || {};
+    addSession({
+      type: 'race',
+      key: `race:${lastAttrs.round ?? lastAttrs.race_name ?? 'latest'}`,
+      round: lastAttrs.round,
+      race_name: lastAttrs.race_name,
+      results: lastAttrs.results,
+      entityId: resolveEntityIdWithFallback(this.hass, this.config.entity),
+      latest: true,
+    }, true);
+
+    const sprintRaces = asEntityList(sprintResults?.attributes?.races);
+    sprintRaces.forEach((race, index) => {
+      addSession({
+        type: 'sprint',
+        key: `sprint:${race?.round ?? race?.race_name ?? index}`,
+        round: race?.round,
+        race_name: race?.race_name,
+        results: race?.results,
+        entityId: resolveEntityIdWithFallback(this.hass, this.config.sprint_results_entity),
+      });
+    });
+
+    return Array.from(sessions.values()).sort((a, b) => {
+      if (Number.isFinite(a.round_number) && Number.isFinite(b.round_number)) {
+        const roundDiff = b.round_number - a.round_number;
+        if (roundDiff !== 0) return roundDiff;
+      }
+      if (Number.isFinite(a.round_number) && !Number.isFinite(b.round_number)) return -1;
+      if (!Number.isFinite(a.round_number) && Number.isFinite(b.round_number)) return 1;
+      if (a.type !== b.type) return a.type === 'race' ? -1 : 1;
+      return String(a.label || '').localeCompare(String(b.label || ''));
+    });
+  }
+
+  _resolveSelectedSession(sessions) {
+    const list = Array.isArray(sessions) ? sessions : [];
+    if (list.length === 0) return null;
+    const selected = this._selectedSessionKey
+      ? list.find((session) => session.key === this._selectedSessionKey)
+      : null;
+    if (selected) return selected;
+    return list.find((session) => session.latest)
+      || list.find((session) => session.type === 'race')
+      || list[0];
+  }
+
+  _renderHeaderBadges(session, spoilerBlocked) {
+    if (this.config.show_session_type_badge === false && !spoilerBlocked) return null;
+    return html`
+      <div class="cpd-header-badges">
+        ${this.config.show_session_type_badge !== false
+          ? html`<div class="cpd-mode-pill ${session?.type === 'sprint' ? 'legacy' : 'current'}">${this._sessionTypeLabel(session)}</div>`
+          : null}
+        ${spoilerBlocked
+          ? html`<div class="cpd-mode-pill masked">NO SPOILER</div>`
+          : null}
+      </div>
+    `;
+  }
+
+  _renderSessionSelector(sessions, selectedSession) {
+    const list = Array.isArray(sessions) ? sessions : [];
+    if (this.config.show_session_selector === false || list.length <= 1) return null;
+    return html`
+      <div class="cpd-selector-row" @click=${(ev) => ev.stopPropagation()}>
+        <select
+          class="cpd-session-select"
+          .value=${selectedSession?.key || ''}
+          @change=${this._sessionSelectionChanged}
+        >
+          ${list.map((session) => html`
+            <option value=${session.key}>${this._sessionOptionLabel(session)}</option>
+          `)}
+        </select>
+      </div>
+    `;
+  }
+
+  _sessionSelectionChanged(ev) {
+    ev.stopPropagation();
+    this._selectedSessionKey = ev.target.value;
+  }
+
+  _sessionDisplayTitle(session) {
+    const raceName = String(session?.race_name || '').trim();
+    if (!raceName) return 'Race Results';
+    return raceName.replace(' Grand Prix', ' GP');
+  }
+
+  _sessionOptionLabel(session) {
+    const round = session?.round ? `R${session.round}` : null;
+    return [round, this._sessionTypeLabel(session), this._sessionDisplayTitle(session)]
+      .filter(Boolean)
+      .join(' - ');
+  }
+
+  _sessionTypeLabel(session) {
+    return session?.type === 'sprint' ? 'SPRINT' : 'RACE';
   }
 
   _columns(layoutMode = 'wide') {
@@ -8070,21 +8273,25 @@ class F1LastRaceResultsCard extends LitElement {
     if (this.config.show_grid !== false) {
       cols.push({ key: 'grid', label: 'GRD', width: '0.18fr', numeric: true });
     }
-    if (this.config.show_delta !== false) {
+    if (this.config.show_grid !== false && this.config.show_delta !== false) {
       cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
     }
-    cols.push({
-      key: 'points',
-      label: 'PTS',
-      width: '0.28fr',
-      numeric: true,
-    });
-    cols.push({
-      key: 'status',
-      label: 'STATUS',
-      width: '0.6fr',
-      align: true,
-    });
+    if (this.config.show_points !== false) {
+      cols.push({
+        key: 'points',
+        label: 'PTS',
+        width: '0.28fr',
+        numeric: true,
+      });
+    }
+    if (this.config.show_status !== false) {
+      cols.push({
+        key: 'status',
+        label: 'STATUS',
+        width: compactLayout ? '0.48fr' : '0.6fr',
+        align: true,
+      });
+    }
     return cols;
   }
 
@@ -8118,6 +8325,7 @@ class F1LastRaceResultsCard extends LitElement {
 
     if (
       row.spoiler_blocked
+      && ['position', 'grid', 'delta', 'points', 'status'].includes(col.key)
     ) {
       return html`<div class="${classes.join(' ')}">${row.spoiler_placeholder}</div>`;
     }
@@ -8151,7 +8359,7 @@ class F1LastRaceResultsCard extends LitElement {
 
     if (col.key === 'delta') {
       const deltaClass = row.delta > 0 ? 'positive' : row.delta < 0 ? 'negative' : 'neutral';
-      const positionMove = this._getPositionMovement(row.current_position, row.predicted_position);
+      const positionMove = this._getGridMovement(row.delta);
       return html`
         <div class="${classes.join(' ')} cpd-delta ${deltaClass}">
           <span class="cpd-delta-pill ${deltaClass}">
@@ -8178,11 +8386,11 @@ class F1LastRaceResultsCard extends LitElement {
     const rows = [];
     results.forEach((result) => {
       if (!result || typeof result !== 'object') return;
-      const driver = result?.driver || {};
-      const constructor = result?.constructor || {};
-      const rn = String(driver?.permanentNumber ?? '').trim();
-      const tla = this._normalizeTla(driver?.code);
-      const identity = (tla ? this._findDriverByTla(driverMap, tla) : null) || {};
+      const driver = result?.driver || result?.Driver || {};
+      const constructor = result?.constructor || result?.Constructor || {};
+      const rn = String(driver?.permanentNumber ?? result?.number ?? '').trim();
+      const tla = this._normalizeTla(driver?.code || driver?.Code || result?.code);
+      const identity = (rn && driverMap.get(rn)) || (tla ? this._findDriverByTla(driverMap, tla) : null) || {};
       const position = this._toNumber(result?.position);
       const grid = this._toNumber(result?.grid);
       const points = this._toNumber(result?.points);
@@ -8213,7 +8421,8 @@ class F1LastRaceResultsCard extends LitElement {
         delta: delta,
         delta_display: this._formatDelta(delta),
         status: status,
-        spoiler_blocked: spoilerBlocked
+        spoiler_blocked: spoilerBlocked,
+        spoiler_placeholder: this._spoilerPlaceholder(),
       });
     });
 
@@ -8351,8 +8560,16 @@ class F1LastRaceResultsCard extends LitElement {
     return `${sign}${this._formatPoints(abs)}`;
   }
 
-  _sortDriverRows(rows) {
+  _spoilerPlaceholder() {
+    const value = String(this.config?.spoiler_placeholder || 'HIDE').trim().toUpperCase();
+    return value || 'HIDE';
+  }
+
+  _sortDriverRows(rows, { spoilerBlocked } = {}) {
     rows.sort((a, b) => {
+      if (spoilerBlocked) {
+        return this._compareDriverIdentity(a, b);
+      }
       const positionDiff = this._comparePositionAscending(a.position, b.position);
       if (positionDiff !== 0) return positionDiff;
 
@@ -8376,6 +8593,15 @@ class F1LastRaceResultsCard extends LitElement {
     if (Number.isFinite(a)) return -1;
     if (Number.isFinite(b)) return 1;
     return 0;
+  }
+
+  _getGridMovement(delta) {
+    if (!Number.isFinite(delta) || delta === 0) return null;
+    if (delta > 0) {
+      return { symbol: '▲', className: 'up', title: `Gained ${delta} position${delta > 1 ? 's' : ''} from the grid` };
+    }
+    const loss = Math.abs(delta);
+    return { symbol: '▼', className: 'down', title: `Lost ${loss} position${loss > 1 ? 's' : ''} from the grid` };
   }
 
   _getPositionMovement(currentPosition, predictedPosition) {
@@ -11476,8 +11702,8 @@ class F1LiveSessionCardEditor extends LitElement {
         )}
         ${this._renderEntityPicker(
           'formation_start_entity',
-          'Formation Lap Sensor (Replay Mode only)',
-          'Indicates formation lap in progress. This sensor is only available during Replay Mode sessions.',
+          'Formation Lap Sensor',
+          'Indicates formation lap in progress during Replay Mode or live sessions with active F1TV access.',
           false,
           'binary_sensor'
         )}
