@@ -358,6 +358,8 @@ const LEGACY_ENTITY_ID_FALLBACKS = {
   'sensor.f1_officials_investigations': 'sensor.f1_investigations',
   'sensor.f1_officials_track_limits': 'sensor.f1_track_limits',
   'sensor.f1_officials_race_control': 'sensor.f1_race_control',
+  'sensor.f1_fia_documents': 'sensor.f1_officials_f1_fia_documents',
+  'sensor.f1_officials_fia_documents': 'sensor.f1_officials_f1_fia_documents',
   'sensor.f1_session_current_session': 'sensor.f1_current_session',
   'sensor.f1_session_session_status': 'sensor.f1_session_status',
   'sensor.f1_session_race_lap_count': 'sensor.f1_race_lap_count',
@@ -18302,6 +18304,1111 @@ class F1RaceControlCardEditor extends LitElement {
 
 
 // ============================================================================
+// F1 FIA Documents Card
+// ============================================================================
+
+class F1FiaDocumentsCard extends LitElement {
+  static properties = {
+    hass: {},
+    config: {},
+  };
+
+  static styles = [F1_THEME_STYLES, css`
+    :host {
+      --fd-bg: var(--f1-card-bg);
+      --fd-bg-soft: var(--f1-card-bg-soft);
+      --fd-border: var(--f1-card-border);
+      --fd-text: var(--f1-card-text);
+      --fd-muted: var(--f1-card-muted);
+      --fd-shadow: var(--f1-card-compact-shadow);
+      --fd-red: #ff3b30;
+      display: block;
+      font-family: 'Formula1 Display', 'Titillium Web', Arial, sans-serif;
+    }
+
+    ha-card {
+      padding: 0;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+    }
+
+    .fd-shell {
+      border-radius: var(--ha-card-border-radius, 12px);
+      background:
+        radial-gradient(circle at 10% 20%, var(--f1-card-panel), transparent 40%),
+        linear-gradient(160deg, var(--fd-bg) 0%, var(--fd-bg-soft) 100%);
+      border: 1px solid var(--fd-border);
+      box-shadow: var(--fd-shadow);
+      color: var(--fd-text);
+      overflow: hidden;
+      container-type: inline-size;
+    }
+
+    .fd-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--f1-card-divider);
+      background: linear-gradient(180deg, var(--f1-card-panel-soft), transparent);
+    }
+
+    .fd-brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .fd-fia-logo {
+      height: clamp(22px, 3.5vw, 28px);
+      width: auto;
+      flex-shrink: 0;
+      object-fit: contain;
+      padding-right: clamp(10px, 1.5vw, 14px);
+      border-right: 1px solid var(--f1-card-divider-strong);
+    }
+
+    .fd-title-wrap {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .fd-title {
+      font-size: clamp(13px, 2vw, 16px);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--fd-text);
+      text-transform: uppercase;
+    }
+
+    .fd-subtitle {
+      font-size: var(--f1-table-meta-font-size, 10px);
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--fd-muted);
+      line-height: 1.25;
+    }
+
+    .fd-controls {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+
+    .fd-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--f1-card-divider-strong);
+      background: var(--f1-card-panel);
+      color: var(--fd-muted);
+      font-size: var(--f1-table-meta-font-size, 10px);
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .fd-pill.latest {
+      border-color: rgba(255, 59, 48, 0.36);
+      background: rgba(255, 59, 48, 0.12);
+      color: #ff9a95;
+    }
+
+    .fd-body {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+	    .fd-row {
+	      --fd-row-accent: var(--f1-card-divider-strong);
+	      position: relative;
+	      display: grid;
+	      grid-template-columns: auto minmax(0, 1fr) auto;
+	      gap: 10px;
+	      align-items: center;
+	      min-height: 72px;
+	      padding: 12px 12px 12px 16px;
+	      border-radius: 12px;
+	      border: 1px solid var(--f1-card-divider);
+	      background: var(--f1-card-panel-soft);
+	      color: var(--fd-text);
+	      text-decoration: none;
+      overflow: hidden;
+      transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .fd-row::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      border-radius: 999px;
+      background: var(--fd-row-accent);
+    }
+
+    .fd-row[href]:hover {
+      background: var(--f1-card-panel);
+      border-color: var(--f1-card-divider-strong);
+      transform: translateY(-1px);
+    }
+
+    .fd-row[href]:focus-visible {
+      outline: 2px solid color-mix(in srgb, var(--primary-color) 70%, transparent);
+      outline-offset: 2px;
+    }
+
+    .fd-row.tone-red {
+      --fd-row-accent: #ff3b30;
+      background: linear-gradient(135deg, rgba(255, 59, 48, 0.13), rgba(255, 59, 48, 0.04));
+    }
+
+    .fd-row.tone-yellow {
+      --fd-row-accent: #ffd60a;
+      background: linear-gradient(135deg, rgba(255, 214, 10, 0.12), rgba(255, 214, 10, 0.03));
+    }
+
+    .fd-row.tone-blue {
+      --fd-row-accent: #0a84ff;
+      background: linear-gradient(135deg, rgba(10, 132, 255, 0.12), rgba(10, 132, 255, 0.03));
+    }
+
+    .fd-row.tone-green {
+      --fd-row-accent: #34c759;
+      background: linear-gradient(135deg, rgba(52, 199, 89, 0.12), rgba(52, 199, 89, 0.03));
+    }
+
+	    .fd-row.tone-orange {
+	      --fd-row-accent: #ff9500;
+	      background: linear-gradient(135deg, rgba(255, 149, 0, 0.12), rgba(255, 149, 0, 0.03));
+	    }
+
+	    .fd-row.has-type {
+	      min-height: 76px;
+	    }
+
+	    .fd-icon-wrap {
+	      display: inline-flex;
+	      align-items: center;
+	      justify-content: center;
+	      align-self: center;
+	      width: 34px;
+	      height: 34px;
+	      border-radius: 10px;
+      border: 1px solid var(--f1-card-divider);
+      background: var(--f1-card-chip);
+      color: var(--fd-row-accent);
+      flex-shrink: 0;
+    }
+
+    .fd-icon-wrap ha-icon {
+      --mdc-icon-size: 20px;
+    }
+
+	    .fd-copy {
+	      display: flex;
+	      flex-direction: column;
+	      justify-content: flex-start;
+	      gap: 4px;
+	      min-width: 0;
+	      align-self: center;
+	    }
+
+	    .fd-row.has-type .fd-copy {
+	      padding-right: 0;
+	    }
+
+	    .fd-copy-top {
+	      display: grid;
+	      grid-template-columns: auto minmax(0, 1fr) auto;
+	      align-items: center;
+	      gap: 6px;
+	      min-width: 0;
+	    }
+
+	    .fd-doc-number {
+	      display: inline-flex;
+	      align-items: center;
+	      justify-content: center;
+	      min-width: 0;
+	      min-height: 20px;
+	      padding: 2px 6px;
+	      border-radius: 999px;
+	      border: 1px solid var(--f1-card-divider-strong);
+	      background: var(--f1-card-chip);
+	      color: var(--fd-text);
+	      font-size: 8px;
+	      font-weight: 700;
+	      letter-spacing: 0.04em;
+	      line-height: 1;
+	      text-transform: uppercase;
+	      white-space: nowrap;
+	    }
+
+	    .fd-type {
+	      grid-column: 3;
+	      justify-self: end;
+	      display: inline-flex;
+	      align-items: center;
+	      justify-content: center;
+	      max-width: 132px;
+	      min-height: 20px;
+	      padding: 2px 6px;
+	      border-radius: 999px;
+	      border: 1px solid color-mix(in srgb, var(--fd-row-accent) 38%, transparent);
+	      background: color-mix(in srgb, var(--fd-row-accent) 14%, transparent);
+	      color: var(--fd-row-accent);
+	      font-size: 8px;
+	      font-weight: 700;
+	      letter-spacing: 0.04em;
+	      line-height: 1;
+	      text-transform: uppercase;
+	      white-space: nowrap;
+	      overflow: hidden;
+	      text-overflow: ellipsis;
+	    }
+
+	    .fd-doc-title {
+	      min-width: 0;
+	      color: var(--fd-text);
+	      font-size: 13px;
+	      line-height: 1.28;
+	      font-weight: 700;
+	      word-break: break-word;
+	      overflow-wrap: anywhere;
+	    }
+
+	    .fd-meta {
+	      display: flex;
+	      flex-wrap: wrap;
+	      gap: 4px 8px;
+	      min-height: 13px;
+	      color: var(--fd-muted);
+	      font-size: var(--f1-table-meta-font-size, 10px);
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      line-height: 1.25;
+    }
+
+    .fd-action {
+      color: var(--fd-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      border: 1px solid var(--f1-card-divider);
+      background: var(--f1-card-chip);
+      flex-shrink: 0;
+    }
+
+	    .fd-action ha-icon {
+	      --mdc-icon-size: 17px;
+	    }
+
+	    .fd-row.has-type .fd-action {
+	      display: none;
+	    }
+
+    .fd-empty {
+      padding: 18px 14px;
+      border-radius: 12px;
+      border: 1px dashed var(--f1-card-chip);
+      color: var(--fd-muted);
+      text-align: center;
+      font-size: var(--f1-table-row-font-size, clamp(10px, 1.6vw, 11px));
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: var(--f1-card-panel-soft);
+    }
+
+    @container (max-width: 720px) {
+      .fd-topbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .fd-controls {
+        justify-content: flex-start;
+      }
+
+	      .fd-row {
+	        grid-template-columns: auto minmax(0, 1fr);
+	      }
+
+	      .fd-row.has-type .fd-copy {
+	        padding-right: 0;
+	      }
+
+	      .fd-type {
+	        max-width: 112px;
+	      }
+
+	      .fd-action {
+	        grid-column: 2;
+	        justify-self: flex-start;
+	        width: auto;
+	        padding: 0 9px;
+	      }
+
+	      .fd-row.has-type .fd-action {
+	        display: none;
+	      }
+	    }
+
+    @media (max-width: 600px) {
+      .fd-topbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .fd-controls {
+        justify-content: flex-start;
+      }
+    }
+  `];
+
+  setConfig(config) {
+    this.config = this._normalizeConfig({
+      theme_mode: DEFAULT_F1_THEME_MODE,
+      entity: 'sensor.f1_officials_f1_fia_documents',
+      last_race_entity: 'sensor.f1_race_f1_last_race_results',
+      display_mode: 'list',
+      sort_order: 'newest',
+      show_header: true,
+      show_fia_logo: true,
+      show_race_context: true,
+      show_count: true,
+      show_document_number: true,
+      show_document_type: true,
+      show_published: true,
+      show_latest_badge: true,
+      visible_rows: 8,
+      list_max_height: 0,
+      open_in_new_tab: true,
+      ...config,
+    });
+    applyF1ThemeMode(this, this.config);
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    ensureF1Fonts();
+  }
+
+  getCardSize() {
+    return this._getDisplayMode() === 'latest'
+      ? 2
+      : Math.max(3, Math.ceil(this._resolveListMaxHeight() / 120));
+  }
+
+  getGridOptions() {
+    return {
+      columns: 12,
+      min_columns: 4,
+      max_columns: 12,
+      min_rows: this._getDisplayMode() === 'latest' ? 2 : 4,
+    };
+  }
+
+  _responsiveLayoutBreakpoints() {
+    return {
+      narrow: 560,
+      medium: 860,
+    };
+  }
+
+  static getStubConfig() {
+    return {
+      type: 'custom:f1-fia-documents-card',
+      entity: 'sensor.f1_officials_f1_fia_documents',
+      last_race_entity: 'sensor.f1_race_f1_last_race_results',
+      display_mode: 'list',
+      visible_rows: 8,
+      show_fia_logo: true,
+      show_race_context: true,
+    };
+  }
+
+  static getConfigElement() {
+    return document.createElement('f1-fia-documents-card-editor');
+  }
+
+  _normalizeConfig(config) {
+    const normalized = { ...(config || {}) };
+    normalized.display_mode = normalized.display_mode === 'latest' ? 'latest' : 'list';
+    normalized.sort_order = normalized.sort_order === 'oldest' ? 'oldest' : 'newest';
+    normalized.visible_rows = this._normalizeVisibleRows(normalized.visible_rows);
+    normalized.list_max_height = this._normalizeListMaxHeightValue(normalized.list_max_height);
+    return normalized;
+  }
+
+  _getDisplayMode() {
+    return this.config?.display_mode === 'latest' ? 'latest' : 'list';
+  }
+
+  _normalizeVisibleRows(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 8;
+    }
+    return Math.min(30, Math.max(1, parsed));
+  }
+
+  _normalizeListMaxHeightValue(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 0;
+    }
+    return Math.min(2000, Math.max(180, parsed));
+  }
+
+  _resolveListMaxHeight() {
+    const explicit = this._normalizeListMaxHeightValue(this.config?.list_max_height);
+    if (explicit > 0) return explicit;
+    const rows = this._normalizeVisibleRows(this.config?.visible_rows);
+    return Math.max(180, rows * 68);
+  }
+
+  _getDocumentEntity() {
+    const entityId = this.config?.entity || 'sensor.f1_officials_f1_fia_documents';
+    return getEntityStateWithFallback(this.hass, entityId);
+  }
+
+  _getLastRaceEntity() {
+    if (!this.config?.last_race_entity) return null;
+    return getEntityStateWithFallback(this.hass, this.config.last_race_entity);
+  }
+
+  _extractDocumentNumber(name, explicitNumber = null) {
+    const parsedExplicit = Number.parseInt(explicitNumber, 10);
+    if (Number.isFinite(parsedExplicit) && parsedExplicit > 0) {
+      return parsedExplicit;
+    }
+    const match = String(name || '').match(/\bdoc(?:ument)?(?:\s+(?:no\.?|number))?\s*0*(\d+)\b/i);
+    if (!match) return null;
+    const parsed = Number.parseInt(match[1], 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  _cleanDocumentTitle(name) {
+    const text = String(name || '').replace(/\s+/g, ' ').trim();
+    if (!text) return 'FIA document';
+    const cleaned = text.replace(
+      /^\s*doc(?:ument)?(?:\s+(?:no\.?|number))?\s*0*\d+\s*[-:\u2013]\s*/i,
+      '',
+    ).trim();
+    return cleaned || text;
+  }
+
+  _normalizeDocument(item, fallbackIndex = 0) {
+    if (!item || typeof item !== 'object') return null;
+    const name = item.name || item.title || item.document_name || '';
+    const url = String(item.url || item.href || '').trim();
+    const published = item.published || item.published_at || item.date || null;
+    if (!url && !name) return null;
+    const documentNumber = this._extractDocumentNumber(name, item.document_number);
+    const title = this._cleanDocumentTitle(name);
+    return {
+      id: url || `${name}|${published || ''}|${fallbackIndex}`,
+      name: String(name || title),
+      title,
+      url,
+      published,
+      documentNumber,
+      typeLabel: this._documentTypeLabel(title),
+      toneClass: this._documentToneClass(title),
+      publishedTs: this._parseDateTs(published),
+    };
+  }
+
+  _buildDocuments(entity) {
+    const attrs = entity?.attributes || {};
+    const rawDocuments = Array.isArray(attrs.documents) ? attrs.documents : [];
+    const sourceDocuments = rawDocuments.length > 0
+      ? rawDocuments
+      : (attrs.url || attrs.name || attrs.published
+        ? [{ name: attrs.name, url: attrs.url, published: attrs.published, document_number: entity?.state }]
+        : []);
+    const seen = new Set();
+    const documents = [];
+    sourceDocuments.forEach((item, index) => {
+      const doc = this._normalizeDocument(item, index);
+      if (!doc) return;
+      if (seen.has(doc.id)) return;
+      seen.add(doc.id);
+      documents.push(doc);
+    });
+    return this._sortDocuments(documents);
+  }
+
+  _sortDocuments(documents) {
+    const newestFirst = this.config?.sort_order !== 'oldest';
+    const sorted = [...documents].sort((a, b) => {
+      const numA = Number.isFinite(a.documentNumber) ? a.documentNumber : null;
+      const numB = Number.isFinite(b.documentNumber) ? b.documentNumber : null;
+      if (numA !== null || numB !== null) {
+        const diff = (numB ?? -1) - (numA ?? -1);
+        if (diff !== 0) return diff;
+      }
+      const timeA = Number.isFinite(a.publishedTs) ? a.publishedTs : null;
+      const timeB = Number.isFinite(b.publishedTs) ? b.publishedTs : null;
+      if (timeA !== null || timeB !== null) {
+        const diff = (timeB ?? -Infinity) - (timeA ?? -Infinity);
+        if (diff !== 0) return diff;
+      }
+      return a.title.localeCompare(b.title);
+    });
+    return newestFirst ? sorted : sorted.reverse();
+  }
+
+  _parseDateTs(value) {
+    if (!value) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const normalized = text.includes('Z') || /[+-]\d{2}:\d{2}$/.test(text)
+      ? text
+      : `${text}Z`;
+    const parsed = Date.parse(normalized);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  _formatPublished(value) {
+    const parsed = this._parseDateTs(value);
+    if (!Number.isFinite(parsed)) return 'Time unavailable';
+    const date = new Date(parsed);
+    const locale = this.hass?.locale?.language || undefined;
+    const timeZone = this.hass?.config?.time_zone || undefined;
+    const currentYear = new Date().getFullYear();
+    try {
+      return new Intl.DateTimeFormat(locale, {
+        day: 'numeric',
+        month: 'short',
+        year: date.getFullYear() === currentYear ? undefined : 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone,
+      }).format(date);
+    } catch (_err) {
+      return date.toLocaleString();
+    }
+  }
+
+  _documentTypeLabel(title) {
+    const text = String(title || '').toLowerCase();
+    if (text.includes('summons')) return 'Summons';
+    if (text.includes('penalty')) return 'Penalty';
+    if (text.includes('decision')) return 'Decision';
+    if (text.includes('classification')) return 'Classified';
+    if (text.includes('result')) return 'Result';
+    if (text.includes('championship')) return 'Points';
+    if (text.includes('scrutineering')) return 'Checks';
+    return 'Document';
+  }
+
+  _documentToneClass(title) {
+    const text = String(title || '').toLowerCase();
+    if (text.includes('penalty') || text.includes('decision')) return 'tone-red';
+    if (text.includes('summons') || text.includes('stewards')) return 'tone-yellow';
+    if (text.includes('classification') || text.includes('result')) return 'tone-blue';
+    if (text.includes('championship') || text.includes('points')) return 'tone-green';
+    if (text.includes('scrutineering') || text.includes('technical')) return 'tone-orange';
+    return 'tone-neutral';
+  }
+
+  _normalizeTextKey(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  _documentsMatchRace(documents, race) {
+    const raceName = this._normalizeTextKey(race?.race_name);
+    if (!raceName || documents.length === 0) return false;
+    const candidates = [
+      raceName,
+      this._normalizeTextKey(race?.circuit_name),
+      this._normalizeTextKey(race?.locality),
+    ].filter((item) => item && item.length >= 4);
+    const haystack = documents
+      .map((doc) => this._normalizeTextKey(`${doc.name} ${doc.url}`))
+      .join(' ');
+    return candidates.some((candidate) => haystack.includes(candidate));
+  }
+
+    _resolveRaceContext(documentEntity, lastRaceEntity, documents) {
+      const attrs = documentEntity?.attributes || {};
+      const raceAttrs = lastRaceEntity?.attributes || null;
+      const lastRaceContext = raceAttrs?.race_name && this._documentsMatchRace(documents, raceAttrs)
+        ? {
+          season: raceAttrs.season,
+          round: raceAttrs.round,
+          race_name: raceAttrs.race_name,
+          circuit_name: raceAttrs.circuit_name,
+          locality: raceAttrs.circuit_locality,
+          country: raceAttrs.circuit_country,
+        }
+        : null;
+      const documentRace = attrs.race && typeof attrs.race === 'object' ? attrs.race : null;
+      if (!documentRace) {
+        return lastRaceContext;
+      }
+      if (documents.length === 0 || this._documentsMatchRace(documents, documentRace)) {
+        return documentRace;
+      }
+      return lastRaceContext;
+    }
+
+    _formatRaceContext(race) {
+      if (!race || this.config?.show_race_context === false) return null;
+    const parts = [];
+    if (race.round) parts.push(`Round ${race.round}`);
+    if (race.race_name) parts.push(race.race_name);
+    const location = [race.locality, race.country].filter(Boolean).join(', ');
+    if (location && !parts.includes(location)) parts.push(location);
+      return parts.filter(Boolean).join(' · ');
+    }
+
+    _resolveDocumentCount(documents, documentEntity) {
+      const candidates = [documents.length];
+      const stateCount = Number.parseInt(documentEntity?.state, 10);
+      if (Number.isFinite(stateCount) && stateCount > 0) {
+        candidates.push(stateCount);
+      }
+      documents.forEach((doc) => {
+        if (Number.isFinite(doc.documentNumber) && doc.documentNumber > 0) {
+          candidates.push(doc.documentNumber);
+        }
+      });
+      return Math.max(...candidates);
+    }
+
+    _renderHeader(documents, raceContext, latestOnly = false, documentEntity = null) {
+      if (this.config.show_header === false) return null;
+      const count = this._resolveDocumentCount(documents, documentEntity);
+      const countLabel = count === 1 ? '1 doc' : `${count} docs`;
+      const raceLabel = this._formatRaceContext(raceContext);
+      return html`
+        <div class="fd-topbar">
+        <div class="fd-brand">
+          ${this.config.show_fia_logo !== false ? html`
+            <img class="fd-fia-logo" src="https://www.fia.com/sites/all/themes/penceo_theme/images/fia-footer-logo.png" alt="FIA" />
+          ` : null}
+          <div class="fd-title-wrap">
+            <span class="fd-title">${this.config.title || 'FIA Documents'}</span>
+            ${raceLabel ? html`<span class="fd-subtitle">${raceLabel}</span>` : null}
+          </div>
+        </div>
+        <div class="fd-controls">
+          ${latestOnly || this.config.show_latest_badge !== false
+            ? html`<span class="fd-pill latest">${latestOnly ? 'Latest' : 'Latest first'}</span>`
+            : null}
+          ${this.config.show_count !== false ? html`<span class="fd-pill">${countLabel}</span>` : null}
+        </div>
+      </div>
+    `;
+  }
+
+    _renderDocumentRow(doc, index) {
+      const numberLabel = doc.documentNumber ? `Doc ${doc.documentNumber}` : 'FIA';
+	    const newTab = this.config.open_in_new_tab !== false;
+	    const rowClass = `fd-row ${doc.toneClass}${this.config.show_document_type !== false ? ' has-type' : ''}`;
+	    const rowContent = html`
+	      <div class="fd-icon-wrap">
+	        <ha-icon icon="mdi:file-pdf-box"></ha-icon>
+	      </div>
+	      <div class="fd-copy">
+	        <div class="fd-copy-top">
+	          ${this.config.show_document_number !== false
+	            ? html`<span class="fd-doc-number">${numberLabel}</span>`
+	            : null}
+	          ${this.config.show_document_type !== false
+	            ? html`<span class="fd-type">${doc.typeLabel}</span>`
+	            : null}
+	        </div>
+          <div class="fd-doc-title">${doc.title}</div>
+        ${this.config.show_published !== false ? html`
+          <div class="fd-meta">
+            <span>${this._formatPublished(doc.published)}</span>
+          </div>
+        ` : null}
+      </div>
+      <span class="fd-action" aria-hidden="true">
+        <ha-icon icon="mdi:open-in-new"></ha-icon>
+      </span>
+      `;
+
+      if (!doc.url) {
+        return html`<div class=${rowClass} style="animation-delay: ${index * 30}ms;">${rowContent}</div>`;
+      }
+
+      return html`
+        <a
+          class=${rowClass}
+          style="animation-delay: ${index * 30}ms;"
+          href=${doc.url}
+        target=${newTab ? '_blank' : '_self'}
+        rel=${newTab ? 'noopener noreferrer' : ''}
+        aria-label=${`Open FIA document: ${doc.title}`}
+      >
+        ${rowContent}
+      </a>
+    `;
+  }
+
+  _renderEmpty(message, documents = [], raceContext = null) {
+      return html`
+        <ha-card>
+          <div class="fd-shell" data-layout=${getResponsiveLayoutMode(this)}>
+            ${this._renderHeader(documents, raceContext)}
+            <div class="fd-body">
+              <div class="fd-empty">${message}</div>
+            </div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  render() {
+    if (!this.hass || !this.config) {
+      return html`<ha-card><div class="fd-shell"><div class="fd-body"><div class="fd-empty">Loading FIA documents</div></div></div></ha-card>`;
+    }
+
+    const documentEntity = this._getDocumentEntity();
+    if (!documentEntity) {
+      return this._renderEmpty('Select FIA documents sensor in the editor');
+    }
+    if (isUnavailableLikeEntityState(documentEntity)) {
+      return this._renderEmpty('FIA documents unavailable');
+    }
+
+    const documents = this._buildDocuments(documentEntity);
+    const raceContext = this._resolveRaceContext(documentEntity, this._getLastRaceEntity(), documents);
+    if (documents.length === 0) {
+      return this._renderEmpty('No FIA documents available', documents, raceContext);
+    }
+
+    const latestOnly = this._getDisplayMode() === 'latest';
+    const visibleDocuments = latestOnly ? documents.slice(0, 1) : documents;
+    const bodyStyle = latestOnly ? '' : `max-height: ${this._resolveListMaxHeight()}px;`;
+
+	    return html`
+	      <ha-card>
+	        <div class="fd-shell" data-layout=${getResponsiveLayoutMode(this)}>
+	          ${this._renderHeader(documents, raceContext, latestOnly, documentEntity)}
+	          <div class="fd-body" style=${bodyStyle}>
+	            ${visibleDocuments.map((doc, index) => this._renderDocumentRow(doc, index))}
+          </div>
+        </div>
+      </ha-card>
+    `;
+  }
+}
+
+class F1FiaDocumentsCardEditor extends LitElement {
+  static properties = {
+    hass: {},
+    _config: {},
+    _activeTab: { state: true },
+  };
+
+  static styles = css`
+    .card-config {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--divider-color);
+      margin-bottom: 16px;
+    }
+
+    .tabs button {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--primary-text-color);
+      font-size: 14px;
+      font-family: inherit;
+      transition: color 0.2s;
+    }
+
+    .tabs button:hover {
+      color: var(--primary-color);
+    }
+
+    .tabs button.active {
+      color: var(--primary-color);
+      border-bottom: 2px solid var(--primary-color);
+      margin-bottom: -1px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--secondary-text-color);
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .helper {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      padding-left: 16px;
+      line-height: 1.4;
+    }
+
+    .warning {
+      font-size: 12px;
+      color: var(--error-color);
+      padding-left: 16px;
+    }
+
+    .display-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    ha-textfield {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    ha-form {
+      width: 100%;
+    }
+  `;
+
+  constructor() {
+    super();
+    this._activeTab = 'sources';
+  }
+
+  setConfig(config) {
+    this._config = this._normalizeConfig({
+      entity: 'sensor.f1_officials_f1_fia_documents',
+      last_race_entity: 'sensor.f1_race_f1_last_race_results',
+      display_mode: 'list',
+      sort_order: 'newest',
+      show_header: true,
+      show_fia_logo: true,
+      show_race_context: true,
+      show_count: true,
+      show_document_number: true,
+      show_document_type: true,
+      show_published: true,
+      show_latest_badge: true,
+      visible_rows: 8,
+      list_max_height: 0,
+      open_in_new_tab: true,
+      ...config,
+    });
+  }
+
+  _normalizeConfig(config) {
+    const normalized = { ...(config || {}) };
+    normalized.display_mode = normalized.display_mode === 'latest' ? 'latest' : 'list';
+    normalized.sort_order = normalized.sort_order === 'oldest' ? 'oldest' : 'newest';
+    const visibleRows = Number.parseInt(normalized.visible_rows, 10);
+    normalized.visible_rows = Number.isFinite(visibleRows)
+      ? Math.min(30, Math.max(1, visibleRows))
+      : 8;
+    const maxHeight = Number.parseInt(normalized.list_max_height, 10);
+    normalized.list_max_height = Number.isFinite(maxHeight)
+      ? Math.min(2000, Math.max(0, maxHeight))
+      : 0;
+    return normalized;
+  }
+
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    return html`
+      <div class="card-config">
+        <div class="tabs">
+          <button
+            class=${this._activeTab === 'sources' ? 'active' : ''}
+            @click=${() => { this._activeTab = 'sources'; }}
+          >
+            Data Sources
+          </button>
+          <button
+            class=${this._activeTab === 'display' ? 'active' : ''}
+            @click=${() => { this._activeTab = 'display'; }}
+          >
+            Display
+          </button>
+        </div>
+
+        ${this._activeTab === 'sources'
+          ? this._renderDataSourcesTab()
+          : this._renderDisplayTab()}
+      </div>
+    `;
+  }
+
+  _renderDataSourcesTab() {
+    return html`
+      <div class="section">
+        <div class="section-header">REQUIRED SENSOR</div>
+        ${this._renderEntityPicker(
+          'entity',
+          'FIA Documents Sensor',
+          'Provides FIA PDF document names, URLs, publication times, and race context.',
+          true,
+          'sensor',
+        )}
+      </div>
+      <div class="section">
+        <div class="section-header">OPTIONAL SENSOR</div>
+        ${this._renderEntityPicker(
+          'last_race_entity',
+          'Last Race Results Sensor',
+          'Used only as fallback race context when the FIA documents sensor has no race metadata.',
+          false,
+          'sensor',
+        )}
+      </div>
+    `;
+  }
+
+  _renderDisplayTab() {
+    return html`
+      <div class="display-section">
+        ${renderThemeModeSelect(this)}
+        ${renderEditorSelect(this, 'display_mode', 'Display mode', [
+          { value: 'list', label: 'Document list' },
+          { value: 'latest', label: 'Latest document' },
+        ])}
+        ${renderEditorSelect(this, 'sort_order', 'Sort order', [
+          { value: 'newest', label: 'Newest first' },
+          { value: 'oldest', label: 'Oldest first' },
+        ])}
+        ${this._renderSwitch('show_header', 'Show header')}
+        ${this._renderSwitch('show_fia_logo', 'Show FIA logo')}
+        ${this._renderSwitch('show_race_context', 'Show race context')}
+        ${this._renderSwitch('show_count', 'Show document count')}
+        ${this._renderSwitch('show_document_number', 'Show document number')}
+        ${this._renderSwitch('show_document_type', 'Show document type')}
+        ${this._renderSwitch('show_published', 'Show published date and time')}
+        ${this._renderSwitch('show_latest_badge', 'Show latest badge')}
+        ${this._renderSwitch('open_in_new_tab', 'Open documents in a new tab')}
+
+        ${this._config.display_mode === 'list' ? html`
+          <ha-textfield
+            .label=${'Visible documents before scroll'}
+            .value=${String(this._config.visible_rows || 8)}
+            type="number"
+            min="1"
+            max="30"
+            @input=${(e) => this._valueChanged('visible_rows', parseInt(e.target.value, 10) || 8)}
+          ></ha-textfield>
+          <div class="helper">Controls how many document rows are visible before the list starts scrolling</div>
+
+          <ha-textfield
+            .label=${'List max height override (px)'}
+            .value=${String(this._config.list_max_height || 0)}
+            type="number"
+            min="0"
+            max="2000"
+            @input=${(e) => this._valueChanged('list_max_height', parseInt(e.target.value, 10) || 0)}
+          ></ha-textfield>
+          <div class="helper">Set to 0 to calculate height from visible rows</div>
+        ` : null}
+      </div>
+    `;
+  }
+
+  _renderEntityPicker(name, label, helper, required, domain) {
+    const value = this._config[name];
+    const showWarning = required && !value;
+    const schema = [{ name, label, required, selector: { entity: { domain } } }];
+
+    return html`
+      <div class="field">
+        <ha-form
+          .hass=${this.hass}
+          .data=${this._config}
+          .schema=${schema}
+          .computeLabel=${() => label}
+          @value-changed=${this._formValueChanged}
+        ></ha-form>
+        <div class="helper">${helper}</div>
+        ${showWarning ? html`
+          <div class="warning">This sensor is required for the card to function</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  _renderSwitch(name, label, helper = null) {
+    const schema = [{ name, label, selector: { boolean: {} } }];
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${() => label}
+        @value-changed=${this._formValueChanged}
+      ></ha-form>
+      ${helper ? html`<div class="helper">${helper}</div>` : ''}
+    `;
+  }
+
+  _formValueChanged(ev) {
+    if (!this._config) return;
+    const value = ev.detail?.value || {};
+    const newConfig = this._normalizeConfig({ ...this._config, ...value });
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+
+  _valueChanged(name, value) {
+    if (!this._config) return;
+    const newConfig = this._normalizeConfig({ ...this._config, [name]: value });
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: newConfig } }));
+  }
+}
+
+
+// ============================================================================
 // F1 Qualifying Timing Card
 // ============================================================================
 
@@ -24006,6 +25113,13 @@ installSectionsAutoHeight(F1RaceControlCard, {
   min_rows: 1,
 });
 
+installSectionsAutoHeight(F1FiaDocumentsCard, {
+  columns: 12,
+  min_columns: 4,
+  max_columns: 12,
+  min_rows: 4,
+});
+
 installSectionsAutoHeight(F1QualifyingTimingCard, {
   columns: 12,
   min_columns: 4,
@@ -24138,6 +25252,15 @@ if (!customElements.get('f1-race-control-card')) {
 if (!customElements.get('f1-race-control-card-editor')) {
   customElements.define('f1-race-control-card-editor', F1RaceControlCardEditor);
 }
+
+if (!customElements.get('f1-fia-documents-card')) {
+  customElements.define('f1-fia-documents-card', F1FiaDocumentsCard);
+}
+
+if (!customElements.get('f1-fia-documents-card-editor')) {
+  customElements.define('f1-fia-documents-card-editor', F1FiaDocumentsCardEditor);
+}
+
 if (!customElements.get('f1-qualifying-timing-card')) {
   customElements.define('f1-qualifying-timing-card', F1QualifyingTimingCard);
 }
@@ -24271,6 +25394,14 @@ window.customCards.push({
   type: 'f1-race-control-card',
   name: 'F1 Race Control',
   description: 'Race control message banner with FIA styling',
+  configurable: true,
+  preview: true,
+});
+
+window.customCards.push({
+  type: 'f1-fia-documents-card',
+  name: 'F1 FIA Documents',
+  description: 'FIA race weekend document list with direct PDF links and publication times',
   configurable: true,
   preview: true,
 });
