@@ -20289,6 +20289,14 @@ class F1QualifyingTimingCard extends LitElement {
       --sector-text: var(--f1-timing-timed-text, #fde047);
     }
 
+    .qt-sector.source-personal-best {
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sector-text, var(--qt-muted)) 45%, transparent);
+    }
+
+    .qt-sector.lap-complete {
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sector-text, var(--qt-muted)) 55%, transparent);
+    }
+
     .qt-lap {
       display: inline-flex;
       align-items: center;
@@ -20394,6 +20402,7 @@ class F1QualifyingTimingCard extends LitElement {
       show_full_name: false,
       show_delta: true,
       show_timing_indicators: false,
+      sector_display_mode: 'current',
       team_logo_style: 'color',
       positions_entity: 'sensor.f1_driver_positions',
       tyres_entity: 'sensor.f1_current_tyres',
@@ -20761,11 +20770,16 @@ class F1QualifyingTimingCard extends LitElement {
       const idx = col.key === 'sector_1' ? 1 : col.key === 'sector_2' ? 2 : 3;
       const time = row[`sector_${idx}`];
       const sectorClass = row[`sector_${idx}_class`] || '';
+      const source = row[`sector_${idx}_source`];
+      const sourceClass = source ? `source-${String(source).replace(/_/g, '-')}` : '';
+      const lapCompleteClass = row.sector_state === 'lap_complete' && idx === 3 && time != null
+        ? 'lap-complete'
+        : '';
       const displayTime = time != null ? this._formatSectorTime(time) : '--';
       const indicator = this._timingIndicator(sectorClass);
       return html`
         <div class="${classes.join(' ')}">
-          <span class="qt-sector ${sectorClass}">${indicator}${displayTime}</span>
+          <span class="qt-sector ${sectorClass} ${sourceClass} ${lapCompleteClass}">${indicator}${displayTime}</span>
         </div>
       `;
     }
@@ -20850,6 +20864,7 @@ class F1QualifyingTimingCard extends LitElement {
   _buildRows(positionDrivers, tyresDrivers, driverList, currentQPart) {
     const resolvedQPart = this._normalizeQualifyingPart(currentQPart)
       ?? this._inferQualifyingPartFromDrivers(positionDrivers);
+    const sectorDisplayMode = this._normalizeSectorDisplayMode(this.config.sector_display_mode);
     const resolveDisplay = typeof resolveDriverDisplay === 'function'
       ? resolveDriverDisplay
       : (sources, showFullName = false, fallback = '--') => {
@@ -20970,6 +20985,9 @@ class F1QualifyingTimingCard extends LitElement {
         )
         : compoundBaseColor;
       const tyreAge = tyre?.stint_laps ?? null;
+      const sector1 = this._resolveSectorDisplay(pos, 1, sectorDisplayMode);
+      const sector2 = this._resolveSectorDisplay(pos, 2, sectorDisplayMode);
+      const sector3 = this._resolveSectorDisplay(pos, 3, sectorDisplayMode);
       return {
         rn,
         tla: driverDisplay.tla || tla || '--',
@@ -20984,18 +21002,22 @@ class F1QualifyingTimingCard extends LitElement {
         compound_short: compoundShort,
         compound_color: compoundColor,
         tyre_age: tyreAge,
-        sector_1: pos.best_sector_1 ?? pos.sector_1 ?? null,
-        sector_2: pos.best_sector_2 ?? pos.sector_2 ?? null,
-        sector_3: pos.best_sector_3 ?? pos.sector_3 ?? null,
-        sector_1_source: pos.best_sector_1 != null ? 'best' : (pos.sector_1 != null ? 'current' : null),
-        sector_2_source: pos.best_sector_2 != null ? 'best' : (pos.sector_2 != null ? 'current' : null),
-        sector_3_source: pos.best_sector_3 != null ? 'best' : (pos.sector_3 != null ? 'current' : null),
-        sector_1_overall_fastest: pos.sector_1_overall_fastest ?? null,
-        sector_1_personal_fastest: pos.sector_1_personal_fastest ?? null,
-        sector_2_overall_fastest: pos.sector_2_overall_fastest ?? null,
-        sector_2_personal_fastest: pos.sector_2_personal_fastest ?? null,
-        sector_3_overall_fastest: pos.sector_3_overall_fastest ?? null,
-        sector_3_personal_fastest: pos.sector_3_personal_fastest ?? null,
+        sector_1: sector1.time,
+        sector_2: sector2.time,
+        sector_3: sector3.time,
+        sector_1_source: sector1.source,
+        sector_2_source: sector2.source,
+        sector_3_source: sector3.source,
+        sector_1_lap: sector1.lap,
+        sector_2_lap: sector2.lap,
+        sector_3_lap: sector3.lap,
+        sector_1_overall_fastest: sector1.overall_fastest,
+        sector_1_personal_fastest: sector1.personal_fastest,
+        sector_2_overall_fastest: sector2.overall_fastest,
+        sector_2_personal_fastest: sector2.personal_fastest,
+        sector_3_overall_fastest: sector3.overall_fastest,
+        sector_3_personal_fastest: sector3.personal_fastest,
+        sector_state: pos.sector_state ?? pos.sectors?.state ?? null,
         last_lap: lastLap,
         current_segment_best_lap: currentSegmentBestLap,
         sort_position: sortPosition,
@@ -21028,7 +21050,7 @@ class F1QualifyingTimingCard extends LitElement {
 
     const overallBestSectorTimes = [1, 2, 3].map((idx) => {
       const times = rows
-        .filter((row) => row[`sector_${idx}_source`] === 'best')
+        .filter((row) => row[`sector_${idx}_source`] === 'personal_best')
         .map((row) => row[`sector_${idx}`])
         .filter((time) => Number.isFinite(time));
       if (times.length === 0) return null;
@@ -21042,7 +21064,7 @@ class F1QualifyingTimingCard extends LitElement {
           row[`sector_${idx}_class`] = '';
           continue;
         }
-        if (source === 'best') {
+        if (source === 'personal_best') {
           const overallFastestTime = overallBestSectorTimes[idx - 1];
           row[`sector_${idx}_class`] = Number.isFinite(overallFastestTime)
             && Math.abs(time - overallFastestTime) < 0.001
@@ -21198,6 +21220,73 @@ class F1QualifyingTimingCard extends LitElement {
     return leftSecs != null
       && rightSecs != null
       && Math.abs(leftSecs - rightSecs) < 0.001;
+  }
+
+  _normalizeSectorDisplayMode(value) {
+    const mode = String(value || 'current').trim().toLowerCase().replace(/-/g, '_');
+    if (mode === 'best') return 'personal_best';
+    if (mode === 'personal_best' || mode === 'hybrid') return mode;
+    return 'current';
+  }
+
+  _resolveSectorDisplay(pos, idx, mode = 'current') {
+    const current = this._sectorFromSource(pos, idx, 'current');
+    const personalBest = this._sectorFromSource(pos, idx, 'personal_best');
+    if (mode === 'personal_best') return personalBest;
+    if (mode === 'hybrid' && current.time == null) return personalBest;
+    return current;
+  }
+
+  _sectorFromSource(pos, idx, source) {
+    const empty = {
+      time: null,
+      source: null,
+      lap: null,
+      overall_fastest: null,
+      personal_fastest: null,
+    };
+    if (!pos || ![1, 2, 3].includes(idx)) return empty;
+
+    const structured = pos.sectors && typeof pos.sectors === 'object'
+      ? pos.sectors
+      : null;
+    const sourceGroup = source === 'personal_best'
+      ? structured?.personal_best
+      : structured?.current;
+    const detail = sourceGroup && typeof sourceGroup === 'object'
+      ? sourceGroup[`sector_${idx}`] ?? sourceGroup[String(idx)] ?? sourceGroup[String(idx - 1)]
+      : null;
+    if (detail && typeof detail === 'object') {
+      const time = this._parseSectorSeconds(detail.time);
+      return {
+        time,
+        source: time != null ? (detail.source || source) : null,
+        lap: detail.lap ?? null,
+        overall_fastest: detail.overall_fastest ?? null,
+        personal_fastest: detail.personal_fastest ?? null,
+      };
+    }
+
+    const prefix = source === 'personal_best' ? 'best_sector' : 'sector';
+    const time = this._parseSectorSeconds(pos[`${prefix}_${idx}`]);
+    return {
+      time,
+      source: time != null ? source : null,
+      lap: pos[`${prefix}_${idx}_lap`] ?? null,
+      overall_fastest: source === 'current'
+        ? pos[`sector_${idx}_overall_fastest`] ?? null
+        : null,
+      personal_fastest: source === 'current'
+        ? pos[`sector_${idx}_personal_fastest`] ?? null
+        : time != null,
+    };
+  }
+
+  _parseSectorSeconds(value) {
+    if (value == null || value === '') return null;
+    if (Number.isFinite(value)) return value;
+    const parsed = this._parseLapTimeSeconds(value);
+    return parsed == null ? null : parsed;
   }
 
   _formatSectorTime(secs) {
@@ -21450,6 +21539,11 @@ class F1QualifyingTimingCardEditor extends LitElement {
         )}
         ${this._renderSwitch('show_team_logo', 'Show team logo')}
         ${this._renderSwitch('show_delta', 'Show current Q delta', 'Shows the gap to the fastest driver in the active qualifying segment')}
+        ${renderEditorSelect(this, 'sector_display_mode', 'Sector display', [
+          { value: 'current', label: 'Current lap' },
+          { value: 'personal_best', label: 'Personal best sectors' },
+          { value: 'hybrid', label: 'Current, then personal best' },
+        ], 'Current lap keeps S1/S2/S3 aligned with live sector progress')}
 
         ${renderEditorSelect(this, 'team_logo_style', 'Team logo style', [
           { value: 'color', label: 'Color (fallback to white)' },
