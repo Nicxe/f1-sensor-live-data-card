@@ -86,6 +86,27 @@ const F1_THEME_STYLES = css`
     --f1-card-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
     --f1-card-compact-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
     --f1-card-title-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+    --f1-select-color-scheme: dark;
+    --f1-select-option-bg: #151517;
+    --f1-select-option-text: #f5f5f5;
+    --f1-marker-yellow: #ffd60a;
+    --f1-marker-yellow-text: #111827;
+    --f1-marker-yellow-border: #d6a700;
+    --f1-marker-green: #34c759;
+    --f1-marker-green-text: #06140b;
+    --f1-marker-green-border: #1f9d45;
+    --f1-marker-blue: #0a84ff;
+    --f1-marker-blue-text: #ffffff;
+    --f1-marker-blue-border: #0062bf;
+    --f1-marker-red: #ff3b30;
+    --f1-marker-red-text: #ffffff;
+    --f1-marker-red-border: #c71f17;
+    --f1-marker-purple: #8b5cf6;
+    --f1-marker-purple-text: #ffffff;
+    --f1-marker-purple-border: #6d28d9;
+    --f1-marker-orange: #ff9500;
+    --f1-marker-orange-text: #111827;
+    --f1-marker-orange-border: #c46d00;
     --f1-team-logo-filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
     --f1-status-info: #38bdf8;
     --f1-status-info-text: #bfdbfe;
@@ -142,6 +163,9 @@ const F1_THEME_STYLES = css`
   }
 
   :host([data-effective-theme='light']) {
+    --f1-select-color-scheme: light;
+    --f1-select-option-bg: #ffffff;
+    --f1-select-option-text: #111827;
     --f1-team-logo-filter:
       drop-shadow(0 1px 1px rgba(15, 23, 42, 0.38))
       drop-shadow(0 0 3px rgba(15, 23, 42, 0.18));
@@ -173,12 +197,12 @@ const F1_THEME_STYLES = css`
     --f1-status-orange-text: #9a3412;
     --f1-status-orange-bg: rgba(194, 65, 12, 0.12);
     --f1-status-orange-border: rgba(194, 65, 12, 0.30);
-    --f1-timing-overall-fastest-bg: rgba(109, 40, 217, 0.12);
+    --f1-timing-overall-fastest-bg: rgba(139, 92, 246, 0.22);
     --f1-timing-overall-fastest-text: #6d28d9;
-    --f1-timing-personal-fastest-bg: rgba(22, 101, 52, 0.12);
+    --f1-timing-personal-fastest-bg: rgba(52, 199, 89, 0.22);
     --f1-timing-personal-fastest-text: #166534;
-    --f1-timing-timed-bg: rgba(133, 77, 14, 0.13);
-    --f1-timing-timed-text: #854d0e;
+    --f1-timing-timed-bg: rgba(255, 214, 10, 0.26);
+    --f1-timing-timed-text: #7a5600;
   }
 
   :host([data-theme-mode='auto']) {
@@ -201,6 +225,15 @@ const F1_THEME_STYLES = css`
 
   img[class*='team-logo'] {
     filter: var(--f1-team-logo-filter);
+  }
+
+  select {
+    color-scheme: var(--f1-select-color-scheme);
+  }
+
+  select option {
+    background-color: var(--f1-select-option-bg);
+    color: var(--f1-select-option-text);
   }
 
   :host [class$='replay-note'],
@@ -325,9 +358,39 @@ const F1_THEME_STYLES = css`
     --status-bg: var(--f1-status-success-bg);
   }
 
+  :host([data-effective-theme='light']) .ls-status-pill.status-clear {
+    background: var(--f1-marker-green);
+    border-color: var(--f1-marker-green-border);
+    color: var(--f1-marker-green-text);
+  }
+
+  :host([data-effective-theme='light']) .ls-status-pill.status-yellow {
+    background: var(--f1-marker-yellow);
+    border-color: var(--f1-marker-yellow-border);
+    color: var(--f1-marker-yellow-text);
+  }
+
+  :host([data-effective-theme='light']) .ls-status-pill.status-red {
+    background: var(--f1-marker-red);
+    border-color: var(--f1-marker-red-border);
+    color: var(--f1-marker-red-text);
+  }
+
+  :host([data-effective-theme='light']) .ls-status-pill.status-sc,
+  :host([data-effective-theme='light']) .ls-status-pill.status-vsc {
+    background: var(--f1-marker-orange);
+    border-color: var(--f1-marker-orange-border);
+    color: var(--f1-marker-orange-text);
+  }
+
   :host .best-lap-cell {
-    background: var(--f1-status-success-bg);
-    color: var(--f1-status-success-text);
+    background: var(--f1-timing-personal-fastest-bg);
+    color: var(--f1-timing-personal-fastest-text);
+  }
+
+  :host([data-effective-theme='light']) .best-lap-cell {
+    background: var(--f1-timing-personal-fastest-bg);
+    color: var(--f1-timing-personal-fastest-text);
   }
 
   :host .qt-q-badge {
@@ -339,6 +402,16 @@ const F1_THEME_STYLES = css`
   :host .qt-delta.timed {
     background: var(--f1-status-info-bg);
     color: var(--f1-status-info-text);
+  }
+
+  :host [class*='-lap'].overall-fastest,
+  :host [class*='-lap'].personal-fastest,
+  :host [class*='-lap'].timed,
+  :host [class*='-sector'].overall-fastest,
+  :host [class*='-sector'].personal-fastest,
+  :host [class*='-sector'].timed {
+    border-radius: 8px;
+    font-weight: 700;
   }
 
   :host .rc-button.load {
@@ -384,20 +457,62 @@ const F1_THEME_STYLES = css`
   }
 
   :host([data-effective-theme='light']) .rc-icon.flag-red {
-    fill: var(--f1-status-danger);
+    fill: var(--f1-marker-red);
   }
 
   :host([data-effective-theme='light']) .rc-icon.flag-yellow,
   :host([data-effective-theme='light']) .rc-icon.category-sc {
-    fill: var(--f1-status-warning);
+    fill: var(--f1-marker-yellow);
   }
 
   :host([data-effective-theme='light']) .rc-icon.flag-blue {
-    fill: var(--f1-status-info);
+    fill: var(--f1-marker-blue);
   }
 
   :host([data-effective-theme='light']) .rc-icon.flag-green {
-    fill: var(--f1-status-success);
+    fill: var(--f1-marker-green);
+  }
+
+  :host([data-effective-theme='light']) .fd-row.tone-yellow {
+    --fd-row-accent: var(--f1-status-warning-text);
+    background: linear-gradient(
+      135deg,
+      var(--f1-status-warning-bg),
+      color-mix(in srgb, var(--f1-status-warning-bg) 34%, transparent)
+    );
+  }
+
+  :host([data-effective-theme='light']) .fd-row.tone-yellow .fd-type {
+    background: var(--f1-status-warning-bg);
+    border-color: var(--f1-status-warning-border);
+    color: var(--f1-status-warning-text);
+  }
+
+  :host([data-effective-theme='light']) .nr-chip.next,
+  :host([data-effective-theme='light']) .sc-chip.next {
+    background: var(--f1-status-warning-bg);
+    border-color: var(--f1-status-warning-border);
+    color: var(--f1-status-warning-text);
+  }
+
+  :host([data-effective-theme='light']) .nr-session-row.upcoming,
+  :host([data-effective-theme='light']) .sc-row.next {
+    border-color: var(--f1-status-warning-border);
+    background:
+      linear-gradient(90deg, var(--f1-status-warning-bg), transparent 44%),
+      var(--f1-card-panel);
+  }
+
+  :host([data-effective-theme='light']) .nr-schedule-row.upcoming::before,
+  :host([data-effective-theme='light']) .sc-row.next::before {
+    background: var(--f1-status-warning-text);
+  }
+
+  :host([data-effective-theme='light']) [class$='tyre-circle'],
+  :host([data-effective-theme='light']) [class*='-tyre-circle '] {
+    background: var(--compound-color, var(--f1-card-panel));
+    border-color: color-mix(in srgb, var(--compound-color, var(--f1-card-text)) 75%, #111827);
+    color: #111827;
   }
 
   :host([data-effective-theme='light']) [class$='driver'],
@@ -420,11 +535,11 @@ const COMPOUND_FALLBACK = {
   WET: '#0a84ff',
 };
 const COMPOUND_LIGHT_DISPLAY = {
-  SOFT: '#c81e1e',
-  MEDIUM: '#9a6700',
-  HARD: '#4b5563',
-  INTERMEDIATE: '#15803d',
-  WET: '#0369a1',
+  SOFT: '#ff3b30',
+  MEDIUM: '#ffd60a',
+  HARD: '#e5e5e5',
+  INTERMEDIATE: '#34c759',
+  WET: '#0a84ff',
 };
 const COMPOUND_IMAGES = {
   HARD: new URL('./hard_tyre.png', import.meta.url).href,
@@ -455,6 +570,11 @@ const TEAM_LOGO_ALIASES = {
   astonmartin: 'Aston Martin',
   audi: 'Audi',
   cadillac: 'Cadillac',
+  'cadillac f1': 'Cadillac',
+  'cadillac f1 team': 'Cadillac',
+  'cadillac ferrari': 'Cadillac',
+  'cadillac formula 1 team': 'Cadillac',
+  'general motors cadillac': 'Cadillac',
   ferrari: 'Ferrari',
   haas: 'Haas',
   mclaren: 'McLaren',
@@ -653,11 +773,11 @@ const TRACK_STATUS_COLORS = {
   RED: '#ff3b30',
 };
 const TRACK_STATUS_LIGHT_COLORS = {
-  CLEAR: '#166534',
-  YELLOW: '#92400e',
-  VSC: '#9a3412',
-  SC: '#9a3412',
-  RED: '#b91c1c',
+  CLEAR: '#34c759',
+  YELLOW: '#ffd60a',
+  VSC: '#ff9500',
+  SC: '#ff9500',
+  RED: '#ff3b30',
 };
 
 const TRACK_STATUS_LABELS = {
@@ -2104,8 +2224,8 @@ class F1PitStopOverviewCard extends LitElement {
     .ps-table {
       display: grid;
       gap: var(--f1-live-table-stack-gap, 4px);
-      min-width: max-content;
-      width: max-content;
+      min-width: 0;
+      width: 100%;
     }
 
     .ps-row {
@@ -2114,6 +2234,7 @@ class F1PitStopOverviewCard extends LitElement {
       align-items: center;
       column-gap: 0;
       box-sizing: border-box;
+      width: 100%;
       min-height: var(--f1-table-row-min-height, 34px);
       padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
@@ -2243,6 +2364,14 @@ class F1PitStopOverviewCard extends LitElement {
       width: 100%;
     }
 
+    .ps-table[data-layout='narrow'] .ps-cell {
+      padding: 0 1px;
+    }
+
+    .ps-table[data-layout='narrow'] .ps-cell.group-start {
+      padding-left: 4px;
+    }
+
     .ps-status.pit-in {
       color: #f59e0b;
       animation: pulse 1.5s ease-in-out infinite;
@@ -2272,11 +2401,14 @@ class F1PitStopOverviewCard extends LitElement {
       display: inline-flex;
       align-items: center;
       gap: 4px;
+      min-width: 0;
+      max-width: 100%;
     }
 
     .ps-tyre-circle {
       width: 16px;
       height: 16px;
+      flex: 0 0 auto;
       border-radius: 50%;
       border: 2px solid var(--compound-color, var(--ts-text));
       display: grid;
@@ -2300,6 +2432,10 @@ class F1PitStopOverviewCard extends LitElement {
       min-width: 2ch;
       text-align: right;
       font-variant-numeric: tabular-nums;
+      flex: 1 1 auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .ps-cell.tyre-col {
@@ -2358,7 +2494,11 @@ class F1PitStopOverviewCard extends LitElement {
 
       .ps-row {
         font-size: 9px;
-        padding: 5px 6px;
+        padding: 5px 5px;
+      }
+
+      .ps-tyre-badge {
+        gap: 3px;
       }
     }
   `];
@@ -2525,8 +2665,11 @@ class F1PitStopOverviewCard extends LitElement {
     const compactLayout = layoutMode === 'narrow';
     const mediumLayout = layoutMode === 'medium';
     const driverWidth = this.config.show_full_name === true
-      ? (compactLayout ? 'minmax(138px, 1.45fr)' : 'minmax(118px, 1.15fr)')
-      : (compactLayout ? 'minmax(114px, 1.22fr)' : 'minmax(100px, 0.98fr)');
+      ? (compactLayout ? 'minmax(108px, 1.34fr)' : (mediumLayout ? 'minmax(112px, 1.1fr)' : 'minmax(118px, 1.15fr)'))
+      : (compactLayout ? 'minmax(90px, 1.18fr)' : (mediumLayout ? 'minmax(96px, 0.95fr)' : 'minmax(100px, 0.98fr)'));
+    const tyreWidth = compactLayout
+      ? 'minmax(50px, 0.64fr)'
+      : (mediumLayout ? 'minmax(52px, 0.46fr)' : 'minmax(54px, 0.42fr)');
     const cols = [];
     const hasLane = Array.isArray(rows)
       ? rows.some((row) => Number.isFinite(row.pit_lane_time_num))
@@ -2539,7 +2682,7 @@ class F1PitStopOverviewCard extends LitElement {
       cols.push({ key: 'tla', label: 'DRIVER', width: driverWidth });
     }
     if (this.config.show_tyre !== false) {
-      cols.push({ key: 'tyre', label: 'TYRES', width: compactLayout ? '0.38fr' : '0.3fr' });
+      cols.push({ key: 'tyre', label: 'TYRES', width: tyreWidth });
     }
     if (suppressPit) return cols;
     const pitColumns = [];
@@ -2547,7 +2690,7 @@ class F1PitStopOverviewCard extends LitElement {
       pitColumns.push({
         key: 'pit_count',
         label: 'ST',
-        width: compactLayout ? '0.34fr' : '0.28fr',
+        width: compactLayout ? 'minmax(24px, 0.32fr)' : (mediumLayout ? 'minmax(26px, 0.28fr)' : 'minmax(28px, 0.28fr)'),
         numeric: true,
         group: 'pit',
       });
@@ -2556,7 +2699,7 @@ class F1PitStopOverviewCard extends LitElement {
       pitColumns.push({
         key: 'pit_time',
         label: 'PIT',
-        width: compactLayout ? '0.44fr' : '0.42fr',
+        width: compactLayout ? 'minmax(32px, 0.42fr)' : (mediumLayout ? 'minmax(34px, 0.4fr)' : 'minmax(36px, 0.42fr)'),
         numeric: true,
         group: 'pit',
       });
@@ -2565,7 +2708,7 @@ class F1PitStopOverviewCard extends LitElement {
       pitColumns.push({
         key: 'pit_lane_time',
         label: 'LN',
-        width: '0.42fr',
+        width: compactLayout ? 'minmax(32px, 0.4fr)' : (mediumLayout ? 'minmax(34px, 0.4fr)' : 'minmax(36px, 0.42fr)'),
         numeric: true,
         group: 'pit',
       });
@@ -2574,7 +2717,7 @@ class F1PitStopOverviewCard extends LitElement {
       pitColumns.push({
         key: 'pit_delta',
         label: 'Δ',
-        width: compactLayout ? '0.42fr' : '0.38fr',
+        width: compactLayout ? 'minmax(28px, 0.38fr)' : (mediumLayout ? 'minmax(30px, 0.36fr)' : 'minmax(32px, 0.38fr)'),
         numeric: true,
         group: 'pit',
       });
@@ -3576,8 +3719,8 @@ class F1DriverLapTimesCard extends LitElement {
     .dl-table {
       display: grid;
       gap: var(--f1-live-table-stack-gap, 4px);
-      min-width: max-content;
-      width: max-content;
+      min-width: 0;
+      width: 100%;
     }
 
     .dl-scroll {
@@ -3591,6 +3734,7 @@ class F1DriverLapTimesCard extends LitElement {
       align-items: center;
       column-gap: 0px;
       box-sizing: border-box;
+      width: 100%;
       min-height: var(--f1-table-row-min-height, 34px);
       padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
@@ -3701,9 +3845,9 @@ class F1DriverLapTimesCard extends LitElement {
     }
 
     .dl-cell.lap-column.best-lap-cell {
-      background: rgba(34, 197, 94, 0.22);
+      background: var(--f1-timing-personal-fastest-bg);
       border-radius: 8px;
-      color: #dcfce7;
+      color: var(--f1-timing-personal-fastest-text);
       font-weight: 700;
       margin: 1px 4px 1px 2px;
     }
@@ -3727,7 +3871,10 @@ class F1DriverLapTimesCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
+      max-width: 100%;
       flex-wrap: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .dl-status {
@@ -3958,8 +4105,8 @@ class F1DriverLapTimesCard extends LitElement {
     const compactLayout = layoutMode !== 'wide';
     const narrowLayout = layoutMode === 'narrow';
     const driverWidth = this.config.show_full_name === true
-      ? (compactLayout ? 'minmax(146px, 1.52fr)' : 'minmax(126px, 1.18fr)')
-      : (compactLayout ? 'minmax(124px, 1.32fr)' : 'minmax(110px, 1.02fr)');
+      ? (narrowLayout ? 'minmax(108px, 0.95fr)' : (compactLayout ? 'minmax(124px, 1fr)' : 'minmax(126px, 0.95fr)'))
+      : (narrowLayout ? 'minmax(78px, 0.7fr)' : (compactLayout ? 'minmax(92px, 0.75fr)' : 'minmax(96px, 0.7fr)'));
     const visibleLapNumbers = narrowLayout
       ? []
       : compactLayout
@@ -3970,14 +4117,14 @@ class F1DriverLapTimesCard extends LitElement {
       cols.push({
         key: 'position',
         label: 'POS',
-        width: narrowLayout ? '40px' : '44px',
+        width: narrowLayout ? '30px' : 'minmax(34px, 0.32fr)',
         tabular: true,
         compact: true,
         hideHeader: true,
       });
     }
     if (this.config.show_team_logo !== false) {
-      cols.push({ key: 'logo', label: 'LOGO', width: narrowLayout ? '26px' : '30px', compact: true, hideHeader: true });
+      cols.push({ key: 'logo', label: 'LOGO', width: narrowLayout ? '22px' : '24px', compact: true, hideHeader: true });
     }
     if (this.config.show_tla !== false) {
       cols.push({
@@ -3991,24 +4138,24 @@ class F1DriverLapTimesCard extends LitElement {
       cols.push({
         key: 'gap',
         label: gapMode === 'leader' ? 'GAP' : 'INT',
-        width: narrowLayout ? '62px' : '70px',
+        width: narrowLayout ? 'minmax(50px, 0.6fr)' : 'minmax(58px, 0.62fr)',
         numeric: true,
         compact: true,
       });
     }
     const lapColumns = [];
     if (this.config.show_last_lap !== false) {
-      lapColumns.push({ key: 'last_lap', label: 'LAST', width: compactLayout ? '80px' : '86px', numeric: true });
+      lapColumns.push({ key: 'last_lap', label: 'LAST', width: narrowLayout ? 'minmax(70px, 0.95fr)' : 'minmax(76px, 0.9fr)', numeric: true });
     }
     if (this.config.show_best_lap !== false) {
-      lapColumns.push({ key: 'best_lap', label: 'BEST', width: compactLayout ? '80px' : '86px', numeric: true });
+      lapColumns.push({ key: 'best_lap', label: 'BEST', width: narrowLayout ? 'minmax(70px, 0.95fr)' : 'minmax(76px, 0.9fr)', numeric: true });
     }
     if (this.config.show_lap_history === true && Array.isArray(visibleLapNumbers)) {
       visibleLapNumbers.forEach((lap, index) => {
         lapColumns.push({
           key: `lap_${lap}`,
           label: `L${lap}`,
-          width: compactLayout ? '86px' : '92px',
+          width: compactLayout ? 'minmax(76px, 0.9fr)' : 'minmax(82px, 0.95fr)',
           numeric: true,
           type: 'lap',
           lap,
@@ -4917,6 +5064,8 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     .cpd-table {
       display: grid;
       gap: 6px;
+      min-width: 0;
+      width: 100%;
     }
 
     .cpd-row {
@@ -4925,6 +5074,7 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       align-items: center;
       column-gap: 4px;
       box-sizing: border-box;
+      width: 100%;
       min-height: var(--f1-table-row-min-height, 34px);
       padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
@@ -5040,13 +5190,21 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       align-items: center;
       justify-content: center;
       gap: 4px;
-      min-width: 52px;
-      padding: 4px 8px;
+      min-width: 56px;
+      min-height: 24px;
+      box-sizing: border-box;
+      padding: 4px 10px;
       border-radius: 999px;
       background: var(--f1-card-chip);
       border: 1px solid var(--f1-card-divider);
       font-weight: 700;
       letter-spacing: 0.04em;
+      line-height: 1;
+    }
+
+    .cpd-cell.numeric .cpd-delta-pill {
+      width: 100%;
+      max-width: 100%;
     }
 
     .cpd-delta-pill.positive {
@@ -5378,23 +5536,25 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     const compactLayout = layoutMode !== 'wide';
     const cols = [];
     if (this.config.show_position !== false) {
-      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
+      cols.push({ key: 'position', label: 'POS', width: 'minmax(30px, 0.18fr)', numeric: true });
     }
     if (this.config.show_team_logo !== false) {
-      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? '0.18fr' : '0.16fr', hideHeader: true });
+      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? 'minmax(22px, 0.18fr)' : 'minmax(24px, 0.16fr)', hideHeader: true });
     }
     if (this.config.show_tla !== false) {
       cols.push({
         key: 'tla',
         label: 'DRIVER',
-        width: compactLayout ? (showProjection ? '0.92fr' : '1fr') : this._driverColumnWidth(showProjection),
+        width: compactLayout
+          ? (showProjection ? 'minmax(84px, 0.92fr)' : 'minmax(90px, 1fr)')
+          : this._driverColumnWidth(showProjection),
       });
     }
     if (this.config.show_current_points !== false) {
       cols.push({
         key: 'current_points',
         label: 'PTS',
-        width: showProjection ? '0.38fr' : '0.44fr',
+        width: showProjection ? 'minmax(42px, 0.38fr)' : 'minmax(46px, 0.44fr)',
         numeric: true,
         groupStart: true,
         emphasis: 'primary',
@@ -5404,12 +5564,12 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       cols.push({
         key: 'predicted_points',
         label: 'PRED',
-        width: '0.42fr',
+        width: 'minmax(44px, 0.42fr)',
         numeric: true,
         emphasis: 'secondary',
       });
       if (this.config.show_delta !== false) {
-        cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
+        cols.push({ key: 'delta', label: 'Δ', width: 'minmax(54px, 0.58fr)', numeric: true });
       }
     }
     return cols;
@@ -5419,19 +5579,19 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
     const compactLayout = layoutMode !== 'wide';
     const cols = [];
     if (this.config.show_position !== false) {
-      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
+      cols.push({ key: 'position', label: 'POS', width: 'minmax(30px, 0.18fr)', numeric: true });
     }
     if (this.config.show_team_logo !== false) {
-      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? '0.18fr' : '0.16fr', hideHeader: true });
+      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? 'minmax(22px, 0.18fr)' : 'minmax(24px, 0.16fr)', hideHeader: true });
     }
     if (this.config.show_tla !== false) {
-      cols.push({ key: 'tla', label: 'DRIVER', width: compactLayout ? '1fr' : this._driverColumnWidth(true) });
+      cols.push({ key: 'tla', label: 'DRIVER', width: compactLayout ? 'minmax(90px, 1fr)' : this._driverColumnWidth(true) });
     }
     if (this.config.show_predicted_points !== false) {
       cols.push({
         key: 'predicted_points',
         label: 'PRED',
-        width: '0.42fr',
+        width: 'minmax(44px, 0.42fr)',
         numeric: true,
         groupStart: true,
         emphasis: 'primary',
@@ -5441,13 +5601,13 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
       cols.push({
         key: 'current_points',
         label: 'CUR',
-        width: '0.38fr',
+        width: 'minmax(42px, 0.38fr)',
         numeric: true,
         emphasis: 'secondary',
       });
     }
     if (this.config.show_delta !== false) {
-      cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
+      cols.push({ key: 'delta', label: 'Δ', width: 'minmax(54px, 0.58fr)', numeric: true });
     }
     return cols;
   }
@@ -5729,9 +5889,9 @@ class F1ChampionshipPredictionDriversCard extends LitElement {
 
   _driverColumnWidth(showProjection) {
     if (this.config.show_full_name === true) {
-      return showProjection ? '1.02fr' : '1.18fr';
+      return showProjection ? 'minmax(132px, 1.02fr)' : 'minmax(140px, 1.18fr)';
     }
-    return showProjection ? '0.62fr' : '0.78fr';
+    return showProjection ? 'minmax(88px, 0.62fr)' : 'minmax(96px, 0.78fr)';
   }
 
   _normalizeDriverName(...values) {
@@ -6062,6 +6222,8 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     .cpt-table {
       display: grid;
       gap: 6px;
+      min-width: 0;
+      width: 100%;
     }
 
     .cpt-row {
@@ -6070,6 +6232,7 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       align-items: center;
       column-gap: 4px;
       box-sizing: border-box;
+      width: 100%;
       min-height: var(--f1-table-row-min-height, 34px);
       padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
@@ -6147,13 +6310,21 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       align-items: center;
       justify-content: center;
       gap: 4px;
-      min-width: 52px;
-      padding: 4px 8px;
+      min-width: 56px;
+      min-height: 24px;
+      box-sizing: border-box;
+      padding: 4px 10px;
       border-radius: 999px;
       background: var(--f1-card-chip);
       border: 1px solid var(--f1-card-divider);
       font-weight: 700;
       letter-spacing: 0.04em;
+      line-height: 1;
+    }
+
+    .cpt-cell.numeric .cpt-delta-pill {
+      width: 100%;
+      max-width: 100%;
     }
 
     .cpt-delta-pill.positive {
@@ -6475,19 +6646,23 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     const compactLayout = layoutMode !== 'wide';
     const cols = [];
     if (this.config.show_position !== false) {
-      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
+      cols.push({ key: 'position', label: 'POS', width: 'minmax(30px, 0.18fr)', numeric: true });
     }
     if (this.config.show_team_logo !== false) {
-      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? '0.2fr' : '0.18fr', hideHeader: true });
+      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? 'minmax(22px, 0.2fr)' : 'minmax(24px, 0.18fr)', hideHeader: true });
     }
     if (this.config.show_team_name !== false) {
-      cols.push({ key: 'team_name', label: 'TEAM', width: compactLayout ? '1fr' : (showProjection ? '0.72fr' : '0.86fr') });
+      cols.push({
+        key: 'team_name',
+        label: 'TEAM',
+        width: compactLayout ? 'minmax(96px, 1fr)' : (showProjection ? 'minmax(104px, 0.72fr)' : 'minmax(116px, 0.86fr)'),
+      });
     }
     if (this.config.show_current_points !== false) {
       cols.push({
         key: 'current_points',
         label: 'PTS',
-        width: showProjection ? '0.38fr' : '0.44fr',
+        width: showProjection ? 'minmax(42px, 0.38fr)' : 'minmax(46px, 0.44fr)',
         numeric: true,
         groupStart: true,
         emphasis: 'primary',
@@ -6497,12 +6672,12 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       cols.push({
         key: 'predicted_points',
         label: 'PRED',
-        width: '0.42fr',
+        width: 'minmax(44px, 0.42fr)',
         numeric: true,
         emphasis: 'secondary',
       });
       if (this.config.show_delta !== false) {
-        cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
+        cols.push({ key: 'delta', label: 'Δ', width: 'minmax(54px, 0.58fr)', numeric: true });
       }
     }
     return cols;
@@ -6512,19 +6687,19 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
     const compactLayout = layoutMode !== 'wide';
     const cols = [];
     if (this.config.show_position !== false) {
-      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
+      cols.push({ key: 'position', label: 'POS', width: 'minmax(30px, 0.18fr)', numeric: true });
     }
     if (this.config.show_team_logo !== false) {
-      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? '0.2fr' : '0.18fr', hideHeader: true });
+      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? 'minmax(22px, 0.2fr)' : 'minmax(24px, 0.18fr)', hideHeader: true });
     }
     if (this.config.show_team_name !== false) {
-      cols.push({ key: 'team_name', label: 'TEAM', width: compactLayout ? '1fr' : '0.72fr' });
+      cols.push({ key: 'team_name', label: 'TEAM', width: compactLayout ? 'minmax(96px, 1fr)' : 'minmax(104px, 0.72fr)' });
     }
     if (this.config.show_predicted_points !== false) {
       cols.push({
         key: 'predicted_points',
         label: 'PRED',
-        width: '0.42fr',
+        width: 'minmax(44px, 0.42fr)',
         numeric: true,
         groupStart: true,
         emphasis: 'primary',
@@ -6534,13 +6709,13 @@ class F1ChampionshipPredictionTeamsCard extends LitElement {
       cols.push({
         key: 'current_points',
         label: 'CUR',
-        width: '0.38fr',
+        width: 'minmax(42px, 0.38fr)',
         numeric: true,
         emphasis: 'secondary',
       });
     }
     if (this.config.show_delta !== false) {
-      cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
+      cols.push({ key: 'delta', label: 'Δ', width: 'minmax(54px, 0.58fr)', numeric: true });
     }
     return cols;
   }
@@ -8059,6 +8234,8 @@ class F1LastRaceResultsCard extends LitElement {
     .cpd-table {
       display: grid;
       gap: 6px;
+      min-width: 0;
+      width: 100%;
     }
 
     .cpd-row {
@@ -8067,6 +8244,7 @@ class F1LastRaceResultsCard extends LitElement {
       align-items: center;
       column-gap: 4px;
       box-sizing: border-box;
+      width: 100%;
       min-height: var(--f1-table-row-min-height, 34px);
       padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
@@ -8187,13 +8365,21 @@ class F1LastRaceResultsCard extends LitElement {
       align-items: center;
       justify-content: center;
       gap: 4px;
-      min-width: 52px;
-      padding: 4px 8px;
+      min-width: 56px;
+      min-height: 24px;
+      box-sizing: border-box;
+      padding: 4px 10px;
       border-radius: 999px;
       background: var(--f1-card-chip);
       border: 1px solid var(--f1-card-divider);
       font-weight: 700;
       letter-spacing: 0.04em;
+      line-height: 1;
+    }
+
+    .cpd-cell.numeric .cpd-delta-pill {
+      width: 100%;
+      max-width: 100%;
     }
 
     .cpd-delta-pill.positive {
@@ -8598,29 +8784,29 @@ class F1LastRaceResultsCard extends LitElement {
     const compactLayout = layoutMode !== 'wide';
     const cols = [];
     if (this.config.show_position !== false) {
-      cols.push({ key: 'position', label: 'POS', width: '0.18fr', numeric: true });
+      cols.push({ key: 'position', label: 'POS', width: 'minmax(30px, 0.18fr)', numeric: true });
     }
     if (this.config.show_team_logo !== false) {
-      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? '0.18fr' : '0.16fr', hideHeader: true });
+      cols.push({ key: 'logo', label: 'LOGO', width: compactLayout ? 'minmax(22px, 0.18fr)' : 'minmax(24px, 0.16fr)', hideHeader: true });
     }
     if (this.config.show_tla !== false) {
       cols.push({
         key: 'tla',
         label: 'DRIVER',
-        width: compactLayout ? '1fr' : this._driverColumnWidth(),
+        width: compactLayout ? 'minmax(90px, 1fr)' : this._driverColumnWidth(),
       });
     }
     if (this.config.show_grid !== false) {
-      cols.push({ key: 'grid', label: 'GRD', width: '0.18fr', numeric: true });
+      cols.push({ key: 'grid', label: 'GRD', width: 'minmax(30px, 0.18fr)', numeric: true });
     }
     if (this.config.show_grid !== false && this.config.show_delta !== false) {
-      cols.push({ key: 'delta', label: 'Δ', width: '0.44fr', numeric: true });
+      cols.push({ key: 'delta', label: 'Δ', width: 'minmax(54px, 0.58fr)', numeric: true });
     }
     if (this.config.show_points !== false) {
       cols.push({
         key: 'points',
         label: 'PTS',
-        width: '0.28fr',
+        width: 'minmax(36px, 0.28fr)',
         numeric: true,
       });
     }
@@ -8628,7 +8814,7 @@ class F1LastRaceResultsCard extends LitElement {
       cols.push({
         key: 'status',
         label: 'STATUS',
-        width: compactLayout ? '0.48fr' : '0.6fr',
+        width: compactLayout ? 'minmax(58px, 0.5fr)' : 'minmax(70px, 0.68fr)',
         align: true,
       });
     }
@@ -8836,9 +9022,9 @@ class F1LastRaceResultsCard extends LitElement {
 
   _driverColumnWidth() {
     if (this.config.show_full_name === true) {
-      return '1.18fr';
+      return 'minmax(140px, 1.18fr)';
     }
-    return '0.78fr';
+    return 'minmax(96px, 0.78fr)';
   }
 
   _normalizeDriverName(...values) {
@@ -9084,14 +9270,17 @@ class F1InvestigationsCard extends LitElement {
     .inv-table {
       display: grid;
       gap: 6px;
+      min-width: 0;
+      width: 100%;
     }
 
     .inv-row {
       display: grid;
-      grid-template-columns: 0.7fr 2.3fr;
+      grid-template-columns: minmax(90px, 0.7fr) minmax(180px, 2.3fr);
       align-items: center;
       column-gap: 8px;
       box-sizing: border-box;
+      width: 100%;
       min-height: var(--f1-table-row-min-height, 34px);
       padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
@@ -9147,7 +9336,10 @@ class F1InvestigationsCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
+      max-width: 100%;
       flex-wrap: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .inv-team-logo {
@@ -9308,8 +9500,8 @@ class F1InvestigationsCard extends LitElement {
     const gridTemplate = layoutMode === 'narrow'
       ? 'minmax(0, 1fr)'
       : layoutMode === 'medium'
-        ? (showFullName ? 'minmax(0, 1.15fr) minmax(0, 1.75fr)' : 'minmax(0, 0.9fr) minmax(0, 2fr)')
-        : (showFullName ? '1.05fr 2.1fr' : '0.85fr 2.3fr');
+        ? (showFullName ? 'minmax(116px, 1.15fr) minmax(140px, 1.75fr)' : 'minmax(82px, 0.9fr) minmax(140px, 2fr)')
+        : (showFullName ? 'minmax(128px, 1.05fr) minmax(180px, 2.1fr)' : 'minmax(90px, 0.85fr) minmax(180px, 2.3fr)');
 
     return html`
       <ha-card>
@@ -9959,14 +10151,17 @@ class F1TrackLimitsCard extends LitElement {
     .tl-table {
       display: grid;
       gap: 6px;
+      min-width: 0;
+      width: 100%;
     }
 
     .tl-row {
       display: grid;
-      grid-template-columns: 0.85fr 2.1fr 0.6fr;
+      grid-template-columns: minmax(90px, 0.85fr) minmax(180px, 2.1fr) minmax(58px, 0.6fr);
       align-items: center;
       column-gap: 8px;
       box-sizing: border-box;
+      width: 100%;
       min-height: var(--f1-table-row-min-height, 34px);
       padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
@@ -10024,7 +10219,10 @@ class F1TrackLimitsCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
+      max-width: 100%;
       flex-wrap: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .tl-team-logo {
@@ -10204,8 +10402,8 @@ class F1TrackLimitsCard extends LitElement {
     const gridTemplate = layoutMode === 'narrow'
       ? 'minmax(0, 1fr)'
       : layoutMode === 'medium'
-        ? (showFullName ? 'minmax(0, 1.05fr) minmax(0, 1.85fr)' : 'minmax(0, 0.8fr) minmax(0, 2fr)')
-        : (showFullName ? '0.95fr 2.15fr' : '0.7fr 2.3fr');
+        ? (showFullName ? 'minmax(116px, 1.05fr) minmax(140px, 1.85fr)' : 'minmax(82px, 0.8fr) minmax(140px, 2fr)')
+        : (showFullName ? 'minmax(128px, 0.95fr) minmax(180px, 2.15fr)' : 'minmax(90px, 0.7fr) minmax(180px, 2.3fr)');
 
     return html`
       <ha-card>
@@ -11649,6 +11847,7 @@ class F1LiveSessionCard extends LitElement {
 
   _getStatusClass(trackStatus) {
     const status = String(trackStatus || '').toUpperCase();
+    if (status === 'CLEAR' || status === 'GREEN') return 'status-clear';
     if (status === 'SC' || status === 'SAFETY CAR') return 'status-sc';
     if (status === 'VSC' || status === 'VIRTUAL SC') return 'status-vsc';
     if (status === 'RED' || status === 'RED FLAG') return 'status-red';
@@ -12310,16 +12509,7 @@ class F1ReplayControlCard extends LitElement {
       --rc-chip: var(--f1-card-chip);
       --rc-panel: var(--f1-card-panel);
       --rc-shadow: var(--f1-card-compact-shadow);
-      --rc-select-color-scheme: dark;
-      --rc-select-option-bg: #151517;
-      --rc-select-option-text: #f5f5f5;
       display: block;
-    }
-
-    .rc-card[data-select-theme='light'] {
-      --rc-select-color-scheme: light;
-      --rc-select-option-bg: #ffffff;
-      --rc-select-option-text: #111827;
     }
 
     ha-card {
@@ -12559,7 +12749,6 @@ class F1ReplayControlCard extends LitElement {
       border-radius: 8px;
       background: color-mix(in srgb, var(--rc-panel) 76%, transparent);
       color: var(--rc-text);
-      color-scheme: var(--rc-select-color-scheme);
       font: inherit;
       font-size: 12px;
       line-height: 1.2;
@@ -12567,11 +12756,6 @@ class F1ReplayControlCard extends LitElement {
       outline: none;
       min-width: 0;
       text-overflow: ellipsis;
-    }
-
-    select option {
-      background-color: var(--rc-select-option-bg);
-      color: var(--rc-select-option-text);
     }
 
     select:focus {
@@ -13185,11 +13369,10 @@ class F1ReplayControlCard extends LitElement {
     const downloadError = this._downloadError(statusEntity);
     const showSecondarySelects = this.config.show_secondary_selects !== false && !compact;
     const showStatusDetails = this.config.show_status_details !== false && !compact;
-    const selectTheme = isEffectiveLightTheme(this.hass, this.config) ? 'light' : 'dark';
 
     return html`
       <ha-card>
-        <div class="rc-card ${compact ? 'compact' : ''}" data-select-theme=${selectTheme}>
+        <div class="rc-card ${compact ? 'compact' : ''}">
           <div class="rc-header">
             ${this.config.show_title !== false ? html`
               <div class="rc-title-group">
@@ -13918,7 +14101,8 @@ class F1NextRaceCard extends LitElement {
       white-space: normal;
       overflow: visible;
       text-overflow: clip;
-      overflow-wrap: anywhere;
+      overflow-wrap: break-word;
+      word-break: normal;
     }
 
     .nr-schedule-cell.date,
@@ -13996,8 +14180,59 @@ class F1NextRaceCard extends LitElement {
       min-width: 0;
     }
 
+    .nr-schedule-row-date {
+      color: var(--nr-muted);
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    .nr-schedule-row.narrow {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 4px;
+      padding: 7px 0 7px 8px;
+    }
+
+    .nr-schedule-row.narrow .nr-schedule-row-top,
+    .nr-schedule-row.narrow .nr-schedule-row-bottom {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .nr-schedule-row.narrow .nr-schedule-row-top {
+      align-items: start;
+    }
+
+    .nr-schedule-row.narrow .nr-schedule-row-bottom {
+      align-items: baseline;
+      justify-content: stretch;
+      margin-top: 0;
+    }
+
+    .nr-schedule-row.narrow .nr-schedule-cell.session {
+      flex-wrap: nowrap;
+    }
+
+    .nr-schedule-row.narrow .nr-schedule-inline-times {
+      justify-content: flex-start;
+    }
+
     .nr-schedule-head-spacer {
       min-width: 0;
+    }
+
+    @container (max-width: 360px) {
+      .nr-schedule-row.narrow .nr-schedule-row-bottom {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+
+      .nr-schedule-row-date {
+        text-align: left;
+      }
     }
 
     .nr-secondary-panel {
@@ -14685,7 +14920,7 @@ class F1NextRaceCard extends LitElement {
     }
 
     .nr-card[data-layout='medium'] .nr-map-shell {
-      min-height: 72px;
+      min-height: 0;
     }
 
     .nr-card[data-layout='narrow'] .nr-map-shell {
@@ -15806,6 +16041,14 @@ class F1NextRaceCard extends LitElement {
               <div class="nr-schedule-cell session">
                 <span class="nr-schedule-session-name">${item.label}</span>
               </div>
+              ${upcoming || live ? html`
+                <span class="nr-schedule-row-status">
+                  ${upcoming ? html`<span class="nr-chip next">Next</span>` : null}
+                  ${live ? html`<span class="nr-chip live">Live</span>` : null}
+                </span>
+              ` : null}
+            </div>
+            <div class="nr-schedule-row-bottom">
               <div class="nr-schedule-inline-times">
                 <span class="nr-schedule-inline-time">
                   <label>Your</label>
@@ -15820,13 +16063,7 @@ class F1NextRaceCard extends LitElement {
                   `
                   : null}
               </div>
-            </div>
-            <div class="nr-schedule-row-bottom">
-              <span>${item.user.dateLabel}</span>
-              <span class="nr-schedule-row-status">
-                ${upcoming ? html`<span class="nr-chip next">Next</span>` : null}
-                ${live ? html`<span class="nr-chip live">Live</span>` : null}
-              </span>
+              <span class="nr-schedule-row-date">${item.user.dateLabel}</span>
             </div>
           </div>
         `;
@@ -17409,11 +17646,12 @@ class F1RaceControlCard extends LitElement {
       --rc-row-accent: var(--f1-card-divider-strong);
       position: relative;
       display: grid;
-      grid-template-columns: minmax(74px, auto) 1fr;
-      gap: 10px;
-      align-items: center;
-      min-height: 44px;
-      padding: 8px 14px 8px 16px;
+      grid-template-columns: minmax(74px, auto) minmax(0, 1fr);
+      column-gap: 12px;
+      row-gap: 6px;
+      align-items: start;
+      min-height: 58px;
+      padding: 10px 14px 11px 16px;
       border-radius: 12px;
       border: 1px solid var(--f1-card-divider);
       background: var(--f1-card-panel-soft);
@@ -17462,6 +17700,7 @@ class F1RaceControlCard extends LitElement {
       gap: 2px;
       min-width: 0;
       font-size: var(--f1-table-meta-font-size, 10px);
+      line-height: 1.25;
       color: var(--rc-muted);
       text-transform: uppercase;
       letter-spacing: 0.1em;
@@ -17480,13 +17719,14 @@ class F1RaceControlCard extends LitElement {
     .rc-list-content {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 4px;
       min-width: 0;
     }
 
     .rc-list-category {
       color: var(--rc-row-accent);
       font-size: var(--f1-table-meta-font-size, 10px);
+      line-height: 1.2;
       font-weight: 700;
       letter-spacing: 0.16em;
       text-transform: uppercase;
@@ -17495,7 +17735,7 @@ class F1RaceControlCard extends LitElement {
     .rc-list-message {
       color: var(--rc-text);
       font-size: 13px;
-      line-height: 1.3;
+      line-height: 1.38;
       font-weight: 600;
       word-break: break-word;
     }
@@ -17520,7 +17760,9 @@ class F1RaceControlCard extends LitElement {
 
       .rc-list-row {
         grid-template-columns: 1fr;
-        min-height: 48px;
+        row-gap: 6px;
+        min-height: 68px;
+        padding: 11px 14px 12px 16px;
       }
 
       .rc-list-meta {
@@ -17543,7 +17785,9 @@ class F1RaceControlCard extends LitElement {
 
       .rc-list-row {
         grid-template-columns: 1fr;
-        min-height: 48px;
+        row-gap: 6px;
+        min-height: 68px;
+        padding: 11px 14px 12px 16px;
       }
 
       .rc-list-meta {
@@ -18803,22 +19047,27 @@ class F1FiaDocumentsCard extends LitElement {
       -webkit-overflow-scrolling: touch;
     }
 
-	    .fd-row {
-	      --fd-row-accent: var(--f1-card-divider-strong);
-	      position: relative;
-	      display: grid;
-	      grid-template-columns: auto minmax(0, 1fr) auto;
-	      gap: 10px;
-	      align-items: center;
-	      min-height: 72px;
-	      padding: 12px 12px 12px 16px;
-	      border-radius: 12px;
-	      border: 1px solid var(--f1-card-divider);
-	      background: var(--f1-card-panel-soft);
-	      color: var(--fd-text);
-	      text-decoration: none;
+    .fd-row {
+      --fd-row-accent: var(--f1-card-divider-strong);
+      position: relative;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      flex: 0 0 auto;
+      min-height: 58px;
+      padding: 12px 12px 12px 16px;
+      border-radius: 12px;
+      border: 1px solid var(--f1-card-divider);
+      background: var(--f1-card-panel-soft);
+      color: var(--fd-text);
+      text-decoration: none;
       overflow: hidden;
       transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .fd-row.no-pdf-icon {
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .fd-row::before {
@@ -18863,23 +19112,28 @@ class F1FiaDocumentsCard extends LitElement {
       background: linear-gradient(135deg, rgba(52, 199, 89, 0.12), rgba(52, 199, 89, 0.03));
     }
 
-	    .fd-row.tone-orange {
-	      --fd-row-accent: #ff9500;
-	      background: linear-gradient(135deg, rgba(255, 149, 0, 0.12), rgba(255, 149, 0, 0.03));
-	    }
+    .fd-row.tone-neutral {
+      --fd-row-accent: var(--f1-status-neutral);
+      background: var(--f1-card-panel-soft);
+    }
 
-	    .fd-row.has-type {
-	      min-height: 76px;
-	    }
+    .fd-row.tone-orange {
+      --fd-row-accent: #ff9500;
+      background: linear-gradient(135deg, rgba(255, 149, 0, 0.12), rgba(255, 149, 0, 0.03));
+    }
 
-	    .fd-icon-wrap {
-	      display: inline-flex;
-	      align-items: center;
-	      justify-content: center;
-	      align-self: center;
-	      width: 34px;
-	      height: 34px;
-	      border-radius: 10px;
+    .fd-row.has-type {
+      min-height: 58px;
+    }
+
+    .fd-icon-wrap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      align-self: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
       border: 1px solid var(--f1-card-divider);
       background: var(--f1-card-chip);
       color: var(--fd-row-accent);
@@ -18890,112 +19144,76 @@ class F1FiaDocumentsCard extends LitElement {
       --mdc-icon-size: 20px;
     }
 
-	    .fd-copy {
-	      display: flex;
-	      flex-direction: column;
-	      justify-content: flex-start;
-	      gap: 4px;
-	      min-width: 0;
-	      align-self: center;
-	    }
+    .fd-copy {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 2px;
+      min-width: 0;
+      align-self: center;
+    }
 
-	    .fd-row.has-type .fd-copy {
-	      padding-right: 0;
-	    }
+    .fd-row.has-type .fd-copy {
+      padding-right: 0;
+    }
 
-	    .fd-copy-top {
-	      display: grid;
-	      grid-template-columns: auto minmax(0, 1fr) auto;
-	      align-items: center;
-	      gap: 6px;
-	      min-width: 0;
-	    }
+    .fd-copy-top {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: start;
+      gap: 6px;
+      min-width: 0;
+    }
 
-	    .fd-doc-number {
-	      display: inline-flex;
-	      align-items: center;
-	      justify-content: center;
-	      min-width: 0;
-	      min-height: 20px;
-	      padding: 2px 6px;
-	      border-radius: 999px;
-	      border: 1px solid var(--f1-card-divider-strong);
-	      background: var(--f1-card-chip);
-	      color: var(--fd-text);
-	      font-size: 8px;
-	      font-weight: 700;
-	      letter-spacing: 0.04em;
-	      line-height: 1;
-	      text-transform: uppercase;
-	      white-space: nowrap;
-	    }
+    .fd-type {
+      justify-self: end;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      max-width: 132px;
+      min-height: 20px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--fd-row-accent) 38%, transparent);
+      background: color-mix(in srgb, var(--fd-row-accent) 14%, transparent);
+      color: var(--fd-row-accent);
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      line-height: 1;
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
 
-	    .fd-type {
-	      grid-column: 3;
-	      justify-self: end;
-	      display: inline-flex;
-	      align-items: center;
-	      justify-content: center;
-	      max-width: 132px;
-	      min-height: 20px;
-	      padding: 2px 6px;
-	      border-radius: 999px;
-	      border: 1px solid color-mix(in srgb, var(--fd-row-accent) 38%, transparent);
-	      background: color-mix(in srgb, var(--fd-row-accent) 14%, transparent);
-	      color: var(--fd-row-accent);
-	      font-size: 8px;
-	      font-weight: 700;
-	      letter-spacing: 0.04em;
-	      line-height: 1;
-	      text-transform: uppercase;
-	      white-space: nowrap;
-	      overflow: hidden;
-	      text-overflow: ellipsis;
-	    }
+    .fd-doc-title {
+      min-width: 0;
+      color: var(--fd-text);
+      font-size: 13px;
+      line-height: 1.28;
+      font-weight: 700;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
 
-	    .fd-doc-title {
-	      min-width: 0;
-	      color: var(--fd-text);
-	      font-size: 13px;
-	      line-height: 1.28;
-	      font-weight: 700;
-	      word-break: break-word;
-	      overflow-wrap: anywhere;
-	    }
-
-	    .fd-meta {
-	      display: flex;
-	      flex-wrap: wrap;
-	      gap: 4px 8px;
-	      min-height: 13px;
-	      color: var(--fd-muted);
-	      font-size: var(--f1-table-meta-font-size, 10px);
+    .fd-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 8px;
+      min-height: 13px;
+      color: var(--fd-muted);
+      font-size: var(--f1-table-meta-font-size, 10px);
       font-weight: 600;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       line-height: 1.25;
     }
 
-    .fd-action {
+    .fd-doc-number {
       color: var(--fd-muted);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      border-radius: 999px;
-      border: 1px solid var(--f1-card-divider);
-      background: var(--f1-card-chip);
-      flex-shrink: 0;
+      white-space: nowrap;
     }
-
-	    .fd-action ha-icon {
-	      --mdc-icon-size: 17px;
-	    }
-
-	    .fd-row.has-type .fd-action {
-	      display: none;
-	    }
 
     .fd-empty {
       padding: 18px 14px;
@@ -19019,29 +19237,23 @@ class F1FiaDocumentsCard extends LitElement {
         justify-content: flex-start;
       }
 
-	      .fd-row {
-	        grid-template-columns: auto minmax(0, 1fr);
-	      }
+      .fd-row {
+        grid-template-columns: auto minmax(0, 1fr);
+      }
 
-	      .fd-row.has-type .fd-copy {
-	        padding-right: 0;
-	      }
+      .fd-row.no-pdf-icon {
+        grid-template-columns: minmax(0, 1fr);
+      }
 
-	      .fd-type {
-	        max-width: 112px;
-	      }
+      .fd-row.has-type .fd-copy {
+        padding-right: 0;
+      }
 
-	      .fd-action {
-	        grid-column: 2;
-	        justify-self: flex-start;
-	        width: auto;
-	        padding: 0 9px;
-	      }
+      .fd-type {
+        max-width: 112px;
+      }
 
-	      .fd-row.has-type .fd-action {
-	        display: none;
-	      }
-	    }
+    }
 
     @media (max-width: 600px) {
       .fd-topbar {
@@ -19066,8 +19278,10 @@ class F1FiaDocumentsCard extends LitElement {
       show_fia_logo: true,
       show_race_context: true,
       show_count: true,
+      show_pdf_icon: true,
       show_document_number: true,
       show_document_type: true,
+      show_document_coloring: true,
       show_published: true,
       show_latest_badge: true,
       visible_rows: 8,
@@ -19114,6 +19328,8 @@ class F1FiaDocumentsCard extends LitElement {
       visible_rows: 8,
       show_fia_logo: true,
       show_race_context: true,
+      show_pdf_icon: true,
+      show_document_coloring: true,
     };
   }
 
@@ -19265,7 +19481,9 @@ class F1FiaDocumentsCard extends LitElement {
     if (!Number.isFinite(parsed)) return 'Time unavailable';
     const date = new Date(parsed);
     const locale = this.hass?.locale?.language || undefined;
-    const timeZone = this.hass?.config?.time_zone || undefined;
+    const timeZone = this.hass?.config?.time_zone || this.hass?.locale?.time_zone || undefined;
+    const timeFormat = this.hass?.locale?.time_format;
+    const hour12 = timeFormat === '12' ? true : timeFormat === '24' ? false : undefined;
     const currentYear = new Date().getFullYear();
     try {
       return new Intl.DateTimeFormat(locale, {
@@ -19274,10 +19492,19 @@ class F1FiaDocumentsCard extends LitElement {
         year: date.getFullYear() === currentYear ? undefined : 'numeric',
         hour: '2-digit',
         minute: '2-digit',
+        hour12,
         timeZone,
       }).format(date);
     } catch (_err) {
-      return date.toLocaleString();
+      return date.toLocaleString(locale, {
+        day: 'numeric',
+        month: 'short',
+        year: date.getFullYear() === currentYear ? undefined : 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12,
+        timeZone,
+      });
     }
   }
 
@@ -19394,44 +19621,49 @@ class F1FiaDocumentsCard extends LitElement {
     `;
   }
 
-    _renderDocumentRow(doc, index) {
-      const numberLabel = doc.documentNumber ? `Doc ${doc.documentNumber}` : 'FIA';
-	    const newTab = this.config.open_in_new_tab !== false;
-	    const rowClass = `fd-row ${doc.toneClass}${this.config.show_document_type !== false ? ' has-type' : ''}`;
-	    const rowContent = html`
-	      <div class="fd-icon-wrap">
-	        <ha-icon icon="mdi:file-pdf-box"></ha-icon>
-	      </div>
-	      <div class="fd-copy">
-	        <div class="fd-copy-top">
-	          ${this.config.show_document_number !== false
-	            ? html`<span class="fd-doc-number">${numberLabel}</span>`
-	            : null}
-	          ${this.config.show_document_type !== false
-	            ? html`<span class="fd-type">${doc.typeLabel}</span>`
-	            : null}
-	        </div>
+  _renderDocumentRow(doc, index) {
+    const numberLabel = doc.documentNumber ? `DOC ${doc.documentNumber}` : null;
+    const showDocumentNumber = this.config.show_document_number !== false && numberLabel;
+    const showPublished = this.config.show_published !== false;
+    const toneClass = this.config.show_document_coloring === false ? 'tone-neutral' : doc.toneClass;
+    const newTab = this.config.open_in_new_tab !== false;
+    const rowClass = [
+      'fd-row',
+      toneClass,
+      this.config.show_document_type !== false ? 'has-type' : '',
+      this.config.show_pdf_icon === false ? 'no-pdf-icon' : '',
+    ].filter(Boolean).join(' ');
+    const rowContent = html`
+      ${this.config.show_pdf_icon !== false ? html`
+        <div class="fd-icon-wrap">
+          <ha-icon icon="mdi:file-pdf-box"></ha-icon>
+        </div>
+      ` : null}
+      <div class="fd-copy">
+        <div class="fd-copy-top">
           <div class="fd-doc-title">${doc.title}</div>
-        ${this.config.show_published !== false ? html`
+          ${this.config.show_document_type !== false
+            ? html`<span class="fd-type">${doc.typeLabel}</span>`
+            : null}
+        </div>
+        ${showDocumentNumber || showPublished ? html`
           <div class="fd-meta">
-            <span>${this._formatPublished(doc.published)}</span>
+            ${showDocumentNumber ? html`<span class="fd-doc-number">${numberLabel}</span>` : null}
+            ${showPublished ? html`<span>${this._formatPublished(doc.published)}</span>` : null}
           </div>
         ` : null}
       </div>
-      <span class="fd-action" aria-hidden="true">
-        <ha-icon icon="mdi:open-in-new"></ha-icon>
-      </span>
-      `;
+    `;
 
-      if (!doc.url) {
-        return html`<div class=${rowClass} style="animation-delay: ${index * 30}ms;">${rowContent}</div>`;
-      }
+    if (!doc.url) {
+      return html`<div class=${rowClass} style="animation-delay: ${index * 30}ms;">${rowContent}</div>`;
+    }
 
-      return html`
-        <a
-          class=${rowClass}
-          style="animation-delay: ${index * 30}ms;"
-          href=${doc.url}
+    return html`
+      <a
+        class=${rowClass}
+        style="animation-delay: ${index * 30}ms;"
+        href=${doc.url}
         target=${newTab ? '_blank' : '_self'}
         rel=${newTab ? 'noopener noreferrer' : ''}
         aria-label=${`Open FIA document: ${doc.title}`}
@@ -19597,8 +19829,10 @@ class F1FiaDocumentsCardEditor extends LitElement {
       show_fia_logo: true,
       show_race_context: true,
       show_count: true,
+      show_pdf_icon: true,
       show_document_number: true,
       show_document_type: true,
+      show_document_coloring: true,
       show_published: true,
       show_latest_badge: true,
       visible_rows: 8,
@@ -19691,8 +19925,10 @@ class F1FiaDocumentsCardEditor extends LitElement {
         ${this._renderSwitch('show_fia_logo', 'Show FIA logo')}
         ${this._renderSwitch('show_race_context', 'Show race context')}
         ${this._renderSwitch('show_count', 'Show document count')}
+        ${this._renderSwitch('show_pdf_icon', 'Show PDF icon')}
         ${this._renderSwitch('show_document_number', 'Show document number')}
         ${this._renderSwitch('show_document_type', 'Show document type')}
+        ${this._renderSwitch('show_document_coloring', 'Color-code document rows')}
         ${this._renderSwitch('show_published', 'Show published date and time')}
         ${this._renderSwitch('show_latest_badge', 'Show latest badge')}
         ${this._renderSwitch('open_in_new_tab', 'Open documents in a new tab')}
@@ -19884,8 +20120,8 @@ class F1QualifyingTimingCard extends LitElement {
     .qt-table {
       display: grid;
       gap: 4px;
-      min-width: max-content;
-      width: max-content;
+      min-width: 0;
+      width: 100%;
     }
 
     .qt-row {
@@ -19894,6 +20130,7 @@ class F1QualifyingTimingCard extends LitElement {
       align-items: center;
       column-gap: 0px;
       box-sizing: border-box;
+      width: 100%;
       min-height: var(--f1-table-row-min-height, 34px);
       padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
@@ -19962,7 +20199,10 @@ class F1QualifyingTimingCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
+      max-width: 100%;
       flex-wrap: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .qt-team-logo {
@@ -20025,6 +20265,7 @@ class F1QualifyingTimingCard extends LitElement {
       justify-content: center;
       padding: 2px 5px;
       border-radius: 5px;
+      box-sizing: border-box;
       font-variant-numeric: tabular-nums;
       font-weight: 600;
       min-width: 52px;
@@ -20054,6 +20295,7 @@ class F1QualifyingTimingCard extends LitElement {
       justify-content: center;
       padding: 2px 6px 2px 5px;
       border-radius: 5px;
+      box-sizing: border-box;
       font-variant-numeric: tabular-nums;
       font-weight: 600;
       min-width: 68px;
@@ -20084,6 +20326,7 @@ class F1QualifyingTimingCard extends LitElement {
       min-width: 48px;
       padding: 2px 5px;
       border-radius: 5px;
+      box-sizing: border-box;
       color: var(--qt-muted);
       font-variant-numeric: tabular-nums;
       font-weight: 700;
@@ -20092,6 +20335,13 @@ class F1QualifyingTimingCard extends LitElement {
     .qt-delta.timed {
       background: rgba(59, 130, 246, 0.14);
       color: #bfdbfe;
+    }
+
+    .qt-cell.center .qt-sector,
+    .qt-cell.center .qt-lap,
+    .qt-cell.center .qt-delta {
+      width: 100%;
+      max-width: 100%;
     }
 
     .timing-indicator {
@@ -20366,16 +20616,22 @@ class F1QualifyingTimingCard extends LitElement {
 
   _columns(layoutMode = 'wide', sessionPart = null, showDelta = false) {
     const showFullName = this.config.show_full_name === true;
-    const deltaColumn = { key: 'delta', label: 'Δ', width: '62px', center: true, groupStart: true };
+    const deltaColumn = {
+      key: 'delta',
+      label: 'Δ',
+      width: layoutMode === 'narrow' ? 'minmax(50px, 0.72fr)' : 'minmax(58px, 0.72fr)',
+      center: true,
+      groupStart: true,
+    };
     if (layoutMode === 'narrow') {
       const columns = [
-        { key: 'position', label: 'P', width: '28px', center: true, compact: true },
-        { key: 'logo', label: '', width: '24px', compact: true, hideHeader: true },
-        { key: 'tla', label: 'Driver', width: showFullName ? 'minmax(132px, 1.45fr)' : 'minmax(104px, 1.2fr)', compact: true },
-        { key: 'last_lap', label: 'LAST', width: '88px', center: true, groupStart: true },
-        { key: 'best_session', label: sessionPart ? `Q${sessionPart}` : 'BEST', width: '88px', center: true, groupStart: true },
+        { key: 'position', label: 'P', width: '26px', center: true, compact: true },
+        { key: 'logo', label: '', width: '22px', compact: true, hideHeader: true },
+        { key: 'tla', label: 'Driver', width: showFullName ? 'minmax(108px, 0.95fr)' : 'minmax(76px, 0.68fr)', compact: true },
+        { key: 'last_lap', label: 'LAST', width: 'minmax(72px, 1fr)', center: true, groupStart: true },
+        { key: 'best_session', label: sessionPart ? `Q${sessionPart}` : 'BEST', width: 'minmax(72px, 1fr)', center: true, groupStart: true },
       ];
-      if (showDelta) columns.push({ ...deltaColumn, width: '58px' });
+      if (showDelta) columns.push(deltaColumn);
       return columns;
     }
 
@@ -20383,33 +20639,33 @@ class F1QualifyingTimingCard extends LitElement {
       const columns = [
         { key: 'position', label: 'P', width: '28px', center: true, compact: true },
         { key: 'logo', label: '', width: '24px', compact: true, hideHeader: true },
-        { key: 'tla', label: 'Driver', width: showFullName ? 'minmax(138px, 1.55fr)' : 'minmax(112px, 1.25fr)', compact: true },
-        { key: 'status', label: '', width: '34px', center: true, hideHeader: true },
-        { key: 'tyre', label: 'TYR', width: '26px', center: true },
-        { key: 'sector_1', label: 'S1', width: '68px', center: true, groupStart: true },
-        { key: 'sector_2', label: 'S2', width: '68px', center: true },
-        { key: 'sector_3', label: 'S3', width: '68px', center: true },
-        { key: 'last_lap', label: 'LAST', width: '88px', center: true, groupStart: true },
-        { key: 'best_session', label: sessionPart ? `Q${sessionPart}` : 'BEST', width: '88px', center: true, groupStart: true },
+        { key: 'tla', label: 'Driver', width: showFullName ? 'minmax(126px, 1fr)' : 'minmax(92px, 0.72fr)', compact: true },
+        { key: 'status', label: '', width: 'minmax(30px, 0.3fr)', center: true, hideHeader: true },
+        { key: 'tyre', label: 'TYR', width: 'minmax(26px, 0.25fr)', center: true },
+        { key: 'sector_1', label: 'S1', width: 'minmax(62px, 0.72fr)', center: true, groupStart: true },
+        { key: 'sector_2', label: 'S2', width: 'minmax(62px, 0.72fr)', center: true },
+        { key: 'sector_3', label: 'S3', width: 'minmax(62px, 0.72fr)', center: true },
+        { key: 'last_lap', label: 'LAST', width: 'minmax(78px, 0.95fr)', center: true, groupStart: true },
+        { key: 'best_session', label: sessionPart ? `Q${sessionPart}` : 'BEST', width: 'minmax(78px, 0.95fr)', center: true, groupStart: true },
       ];
       if (showDelta) columns.push(deltaColumn);
       return columns;
     }
 
     const columns = [
-      { key: 'position', label: 'P', width: '28px', center: true, compact: true },
+      { key: 'position', label: 'P', width: '30px', center: true, compact: true },
       { key: 'logo', label: '', width: '24px', compact: true, hideHeader: true },
-      { key: 'tla', label: 'Driver', width: showFullName ? '124px' : '104px', compact: true },
-      { key: 'status', label: '', width: '36px', center: true, hideHeader: true },
-      { key: 'tyre', label: 'TYR', width: '26px', center: true },
-      { key: 'tyre_age', label: 'AGE', width: '28px', center: true },
-      { key: 'sector_1', label: 'S1', width: '72px', center: true, groupStart: true },
-      { key: 'sector_2', label: 'S2', width: '72px', center: true },
-      { key: 'sector_3', label: 'S3', width: '72px', center: true },
-      { key: 'last_lap', label: 'LAST', width: '92px', center: true, groupStart: true },
-      { key: 'q1_lap', label: 'Q1', width: '86px', center: true, groupStart: true },
-      { key: 'q2_lap', label: 'Q2', width: '86px', center: true },
-      { key: 'q3_lap', label: 'Q3', width: '86px', center: true },
+      { key: 'tla', label: 'Driver', width: showFullName ? 'minmax(132px, 0.95fr)' : 'minmax(96px, 0.7fr)', compact: true },
+      { key: 'status', label: '', width: 'minmax(32px, 0.3fr)', center: true, hideHeader: true },
+      { key: 'tyre', label: 'TYR', width: 'minmax(26px, 0.24fr)', center: true },
+      { key: 'tyre_age', label: 'AGE', width: 'minmax(28px, 0.25fr)', center: true },
+      { key: 'sector_1', label: 'S1', width: 'minmax(66px, 0.75fr)', center: true, groupStart: true },
+      { key: 'sector_2', label: 'S2', width: 'minmax(66px, 0.75fr)', center: true },
+      { key: 'sector_3', label: 'S3', width: 'minmax(66px, 0.75fr)', center: true },
+      { key: 'last_lap', label: 'LAST', width: 'minmax(82px, 0.95fr)', center: true, groupStart: true },
+      { key: 'q1_lap', label: 'Q1', width: 'minmax(78px, 0.9fr)', center: true, groupStart: true },
+      { key: 'q2_lap', label: 'Q2', width: 'minmax(78px, 0.9fr)', center: true },
+      { key: 'q3_lap', label: 'Q3', width: 'minmax(78px, 0.9fr)', center: true },
     ];
     if (showDelta) columns.push(deltaColumn);
     return columns;
@@ -21367,8 +21623,8 @@ class F1PracticeTimingCard extends LitElement {
     .pt-table {
       display: grid;
       gap: 4px;
-      min-width: max-content;
-      width: max-content;
+      min-width: 0;
+      width: 100%;
     }
 
     .pt-row {
@@ -21377,6 +21633,7 @@ class F1PracticeTimingCard extends LitElement {
       align-items: center;
       column-gap: 0;
       box-sizing: border-box;
+      width: 100%;
       min-height: var(--f1-table-row-min-height, 34px);
       padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
@@ -21451,7 +21708,10 @@ class F1PracticeTimingCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
+      max-width: 100%;
       flex-wrap: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .pt-team-logo {
@@ -21523,12 +21783,18 @@ class F1PracticeTimingCard extends LitElement {
       justify-content: center;
       padding: 2px 5px;
       border-radius: 5px;
+      box-sizing: border-box;
       font-variant-numeric: tabular-nums;
       font-weight: 600;
       min-width: 68px;
       font-size: clamp(9px, 1.4vw, 11px);
       background: var(--lap-bg, transparent);
       color: var(--lap-text, var(--pt-muted));
+    }
+
+    .pt-cell.center .pt-lap {
+      width: 100%;
+      max-width: 100%;
     }
 
     .pt-lap.overall-fastest {
@@ -21802,27 +22068,27 @@ class F1PracticeTimingCard extends LitElement {
     const narrowLayout = layoutMode === 'narrow';
     const timingVisible = this.config.show_last_lap !== false || this.config.show_fastest_lap !== false;
     const driverWidth = this.config.show_full_name === true
-      ? (narrowLayout ? 'minmax(152px, 1.55fr)' : 'minmax(130px, 1.16fr)')
-      : (narrowLayout ? 'minmax(112px, 1.2fr)' : '102px');
+      ? (narrowLayout ? 'minmax(108px, 0.95fr)' : (mediumLayout ? 'minmax(124px, 1fr)' : 'minmax(132px, 0.95fr)'))
+      : (narrowLayout ? 'minmax(76px, 0.68fr)' : (mediumLayout ? 'minmax(90px, 0.72fr)' : 'minmax(96px, 0.7fr)'));
     const columns = [];
     if (this.config.show_position !== false) {
-      columns.push({ key: 'position', label: 'Pos', width: '34px', center: true, compact: true });
+      columns.push({ key: 'position', label: 'Pos', width: narrowLayout ? '28px' : 'minmax(30px, 0.3fr)', center: true, compact: true });
     }
     if (this.config.show_team_logo !== false) {
-      columns.push({ key: 'logo', label: '', width: '24px', compact: true, hideHeader: true });
+      columns.push({ key: 'logo', label: '', width: narrowLayout ? '22px' : '24px', compact: true, hideHeader: true });
     }
     columns.push({ key: 'driver', label: 'Driver', width: driverWidth, compact: true });
     if (this.config.show_tyre !== false && (!narrowLayout || !timingVisible)) {
-      columns.push({ key: 'tyre', label: 'Tyre', width: '32px', center: true, groupStart: true });
+      columns.push({ key: 'tyre', label: 'Tyre', width: 'minmax(28px, 0.28fr)', center: true, groupStart: true });
     }
     if (this.config.show_tyre_age !== false && !mediumLayout && !narrowLayout) {
-      columns.push({ key: 'tyre_age', label: 'Age', width: '30px', center: true });
+      columns.push({ key: 'tyre_age', label: 'Age', width: 'minmax(28px, 0.28fr)', center: true });
     }
     if (this.config.show_last_lap !== false) {
-      columns.push({ key: 'last_lap', label: 'Last Lap', width: narrowLayout ? '84px' : '90px', center: true, groupStart: true });
+      columns.push({ key: 'last_lap', label: 'Last Lap', width: narrowLayout ? 'minmax(72px, 1fr)' : 'minmax(78px, 0.95fr)', center: true, groupStart: true });
     }
     if (this.config.show_fastest_lap !== false) {
-      columns.push({ key: 'fastest_lap', label: 'Fastest Lap', width: narrowLayout ? '88px' : '96px', center: true, groupStart: true });
+      columns.push({ key: 'fastest_lap', label: 'Fastest Lap', width: narrowLayout ? 'minmax(74px, 1fr)' : 'minmax(82px, 1fr)', center: true, groupStart: true });
     }
     return columns;
   }
@@ -22691,8 +22957,8 @@ class F1RaceLapCard extends LitElement {
     .rl-table {
       display: grid;
       gap: 4px;
-      min-width: max-content;
-      width: max-content;
+      min-width: 0;
+      width: 100%;
     }
 
     .rl-row {
@@ -22701,6 +22967,7 @@ class F1RaceLapCard extends LitElement {
       align-items: center;
       column-gap: 0;
       box-sizing: border-box;
+      width: 100%;
       min-height: var(--f1-table-row-min-height, 34px);
       padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
@@ -22775,7 +23042,10 @@ class F1RaceLapCard extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
+      max-width: 100%;
       flex-wrap: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .rl-team-logo {
@@ -22853,12 +23123,20 @@ class F1RaceLapCard extends LitElement {
       justify-content: center;
       padding: 2px 5px;
       border-radius: 5px;
+      box-sizing: border-box;
       font-variant-numeric: tabular-nums;
       font-weight: 600;
       min-width: 68px;
       font-size: clamp(9px, 1.4vw, 11px);
       background: var(--lap-bg, transparent);
       color: var(--lap-text, var(--rl-muted));
+    }
+
+    .rl-cell.center .rl-gap,
+    .rl-cell.center .rl-lap {
+      width: 100%;
+      max-width: 100%;
+      text-align: center;
     }
 
     .rl-lap.overall-fastest {
@@ -23220,39 +23498,39 @@ class F1RaceLapCard extends LitElement {
     const mediumLayout = layoutMode === 'medium';
     const narrowLayout = layoutMode === 'narrow';
     const driverWidth = this.config.show_full_name === true
-      ? (narrowLayout ? 'minmax(152px, 1.55fr)' : 'minmax(132px, 1.18fr)')
-      : (narrowLayout ? 'minmax(112px, 1.2fr)' : '104px');
+      ? (narrowLayout ? 'minmax(108px, 0.95fr)' : (mediumLayout ? 'minmax(124px, 1fr)' : 'minmax(132px, 0.95fr)'))
+      : (narrowLayout ? 'minmax(76px, 0.68fr)' : (mediumLayout ? 'minmax(90px, 0.72fr)' : 'minmax(96px, 0.7fr)'));
     const columns = [];
     if (this.config.show_position !== false) {
-      columns.push({ key: 'position', label: 'Pos', width: '34px', center: true, compact: true });
+      columns.push({ key: 'position', label: 'Pos', width: narrowLayout ? '28px' : 'minmax(30px, 0.3fr)', center: true, compact: true });
     }
     if (this.config.show_team_logo !== false) {
-      columns.push({ key: 'logo', label: '', width: '24px', compact: true, hideHeader: true });
+      columns.push({ key: 'logo', label: '', width: narrowLayout ? '22px' : '24px', compact: true, hideHeader: true });
     }
     columns.push({ key: 'driver', label: 'Driver', width: driverWidth, compact: true });
     if (this.config.show_gap !== false && gapMode !== 'off') {
       columns.push({
         key: 'gap',
         label: gapMode === 'leader' ? 'Gap' : 'Int',
-        width: narrowLayout ? '62px' : '70px',
+        width: narrowLayout ? 'minmax(50px, 0.6fr)' : 'minmax(58px, 0.62fr)',
         center: true,
         compact: true,
       });
     }
     if (this.config.show_tyre !== false && !narrowLayout) {
-      columns.push({ key: 'tyre', label: 'Tyre', width: '32px', center: true, groupStart: true });
+      columns.push({ key: 'tyre', label: 'Tyre', width: 'minmax(28px, 0.28fr)', center: true, groupStart: true });
     }
     if (this.config.show_tyre_age !== false && !mediumLayout && !narrowLayout) {
-      columns.push({ key: 'tyre_age', label: 'Age', width: '30px', center: true });
+      columns.push({ key: 'tyre_age', label: 'Age', width: 'minmax(28px, 0.28fr)', center: true });
     }
     if (this.config.show_pit_count !== false && !suppressPit) {
-      columns.push({ key: 'pit_count', label: 'Pit', width: '38px', center: true });
+      columns.push({ key: 'pit_count', label: 'Pit', width: 'minmax(30px, 0.32fr)', center: true });
     }
     if (this.config.show_last_lap !== false) {
-      columns.push({ key: 'last_lap', label: 'Last Lap', width: narrowLayout ? '84px' : '90px', center: true, groupStart: true });
+      columns.push({ key: 'last_lap', label: 'Last Lap', width: narrowLayout ? 'minmax(72px, 1fr)' : 'minmax(78px, 0.95fr)', center: true, groupStart: true });
     }
     if (this.config.show_fastest_lap !== false) {
-      columns.push({ key: 'fastest_lap', label: 'Fastest Lap', width: narrowLayout ? '88px' : '96px', center: true, groupStart: true });
+      columns.push({ key: 'fastest_lap', label: 'Fastest Lap', width: narrowLayout ? 'minmax(74px, 1fr)' : 'minmax(82px, 1fr)', center: true, groupStart: true });
     }
     return columns;
   }
@@ -24443,8 +24721,8 @@ class F1StartingGridCard extends LitElement {
     .sg-table {
       display: grid;
       gap: 4px;
-      min-width: max-content;
-      width: max-content;
+      min-width: 0;
+      width: 100%;
     }
 
     .sg-row {
@@ -24453,6 +24731,7 @@ class F1StartingGridCard extends LitElement {
       align-items: center;
       column-gap: 0;
       box-sizing: border-box;
+      width: 100%;
       min-height: var(--f1-table-row-min-height, 34px);
       padding: var(--f1-table-row-padding, 6px 8px);
       border-radius: 10px;
@@ -24797,30 +25076,31 @@ class F1StartingGridCard extends LitElement {
 
   _columns(layoutMode = 'wide') {
     const narrowLayout = layoutMode === 'narrow';
+    const mediumLayout = layoutMode === 'medium';
     const driverWidth = this.config.show_full_name === true
-      ? (narrowLayout ? 'minmax(138px, 1.55fr)' : 'minmax(132px, 1.22fr)')
-      : (narrowLayout ? 'minmax(104px, 1.25fr)' : '104px');
+      ? (narrowLayout ? 'minmax(108px, 0.95fr)' : (mediumLayout ? 'minmax(124px, 1fr)' : 'minmax(132px, 0.95fr)'))
+      : (narrowLayout ? 'minmax(76px, 0.68fr)' : (mediumLayout ? 'minmax(90px, 0.72fr)' : 'minmax(96px, 0.7fr)'));
     const columns = [
-      { key: 'grid_position', label: 'Grid', width: '36px', center: true, compact: true },
+      { key: 'grid_position', label: 'Grid', width: narrowLayout ? '28px' : 'minmax(32px, 0.3fr)', center: true, compact: true },
     ];
     if (this.config.show_team_logo !== false) {
-      columns.push({ key: 'logo', label: '', width: '24px', center: true, compact: true, hideHeader: true });
+      columns.push({ key: 'logo', label: '', width: narrowLayout ? '22px' : '24px', center: true, compact: true, hideHeader: true });
     }
     columns.push({ key: 'driver', label: 'Driver', width: driverWidth, compact: true });
     if (this.config.show_qualifying_position !== false) {
-      columns.push({ key: 'qualifying_position', label: 'Qual', width: '44px', center: true, groupStart: true });
+      columns.push({ key: 'qualifying_position', label: 'Qual', width: 'minmax(38px, 0.38fr)', center: true, groupStart: true });
     }
     if (this.config.show_grid_delta !== false) {
-      columns.push({ key: 'grid_delta', label: 'Delta', width: '48px', center: true });
+      columns.push({ key: 'grid_delta', label: 'Delta', width: 'minmax(44px, 0.46fr)', center: true });
     }
     if (this.config.show_qualifying_segment !== false && !narrowLayout) {
-      columns.push({ key: 'qualifying_segment', label: 'Seg', width: '48px', center: true, groupStart: true });
+      columns.push({ key: 'qualifying_segment', label: 'Seg', width: 'minmax(44px, 0.46fr)', center: true, groupStart: true });
     }
     if (this.config.show_qualifying_time !== false) {
-      columns.push({ key: 'qualifying_time', label: 'Time', width: narrowLayout ? '86px' : '96px', center: true });
+      columns.push({ key: 'qualifying_time', label: 'Time', width: narrowLayout ? 'minmax(72px, 1fr)' : 'minmax(82px, 0.95fr)', center: true });
     }
     if (this.config.show_qualifying_delta === true) {
-      columns.push({ key: 'qualifying_delta', label: 'Gap', width: '56px', center: true });
+      columns.push({ key: 'qualifying_delta', label: 'Gap', width: 'minmax(52px, 0.58fr)', center: true });
     }
     return columns;
   }
