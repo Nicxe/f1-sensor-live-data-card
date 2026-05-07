@@ -55,10 +55,11 @@ const normalizeThemeMode = (mode) => {
   return F1_THEME_MODES.includes(value) ? value : DEFAULT_F1_THEME_MODE;
 };
 
-const applyF1ThemeMode = (element, config) => {
+const applyF1ThemeMode = (element, config, hass = null) => {
   const mode = normalizeThemeMode(config?.theme_mode);
   if (config) config.theme_mode = mode;
   element.dataset.themeMode = mode;
+  element.dataset.effectiveTheme = isEffectiveLightTheme(hass, config) ? 'light' : 'dark';
 };
 
 const isEffectiveLightTheme = (hass, config) => {
@@ -85,6 +86,41 @@ const F1_THEME_STYLES = css`
     --f1-card-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
     --f1-card-compact-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
     --f1-card-title-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+    --f1-team-logo-filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.4));
+    --f1-status-info: #38bdf8;
+    --f1-status-info-text: #bfdbfe;
+    --f1-status-info-bg: rgba(59, 130, 246, 0.14);
+    --f1-status-info-border: rgba(96, 165, 250, 0.28);
+    --f1-status-warning: #f59e0b;
+    --f1-status-warning-text: #fde68a;
+    --f1-status-warning-bg: rgba(251, 191, 36, 0.10);
+    --f1-status-warning-border: rgba(251, 191, 36, 0.24);
+    --f1-status-success: #34c759;
+    --f1-status-success-text: #86efac;
+    --f1-status-success-bg: rgba(52, 199, 89, 0.16);
+    --f1-status-success-border: rgba(52, 199, 89, 0.34);
+    --f1-status-danger: #ff3b30;
+    --f1-status-danger-text: #fca5a5;
+    --f1-status-danger-bg: rgba(255, 59, 48, 0.14);
+    --f1-status-danger-border: rgba(255, 59, 48, 0.32);
+    --f1-status-neutral: #a3a3a3;
+    --f1-status-neutral-text: #d4d4d8;
+    --f1-status-neutral-bg: rgba(163, 163, 163, 0.12);
+    --f1-status-neutral-border: rgba(163, 163, 163, 0.36);
+    --f1-status-purple: #8b5cf6;
+    --f1-status-purple-text: #d8b4fe;
+    --f1-status-purple-bg: rgba(139, 92, 246, 0.22);
+    --f1-status-purple-border: rgba(139, 92, 246, 0.45);
+    --f1-status-orange: #f97316;
+    --f1-status-orange-text: #fed7aa;
+    --f1-status-orange-bg: rgba(249, 115, 22, 0.14);
+    --f1-status-orange-border: rgba(249, 115, 22, 0.30);
+    --f1-timing-overall-fastest-bg: rgba(139, 92, 246, 0.28);
+    --f1-timing-overall-fastest-text: #d8b4fe;
+    --f1-timing-personal-fastest-bg: rgba(34, 197, 94, 0.22);
+    --f1-timing-personal-fastest-text: #86efac;
+    --f1-timing-timed-bg: rgba(234, 179, 8, 0.14);
+    --f1-timing-timed-text: #fde047;
   }
 
   :host([data-theme-mode='light']) {
@@ -105,6 +141,46 @@ const F1_THEME_STYLES = css`
     --f1-card-title-shadow: none;
   }
 
+  :host([data-effective-theme='light']) {
+    --f1-team-logo-filter:
+      drop-shadow(0 1px 1px rgba(15, 23, 42, 0.38))
+      drop-shadow(0 0 3px rgba(15, 23, 42, 0.18));
+    --f1-status-info: #0369a1;
+    --f1-status-info-text: #075985;
+    --f1-status-info-bg: rgba(3, 105, 161, 0.11);
+    --f1-status-info-border: rgba(3, 105, 161, 0.30);
+    --f1-status-warning: #b45309;
+    --f1-status-warning-text: #92400e;
+    --f1-status-warning-bg: rgba(180, 83, 9, 0.12);
+    --f1-status-warning-border: rgba(180, 83, 9, 0.34);
+    --f1-status-success: #15803d;
+    --f1-status-success-text: #166534;
+    --f1-status-success-bg: rgba(22, 101, 52, 0.12);
+    --f1-status-success-border: rgba(22, 101, 52, 0.30);
+    --f1-status-danger: #b91c1c;
+    --f1-status-danger-text: #991b1b;
+    --f1-status-danger-bg: rgba(185, 28, 28, 0.10);
+    --f1-status-danger-border: rgba(185, 28, 28, 0.30);
+    --f1-status-neutral: #52525b;
+    --f1-status-neutral-text: #3f3f46;
+    --f1-status-neutral-bg: rgba(82, 82, 91, 0.10);
+    --f1-status-neutral-border: rgba(82, 82, 91, 0.26);
+    --f1-status-purple: #7c3aed;
+    --f1-status-purple-text: #6d28d9;
+    --f1-status-purple-bg: rgba(109, 40, 217, 0.12);
+    --f1-status-purple-border: rgba(109, 40, 217, 0.30);
+    --f1-status-orange: #c2410c;
+    --f1-status-orange-text: #9a3412;
+    --f1-status-orange-bg: rgba(194, 65, 12, 0.12);
+    --f1-status-orange-border: rgba(194, 65, 12, 0.30);
+    --f1-timing-overall-fastest-bg: rgba(109, 40, 217, 0.12);
+    --f1-timing-overall-fastest-text: #6d28d9;
+    --f1-timing-personal-fastest-bg: rgba(22, 101, 52, 0.12);
+    --f1-timing-personal-fastest-text: #166534;
+    --f1-timing-timed-bg: rgba(133, 77, 14, 0.13);
+    --f1-timing-timed-text: #854d0e;
+  }
+
   :host([data-theme-mode='auto']) {
     --f1-card-bg: var(--card-background-color, #ffffff);
     --f1-card-bg-soft: var(--primary-background-color, #f7f8fb);
@@ -122,6 +198,216 @@ const F1_THEME_STYLES = css`
     --f1-card-compact-shadow: var(--ha-card-box-shadow, 0 8px 22px rgba(15, 23, 42, 0.12));
     --f1-card-title-shadow: none;
   }
+
+  img[class*='team-logo'] {
+    filter: var(--f1-team-logo-filter);
+  }
+
+  :host [class$='replay-note'],
+  :host [class*='replay-note '] {
+    background: var(--f1-status-warning-bg);
+    border-color: var(--f1-status-warning-border);
+    color: var(--f1-status-warning-text);
+  }
+
+  :host [class$='replay-note'].info,
+  :host [class*='replay-note '].info {
+    background: var(--f1-status-info-bg);
+    border-color: var(--f1-status-info-border);
+    color: var(--f1-status-info-text);
+  }
+
+  :host [class$='replay-note'].warning,
+  :host [class*='replay-note '].warning {
+    background: var(--f1-status-warning-bg);
+    border-color: var(--f1-status-warning-border);
+    color: var(--f1-status-warning-text);
+  }
+
+  :host [class$='mode-pill'].live,
+  :host [class*='mode-pill '].live {
+    background: var(--f1-status-danger-bg);
+    border-color: var(--f1-status-danger-border);
+    color: var(--f1-status-danger-text);
+  }
+
+  :host [class$='mode-pill'].live-current,
+  :host [class*='mode-pill '].live-current {
+    background: var(--f1-status-info-bg);
+    border-color: var(--f1-status-info-border);
+    color: var(--f1-status-info-text);
+  }
+
+  :host [class$='mode-pill'].legacy,
+  :host [class*='mode-pill '].legacy,
+  :host [class$='mode-pill'].masked,
+  :host [class*='mode-pill '].masked,
+  :host [class$='mode-pill'].replay-only,
+  :host [class*='mode-pill '].replay-only {
+    background: var(--f1-status-warning-bg);
+    border-color: var(--f1-status-warning-border);
+    color: var(--f1-status-warning-text);
+  }
+
+  :host [class$='badge'].success,
+  :host [class*='badge '].success {
+    background: var(--f1-status-success-bg);
+    border-color: var(--f1-status-success-border);
+    color: var(--f1-status-success-text);
+  }
+
+  :host [class$='badge'].warning,
+  :host [class*='badge '].warning {
+    background: var(--f1-status-warning-bg);
+    border-color: var(--f1-status-warning-border);
+    color: var(--f1-status-warning-text);
+  }
+
+  :host [class$='badge'].info,
+  :host [class*='badge '].info {
+    background: var(--f1-status-info-bg);
+    border-color: var(--f1-status-info-border);
+    color: var(--f1-status-info-text);
+  }
+
+  :host [class$='gap-button'].active,
+  :host [class*='gap-button '].active {
+    background: var(--f1-status-info-bg);
+    color: var(--f1-status-info-text);
+  }
+
+  :host [class*='-status'].pit-in {
+    color: var(--f1-status-warning);
+  }
+
+  :host [class*='-status'].pit-out {
+    color: var(--f1-status-info);
+  }
+
+  :host [class*='-status'].stopped {
+    color: var(--f1-status-danger);
+  }
+
+  :host [class*='-status'].retired {
+    color: var(--f1-status-neutral);
+  }
+
+  :host [class$='status-pill'].playing,
+  :host [class*='status-pill '].playing {
+    --rc-status-color: var(--f1-status-success);
+  }
+
+  :host [class$='status-pill'].paused,
+  :host [class*='status-pill '].paused {
+    --rc-status-color: var(--f1-status-warning);
+  }
+
+  :host [class$='status-pill'].ready,
+  :host [class*='status-pill '].ready,
+  :host [class$='status-pill'].selected,
+  :host [class*='status-pill '].selected {
+    --rc-status-color: var(--f1-status-info);
+  }
+
+  :host [class$='status-pill'].loading,
+  :host [class*='status-pill '].loading {
+    --rc-status-color: var(--f1-status-orange);
+  }
+
+  :host .ls-grip-pill,
+  :host .ls-straight-low-pill {
+    --status-color: var(--f1-status-warning);
+    --status-bg: var(--f1-status-warning-bg);
+  }
+
+  :host .ls-overtake-on-pill {
+    --status-color: var(--f1-status-success);
+    --status-bg: var(--f1-status-success-bg);
+  }
+
+  :host .best-lap-cell {
+    background: var(--f1-status-success-bg);
+    color: var(--f1-status-success-text);
+  }
+
+  :host .qt-q-badge {
+    background: var(--f1-status-purple-bg);
+    border-color: var(--f1-status-purple-border);
+    color: var(--f1-status-purple-text);
+  }
+
+  :host .qt-delta.timed {
+    background: var(--f1-status-info-bg);
+    color: var(--f1-status-info-text);
+  }
+
+  :host .rc-button.load {
+    background: var(--f1-status-info-bg);
+    border-color: var(--f1-status-info-border);
+    color: var(--f1-status-info-text);
+  }
+
+  :host .rc-button.danger {
+    border-color: var(--f1-status-danger-border);
+    color: var(--f1-status-danger-text);
+  }
+
+  :host .rc-live-pill {
+    background: var(--f1-status-danger-bg);
+    border-color: var(--f1-status-danger-border);
+    color: var(--f1-status-danger-text);
+  }
+
+  :host([data-effective-theme='light']) .rc-button:disabled {
+    background: rgba(17, 24, 39, 0.04);
+    border-color: rgba(17, 24, 39, 0.12);
+    color: rgba(17, 24, 39, 0.38);
+    opacity: 1;
+  }
+
+  :host([data-effective-theme='light']) .rc-fia-logo,
+  :host([data-effective-theme='light']) .fd-fia-logo {
+    background: #111827;
+    border: 0;
+    border-radius: 4px;
+    box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.14);
+    box-sizing: border-box;
+    padding: 3px 7px;
+  }
+
+  :host([data-effective-theme='light']) .rc-message.category-safetycar {
+    color: var(--f1-status-orange-text);
+  }
+
+  :host([data-effective-theme='light']) .rc-message.category-penalty {
+    color: var(--f1-status-danger-text);
+  }
+
+  :host([data-effective-theme='light']) .rc-icon.flag-red {
+    fill: var(--f1-status-danger);
+  }
+
+  :host([data-effective-theme='light']) .rc-icon.flag-yellow,
+  :host([data-effective-theme='light']) .rc-icon.category-sc {
+    fill: var(--f1-status-warning);
+  }
+
+  :host([data-effective-theme='light']) .rc-icon.flag-blue {
+    fill: var(--f1-status-info);
+  }
+
+  :host([data-effective-theme='light']) .rc-icon.flag-green {
+    fill: var(--f1-status-success);
+  }
+
+  :host([data-effective-theme='light']) [class$='driver'],
+  :host([data-effective-theme='light']) [class*='-driver '],
+  :host([data-effective-theme='light']) [class$='tla'],
+  :host([data-effective-theme='light']) [class*='-tla '],
+  :host([data-effective-theme='light']) [class$='team-name'],
+  :host([data-effective-theme='light']) [class*='-team-name '] {
+    color: var(--f1-card-text);
+  }
 `;
 
 const DEFAULT_COMPOUNDS = ['SOFT', 'MEDIUM', 'HARD'];
@@ -132,6 +418,13 @@ const COMPOUND_FALLBACK = {
   HARD: '#e5e5e5',
   INTERMEDIATE: '#34c759',
   WET: '#0a84ff',
+};
+const COMPOUND_LIGHT_DISPLAY = {
+  SOFT: '#c81e1e',
+  MEDIUM: '#9a6700',
+  HARD: '#4b5563',
+  INTERMEDIATE: '#15803d',
+  WET: '#0369a1',
 };
 const COMPOUND_IMAGES = {
   HARD: new URL('./hard_tyre.png', import.meta.url).href,
@@ -223,6 +516,27 @@ const normalizeTeamName = (team) => {
   if (TEAM_LOGO_ALIASES[cleaned]) return TEAM_LOGO_ALIASES[cleaned];
   const stripped = cleaned.replace(/[^a-z0-9 ]/g, '').trim();
   return TEAM_LOGO_ALIASES[stripped] || null;
+};
+
+const normalizeF1CompoundKey = (value) => {
+  if (!value) return null;
+  const upper = String(value).trim().toUpperCase();
+  if (upper === 'S') return 'SOFT';
+  if (upper === 'M') return 'MEDIUM';
+  if (upper === 'H') return 'HARD';
+  if (upper === 'I') return 'INTERMEDIATE';
+  if (upper === 'INTER') return 'INTERMEDIATE';
+  if (upper === 'W') return 'WET';
+  if (upper === 'FULL WET' || upper === 'FULLWET') return 'WET';
+  return upper;
+};
+
+const resolveF1CompoundDisplayColor = (compound, color, lightTheme = false) => {
+  const key = normalizeF1CompoundKey(compound);
+  if (lightTheme && key && COMPOUND_LIGHT_DISPLAY[key]) {
+    return COMPOUND_LIGHT_DISPLAY[key];
+  }
+  return color || (key ? COMPOUND_FALLBACK[key] : null) || '#999';
 };
 
 const getTeamLogoUrl = (team, size = 28, variant = 'white') => {
@@ -337,6 +651,13 @@ const TRACK_STATUS_COLORS = {
   VSC: '#ff9500',
   SC: '#ff9500',
   RED: '#ff3b30',
+};
+const TRACK_STATUS_LIGHT_COLORS = {
+  CLEAR: '#166534',
+  YELLOW: '#92400e',
+  VSC: '#9a3412',
+  SC: '#9a3412',
+  RED: '#b91c1c',
 };
 
 const TRACK_STATUS_LABELS = {
@@ -936,6 +1257,7 @@ const installSectionsAutoHeight = (CardClass, fallbackGridOptions = {}) => {
       return;
     }
 
+    applyF1ThemeMode(this, this.config, this.hass);
     updateResponsiveLayout(this);
     attachResponsiveLayoutObserver(this);
     attachSectionsHeightObserver(this);
@@ -1457,7 +1779,14 @@ class F1TyreStatisticsCard extends LitElement {
     const name = item.name;
     const displayName = this._compoundDisplayName(name);
     const data = item.data || {};
-    const color = data.compound_color || COMPOUND_FALLBACK[name] || '#999';
+    const baseColor = data.compound_color || COMPOUND_FALLBACK[name] || '#999';
+    const color = typeof resolveF1CompoundDisplayColor === 'function'
+      ? resolveF1CompoundDisplayColor(
+        name,
+        baseColor,
+        isEffectiveLightTheme(this.hass, this.config),
+      )
+      : baseColor;
     const image = COMPOUND_IMAGES[name];
     const bestTimes = this._bestTimes(data.best_times);
     const laps = Number(data.total_laps || 0);
@@ -2420,8 +2749,17 @@ class F1PitStopOverviewCard extends LitElement {
       const compoundRaw = tyre?.compound || tyre?.compound_short;
       const compoundKey = this._normalizeCompoundKey(compoundRaw);
       const compoundLabel = this._compoundDisplayName(compoundKey || compoundRaw);
+      const compoundBaseColor = tyre?.compound_color || COMPOUND_FALLBACK[compoundKey];
+      const compoundLightTheme = typeof isEffectiveLightTheme === 'function'
+        && isEffectiveLightTheme(this.hass, this.config);
       const compoundColor = this._normalizeColor(
-        tyre?.compound_color || COMPOUND_FALLBACK[compoundKey],
+        typeof resolveF1CompoundDisplayColor === 'function'
+          ? resolveF1CompoundDisplayColor(
+            compoundKey || compoundRaw,
+            compoundBaseColor,
+            compoundLightTheme,
+          )
+          : compoundBaseColor,
       );
       const teamName = driver?.team || driver?.team_name || tyre?.team || pos?.team || pit?.team;
       const teamLogo = getTeamLogoMeta(teamName, 28, this.config.team_logo_style, isEffectiveLightTheme(this.hass, this.config));
@@ -8416,7 +8754,12 @@ class F1LastRaceResultsCard extends LitElement {
         identity_sort: displayDriver,
         use_full_name: useFullName,
         driver_media: this._resolveDriverMedia(identity, teamName),
-        team_logo: getTeamLogoMeta(teamName, 24, this.config.team_logo_style),
+        team_logo: getTeamLogoMeta(
+          teamName,
+          24,
+          this.config.team_logo_style,
+          isEffectiveLightTheme(this.hass, this.config),
+        ),
         team_color: teamColor,
         points: points,
         points_display: this._formatPoints(points),
@@ -8470,7 +8813,12 @@ class F1LastRaceResultsCard extends LitElement {
 
   _resolveDriverMedia(identity, teamName) {
     const imageType = this.config?.driver_image_type === 'headshot' ? 'headshot' : 'team_logo';
-    const teamLogo = getTeamLogoMeta(teamName, 24, this.config.team_logo_style);
+    const teamLogo = getTeamLogoMeta(
+      teamName,
+      24,
+      this.config.team_logo_style,
+      isEffectiveLightTheme(this.hass, this.config),
+    );
 
     if (imageType === 'headshot') {
       const headshot = this._normalizeMediaUrl(identity?.headshot_large, identity?.headshot_small);
@@ -11398,7 +11746,10 @@ class F1LiveSessionCard extends LitElement {
     const countdown = this._getCountdown(sessionStatus);
     const flagUrl = this._getCountryFlagUrl(data.meeting_country);
 
-    const statusColor = TRACK_STATUS_COLORS[trackStatus] || TRACK_STATUS_COLORS.CLEAR;
+    const trackStatusColors = isEffectiveLightTheme(this.hass, this.config)
+      ? TRACK_STATUS_LIGHT_COLORS
+      : TRACK_STATUS_COLORS;
+    const statusColor = trackStatusColors[trackStatus] || trackStatusColors.CLEAR;
     const statusLabel = TRACK_STATUS_LABELS[trackStatus] || 'Unknown';
 
     return html`
@@ -20352,7 +20703,16 @@ class F1QualifyingTimingCard extends LitElement {
       const compound = tyre?.compound || null;
       const compoundKey = String(compound || '').toUpperCase();
       const compoundShort = tyre?.compound_short || (compound ? compound[0] : null);
-      const compoundColor = tyre?.compound_color || COMPOUND_FALLBACK[compoundKey] || null;
+      const compoundBaseColor = tyre?.compound_color || COMPOUND_FALLBACK[compoundKey] || null;
+      const compoundLightTheme = typeof isEffectiveLightTheme === 'function'
+        && isEffectiveLightTheme(this.hass, this.config);
+      const compoundColor = typeof resolveF1CompoundDisplayColor === 'function'
+        ? resolveF1CompoundDisplayColor(
+          compoundKey || compound,
+          compoundBaseColor,
+          compoundLightTheme,
+        )
+        : compoundBaseColor;
       const tyreAge = tyre?.stint_laps ?? null;
       return {
         rn,
@@ -21639,8 +21999,17 @@ class F1PracticeTimingCard extends LitElement {
       const statusInfo = this._statusInfo(pos);
       const compoundKey = this._normalizeCompoundKey(tyre?.compound || tyre?.compound_short);
       const compoundShort = this._compoundDisplayName(compoundKey || tyre?.compound_short);
+      const compoundBaseColor = tyre?.compound_color || COMPOUND_FALLBACK[compoundKey] || null;
+      const compoundLightTheme = typeof isEffectiveLightTheme === 'function'
+        && isEffectiveLightTheme(this.hass, this.config);
       const compoundColor = this._normalizeColor(
-        tyre?.compound_color || COMPOUND_FALLBACK[compoundKey] || null,
+        typeof resolveF1CompoundDisplayColor === 'function'
+          ? resolveF1CompoundDisplayColor(
+            compoundKey || tyre?.compound_short,
+            compoundBaseColor,
+            compoundLightTheme,
+          )
+          : compoundBaseColor,
       );
       const tyreAge = this._formatLaps(tyre?.stint_laps);
       // Practice timing intentionally derives fastest laps from lap history because
@@ -23054,8 +23423,17 @@ class F1RaceLapCard extends LitElement {
       const statusInfo = this._statusInfo(pos);
       const compoundKey = this._normalizeCompoundKey(tyre?.compound || tyre?.compound_short);
       const compoundShort = this._compoundDisplayName(compoundKey || tyre?.compound_short);
+      const compoundBaseColor = tyre?.compound_color || COMPOUND_FALLBACK[compoundKey] || null;
+      const compoundLightTheme = typeof isEffectiveLightTheme === 'function'
+        && isEffectiveLightTheme(this.hass, this.config);
       const compoundColor = this._normalizeColor(
-        tyre?.compound_color || COMPOUND_FALLBACK[compoundKey] || null,
+        typeof resolveF1CompoundDisplayColor === 'function'
+          ? resolveF1CompoundDisplayColor(
+            compoundKey || tyre?.compound_short,
+            compoundBaseColor,
+            compoundLightTheme,
+          )
+          : compoundBaseColor,
       );
       const tyreAge = this._formatLaps(tyre?.stint_laps);
       const lapSnapshot = this._buildLapSnapshot(pos);
