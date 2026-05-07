@@ -11959,7 +11959,16 @@ class F1ReplayControlCard extends LitElement {
       --rc-chip: var(--f1-card-chip);
       --rc-panel: var(--f1-card-panel);
       --rc-shadow: var(--f1-card-compact-shadow);
+      --rc-select-color-scheme: dark;
+      --rc-select-option-bg: #151517;
+      --rc-select-option-text: #f5f5f5;
       display: block;
+    }
+
+    .rc-card[data-select-theme='light'] {
+      --rc-select-color-scheme: light;
+      --rc-select-option-bg: #ffffff;
+      --rc-select-option-text: #111827;
     }
 
     ha-card {
@@ -12199,6 +12208,7 @@ class F1ReplayControlCard extends LitElement {
       border-radius: 8px;
       background: color-mix(in srgb, var(--rc-panel) 76%, transparent);
       color: var(--rc-text);
+      color-scheme: var(--rc-select-color-scheme);
       font: inherit;
       font-size: 12px;
       line-height: 1.2;
@@ -12206,6 +12216,11 @@ class F1ReplayControlCard extends LitElement {
       outline: none;
       min-width: 0;
       text-overflow: ellipsis;
+    }
+
+    select option {
+      background-color: var(--rc-select-option-bg);
+      color: var(--rc-select-option-text);
     }
 
     select:focus {
@@ -12819,10 +12834,11 @@ class F1ReplayControlCard extends LitElement {
     const downloadError = this._downloadError(statusEntity);
     const showSecondarySelects = this.config.show_secondary_selects !== false && !compact;
     const showStatusDetails = this.config.show_status_details !== false && !compact;
+    const selectTheme = isEffectiveLightTheme(this.hass, this.config) ? 'light' : 'dark';
 
     return html`
       <ha-card>
-        <div class="rc-card ${compact ? 'compact' : ''}">
+        <div class="rc-card ${compact ? 'compact' : ''}" data-select-theme=${selectTheme}>
           <div class="rc-header">
             ${this.config.show_title !== false ? html`
               <div class="rc-title-group">
