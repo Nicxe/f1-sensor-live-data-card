@@ -1,59 +1,39 @@
-# F1 Sensor Live Data Card (Deprecated Standalone Repository)
+# F1 Sensor Live Data Card (Deprecated)
 
+This standalone dashboard card repository is deprecated.
 
-[![Buy me a Coffee](https://img.shields.io/badge/Support-Buy%20me%20a%20coffee-fdd734?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/NiklasV)  [![Version](https://img.shields.io/github/v/release/Nicxe/f1-sensor-live-data-card)](#) [![HA Community forum](https://img.shields.io/badge/Home%20Assistant-Community%20Forum-319fee?logo=home-assistant)](https://community.home-assistant.io/t/formula-1-racing-sensor/880842)<br>
+The live data cards are now bundled with the main F1 Sensor integration:
 
-![GitHub Downloads (specific asset, specific tag)](https://img.shields.io/github/downloads/nicxe/f1-sensor-live-data-card/latest/f1-sensor-live-data-card.js)
+https://github.com/Nicxe/f1_sensor
 
+## Card moved to the integration repository
 
-## Deprecation Notice
+Starting with F1 Sensor v5.0.0, this standalone card repository is no longer used for updates.
 
-This standalone dashboard card repository is deprecated for future F1 Sensor card updates.
+If you already use the card, migrate as follows:
 
-The live data cards are moving into the F1 Sensor integration repository:
-[https://github.com/Nicxe/f1_sensor](https://github.com/Nicxe/f1_sensor)
+1. Update **F1 Sensor** in HACS.
+2. Restart Home Assistant.
+3. Confirm the bundled live data cards work in your dashboards.
+4. Remove/uninstall this deprecated HACS dashboard repository (`Nicxe/f1-sensor-live-data-card`).
+5. Remove old Lovelace resources that point to this repository, such as `/hacsfiles/f1-sensor-live-data-card/f1-sensor-live-data-card.js`, `/local/community/f1-sensor-live-data-card/f1-sensor-live-data-card.js`, or `/local/f1-sensor-live-data-card.js`.
+6. Keep your dashboard cards as they are. Existing `custom:f1-*` card types are unchanged.
+7. Hard-refresh the browser once if the old card UI still appears.
 
-Beta testers should install the F1 Sensor beta that includes the bundled Live Data Cards. The integration manages card delivery, tyre image assets, and the Lovelace resource URL automatically.
+F1 Sensor now manages the bundled card resource automatically at `/local/f1-sensor-live-data-card/f1-sensor-live-data-card.js?v=...`.
 
-If you currently use this standalone HACS dashboard repository, migrate by updating F1 Sensor and then removing this card repository from HACS after confirming the bundled card works. Your existing dashboards can continue using the same custom card types, such as `custom:f1-live-session-card` and `custom:f1-sensor-live-data-card`.
+For current installation, configuration, and card documentation, see:
 
-After migration, restart Home Assistant and perform a hard browser reload so the dashboard loads the bundled card assets. If you previously added a manual Lovelace resource, remove stale entries such as `/local/f1-sensor-live-data-card.js` or `/hacsfiles/f1-sensor-live-data-card/...` after the bundled resource is active.
+https://nicxe.github.io/f1_sensor/cards/cards-overview
 
-New issues should be opened in the F1 Sensor repository with the **Live data card** component selected:
-[https://github.com/Nicxe/f1_sensor/issues](https://github.com/Nicxe/f1_sensor/issues)
+Please open all new card issues and feature requests in the main F1 Sensor repository and select the **Live data card** component:
 
-The current JavaScript and image assets remain in this repository so existing standalone beta users are not broken during the migration. No new features will be added in this standalone repository.
+https://github.com/Nicxe/f1_sensor/issues
 
-Detailed card documentation is available here:
-[https://nicxe.github.io/f1_sensor/cards/cards-overview](https://nicxe.github.io/f1_sensor/cards/cards-overview)
+This repository remains available as a historical reference, but it will not receive new card updates.
 
-## Preview
+## Historical assets
 
-<img width="1720" height="1396" alt="F1 card overview" src="https://github.com/user-attachments/assets/14d4bd6e-45ef-4f34-b77f-174dd7aa9d23" />
+The last standalone JavaScript file and tyre image assets remain in this repository for historical reference and for users who need to inspect the old standalone distribution.
 
-## Current Standalone Cards
-
-These custom card types remain valid after migration:
-
-- `custom:f1-live-session-card`
-- `custom:f1-next-race-card`
-- `custom:f1-season-calendar-card`
-- `custom:f1-race-control-card`
-- `custom:f1-fia-documents-card`
-- `custom:f1-qualifying-timing-card`
-- `custom:f1-practice-timing-card`
-- `custom:f1-race-lap-card`
-- `custom:f1-starting-grid-card`
-- `custom:f1-last-race-results-card`
-- `custom:f1-sensor-live-data-card`
-- `custom:f1-pitstop-overview-card`
-- `custom:f1-driver-lap-times-card`
-- `custom:f1-investigations-card`
-- `custom:f1-track-limits-card`
-- `custom:f1-championship-prediction-drivers-card`
-- `custom:f1-championship-prediction-teams-card`
-- `custom:f1-replay-control-card`
-
-## Disclaimer
-
-This project is not affiliated with or supported by Home Assistant, Formula 1, or the FIA. It is community maintained.
+This project is not affiliated with or supported by Home Assistant, Formula 1, or the FIA.

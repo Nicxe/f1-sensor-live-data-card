@@ -1,0 +1,35 @@
+name: Redirect Issues to F1 Sensor
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  redirect-and-close:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment and close issue
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const issue_number = context.payload.issue.number;
+            const { owner, repo } = context.repo;
+            const integrationRepo = "https://github.com/Nicxe/f1_sensor";
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body: `This standalone card repository is deprecated. Please open this issue in ${integrationRepo} and select the **Live data card** component. F1 Sensor now maintains both the integration and bundled live data cards.`,
+            });
+
+            await github.rest.issues.update({
+              owner,
+              repo,
+              issue_number,
+              state: "closed",
+              state_reason: "not_planned",
+            });
